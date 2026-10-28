@@ -8,7 +8,12 @@ export default defineConfig({
   resolve: { tsconfigPaths: true },
   server: { port: 3000 },
   plugins: [
-    nitro({ plugins: ['./src/server/plugins/validate-env.ts'] }),
+    nitro({
+      plugins: ['./src/server/plugins/validate-env.ts'],
+      // Bildebehandlingen har native binærfiler som må ligge som egen pakke i
+      // .output, ikke bakes inn i bundelen. `*` tar med hele pakken.
+      traceDeps: ['sharp*'],
+    }),
     tanstackStart({
       importProtection: {
         behavior: 'error',

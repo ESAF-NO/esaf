@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
+import { photoUrls, type ProfilePhoto } from './photos.ts'
 
 const { auditEvent, cohort, experience, membership, person, personCohort } = schema
 
@@ -132,11 +133,13 @@ const profileColumns = {
   contactEmailVisible: person.contactEmailVisible,
   phone: person.phone,
   phoneVisible: person.phoneVisible,
+  photoKey: person.photoKey,
 }
 
 export type Profile = {
   personId: string
   fullName: string
+  photo: ProfilePhoto | null
   claimed: boolean
   /** Fra den øverste nåværende erfaringen. */
   jobTitle: string | null
@@ -188,6 +191,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
   return {
     personId: row.personId,
     fullName: row.fullName,
+    photo: photoUrls(row.photoKey),
     claimed,
     ...currentRole(roles),
     city: row.city,
@@ -217,6 +221,7 @@ export type EditableProfile = Omit<z.output<typeof profileInput>, 'experience'> 
   personId: string
   isOwn: boolean
   experience: Experience[]
+  photo: ProfilePhoto | null
 }
 
 /**
@@ -231,12 +236,18 @@ export async function getEditableProfile(
   const isOwn = assertCanEdit(viewer, personId)
   const [row] = await db.select(profileColumns).from(person).where(eq(person.id, personId))
   if (!row) throw new NotFoundError('Fant ikke profilen.')
-  const { userId: _userId, ...fields } = row
+  const { userId: _userId, photoKey, ...fields } = row
   const experiences = await loadExperience(db, [personId])
   const contact = isOwn
     ? {}
     : { contactEmail: null, contactEmailVisible: false, phone: null, phoneVisible: false }
-  return { ...fields, ...contact, experience: experiences.get(personId) ?? [], isOwn }
+  return {
+    ...fields,
+    ...contact,
+    experience: experiences.get(personId) ?? [],
+    photo: photoUrls(photoKey),
+    isOwn,
+  }
 }
 
 /**

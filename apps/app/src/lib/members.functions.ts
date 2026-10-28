@@ -38,6 +38,7 @@ export const getViewerSummary = createServerFn({ method: 'GET' }).handler(async 
     /** Rollen krever tofaktor, men det er ikke slått på. */
     twoFactorMissing: role !== null && twoFactorRequired(role) && !viewer?.twoFactorEnabled,
     fullName: card?.fullName ?? null,
+    photo: card?.photo ?? null,
     email: card?.email ?? null,
     jobTitle: card?.jobTitle ?? null,
     currentCompany: card?.currentCompany ?? null,

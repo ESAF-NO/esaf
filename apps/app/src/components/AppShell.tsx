@@ -158,7 +158,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             onClick={onNavigate}
             className="flex items-center gap-3 rounded-xl p-2 transition hover:bg-stone-100"
           >
-            <Avatar name={viewer.fullName} size="sm" />
+            <Avatar name={viewer.fullName} photo={viewer.photo} size="sm" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-stone-900">
                 {viewer.fullName}

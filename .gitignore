@@ -20,3 +20,6 @@ coverage
 *.csv
 # Kullister og andre eksporter med persondata skal aldri committes
 *.xlsx
+
+# Opplastede filer i utvikling (profilbilder), se UPLOAD_DIR
+.data/

@@ -76,7 +76,9 @@ export function AuthorLine({
         params={{ personId: author.personId }}
         className="flex min-w-0 items-center gap-2 font-medium text-stone-800 hover:text-stone-950"
       >
-        {avatar && <Avatar name={author.fullName} size={size} muted={!author.claimed} />}
+        {avatar && (
+          <Avatar name={author.fullName} photo={author.photo} size={size} muted={!author.claimed} />
+        )}
         <span className="truncate">{author.fullName}</span>
         <Verified claimed={author.claimed} className="-ml-1" />
       </Link>

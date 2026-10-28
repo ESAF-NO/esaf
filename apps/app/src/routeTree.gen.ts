@@ -26,8 +26,10 @@ import { Route as KontoFeedPostIdRouteImport } from './routes/_konto/feed/$postI
 import { Route as KontoFeedNyRouteImport } from './routes/_konto/feed/ny'
 import { Route as KontoMedlemmerIndexRouteImport } from './routes/_konto/medlemmer/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiBilderKeyRouteImport } from './routes/api/bilder/$key'
 import { Route as KontoMedlemmerPersonIdIndexRouteImport } from './routes/_konto/medlemmer/$personId/index'
 import { Route as KontoMedlemmerPersonIdRedigerRouteImport } from './routes/_konto/medlemmer/$personId/rediger'
+import { Route as ApiMedlemmerPersonIdBildeRouteImport } from './routes/api/medlemmer/$personId/bilde'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -113,6 +115,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBilderKeyRoute = ApiBilderKeyRouteImport.update({
+  id: '/api/bilder/$key',
+  path: '/api/bilder/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KontoMedlemmerPersonIdIndexRoute =
   KontoMedlemmerPersonIdIndexRouteImport.update({
     id: '/medlemmer/$personId/',
@@ -124,6 +131,12 @@ const KontoMedlemmerPersonIdRedigerRoute =
     id: '/medlemmer/$personId/rediger',
     path: '/medlemmer/$personId/rediger',
     getParentRoute: () => KontoRoute,
+  } as any)
+const ApiMedlemmerPersonIdBildeRoute =
+  ApiMedlemmerPersonIdBildeRouteImport.update({
+    id: '/api/medlemmer/$personId/bilde',
+    path: '/api/medlemmer/$personId/bilde',
+    getParentRoute: () => rootRouteImport,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -141,9 +154,11 @@ export interface FileRoutesByFullPath {
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/feed/': typeof KontoFeedIndexRoute
   '/medlemmer/': typeof KontoMedlemmerIndexRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
   '/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -161,9 +176,11 @@ export interface FileRoutesByTo {
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/feed': typeof KontoFeedIndexRoute
   '/medlemmer': typeof KontoMedlemmerIndexRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
   '/medlemmer/$personId': typeof KontoMedlemmerPersonIdIndexRoute
 }
 export interface FileRoutesById {
@@ -183,9 +200,11 @@ export interface FileRoutesById {
   '/_konto/feed/$postId': typeof KontoFeedPostIdRoute
   '/_konto/feed/ny': typeof KontoFeedNyRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/_konto/feed/': typeof KontoFeedIndexRoute
   '/_konto/medlemmer/': typeof KontoMedlemmerIndexRoute
   '/_konto/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
   '/_konto/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -205,9 +224,11 @@ export interface FileRouteTypes {
     | '/feed/$postId'
     | '/feed/ny'
     | '/api/auth/$'
+    | '/api/bilder/$key'
     | '/feed/'
     | '/medlemmer/'
     | '/medlemmer/$personId/rediger'
+    | '/api/medlemmer/$personId/bilde'
     | '/medlemmer/$personId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -225,9 +246,11 @@ export interface FileRouteTypes {
     | '/feed/$postId'
     | '/feed/ny'
     | '/api/auth/$'
+    | '/api/bilder/$key'
     | '/feed'
     | '/medlemmer'
     | '/medlemmer/$personId/rediger'
+    | '/api/medlemmer/$personId/bilde'
     | '/medlemmer/$personId'
   id:
     | '__root__'
@@ -246,9 +269,11 @@ export interface FileRouteTypes {
     | '/_konto/feed/$postId'
     | '/_konto/feed/ny'
     | '/api/auth/$'
+    | '/api/bilder/$key'
     | '/_konto/feed/'
     | '/_konto/medlemmer/'
     | '/_konto/medlemmer/$personId/rediger'
+    | '/api/medlemmer/$personId/bilde'
     | '/_konto/medlemmer/$personId/'
   fileRoutesById: FileRoutesById
 }
@@ -259,6 +284,8 @@ export interface RootRouteChildren {
   RegistrerRoute: typeof RegistrerRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiBilderKeyRoute: typeof ApiBilderKeyRoute
+  ApiMedlemmerPersonIdBildeRoute: typeof ApiMedlemmerPersonIdBildeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -382,6 +409,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bilder/$key': {
+      id: '/api/bilder/$key'
+      path: '/api/bilder/$key'
+      fullPath: '/api/bilder/$key'
+      preLoaderRoute: typeof ApiBilderKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_konto/medlemmer/$personId/': {
       id: '/_konto/medlemmer/$personId/'
       path: '/medlemmer/$personId'
@@ -395,6 +429,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/medlemmer/$personId/rediger'
       preLoaderRoute: typeof KontoMedlemmerPersonIdRedigerRouteImport
       parentRoute: typeof KontoRoute
+    }
+    '/api/medlemmer/$personId/bilde': {
+      id: '/api/medlemmer/$personId/bilde'
+      path: '/api/medlemmer/$personId/bilde'
+      fullPath: '/api/medlemmer/$personId/bilde'
+      preLoaderRoute: typeof ApiMedlemmerPersonIdBildeRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -440,6 +481,8 @@ const rootRouteChildren: RootRouteChildren = {
   RegistrerRoute: RegistrerRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiBilderKeyRoute: ApiBilderKeyRoute,
+  ApiMedlemmerPersonIdBildeRoute: ApiMedlemmerPersonIdBildeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { assertMember, can, type Viewer } from './access.ts'
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience } from './experience.ts'
+import { photoUrls, type ProfilePhoto } from './photos.ts'
 
 const { auditEvent, cohort, comment, person, personCohort, post, postVote } = schema
 
@@ -38,6 +39,7 @@ export const commentInput = z.object({
 export type Author = {
   personId: string
   fullName: string
+  photo: ProfilePhoto | null
   claimed: boolean
   jobTitle: string | null
   currentCompany: string | null
@@ -78,7 +80,12 @@ async function loadAuthors(db: Db, personIds: string[]): Promise<Map<string, Aut
   const ids = [...new Set(personIds)]
   const [people, cohorts, experiences] = await Promise.all([
     db
-      .select({ personId: person.id, fullName: person.fullName, userId: person.userId })
+      .select({
+        personId: person.id,
+        fullName: person.fullName,
+        photoKey: person.photoKey,
+        userId: person.userId,
+      })
       .from(person)
       .where(inArray(person.id, ids)),
     db
@@ -94,6 +101,7 @@ async function loadAuthors(db: Db, personIds: string[]): Promise<Map<string, Aut
       {
         personId: p.personId,
         fullName: p.fullName,
+        photo: photoUrls(p.photoKey),
         claimed: p.userId !== null,
         ...currentRole(experiences.get(p.personId) ?? []),
         cohortYears: cohorts

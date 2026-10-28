@@ -77,6 +77,25 @@ export {
   type Profile,
   type ProfileInput,
 } from './profiles.ts'
+export {
+  assertCanChangePhoto,
+  PHOTO_CONTENT_TYPE,
+  PHOTO_MAX_BYTES,
+  PHOTO_SIZES,
+  photoUrls,
+  processProfilePhoto,
+  readProfilePhoto,
+  removeProfilePhoto,
+  setProfilePhoto,
+  type ProcessedPhoto,
+  type ProfilePhoto,
+} from './photos.ts'
+export {
+  createDiskStorage,
+  createS3Storage,
+  type ObjectStorage,
+  type S3StorageConfig,
+} from './storage.ts'
 export { currentRole, sortExperience, type Experience } from './experience.ts'
 export {
   communityOverview,

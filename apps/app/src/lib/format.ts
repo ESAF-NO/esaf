@@ -21,6 +21,69 @@ export function fullDate(date: Date | string) {
   return new Date(date).toLocaleString('nb-NO', { dateStyle: 'long', timeStyle: 'short' })
 }
 
+// Klokkeslett og dager vises i norsk tid, så serveren (UTC i drift) og
+// nettleseren skriver det samme og siden ikke skifter innhold ved hydrering.
+const zone = 'Europe/Oslo'
+const isoDay = new Intl.DateTimeFormat('en-CA', {
+  timeZone: zone,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+const clock = new Intl.DateTimeFormat('nb-NO', { timeZone: zone, timeStyle: 'short' })
+const stamp = new Intl.DateTimeFormat('nb-NO', {
+  timeZone: zone,
+  dateStyle: 'long',
+  timeStyle: 'short',
+})
+const weekday = (withYear: boolean) =>
+  new Intl.DateTimeFormat('nb-NO', {
+    timeZone: zone,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    ...(withYear && { year: 'numeric' }),
+  })
+
+/** Dagen i norsk tid som «2026-10-28», til å gruppere og sammenligne på. */
+export const dayKey = (date: Date | string) => isoDay.format(new Date(date))
+
+function today() {
+  const key = dayKey(new Date())
+  const [y, m, d] = key.split('-').map(Number)
+  // Fra datoen, ikke 24 timer tilbake, så overgangen til og fra sommertid ikke gir feil dag.
+  const yesterday = new Date(Date.UTC(y!, m! - 1, d! - 1)).toISOString().slice(0, 10)
+  return { key, yesterday }
+}
+
+/** «22:41» i norsk tid. */
+export const clockTime = (date: Date | string) => clock.format(new Date(date))
+
+/** «28. oktober 2026 kl. 22:41» i norsk tid. */
+export const timestamp = (date: Date | string) => stamp.format(new Date(date))
+
+/** «I dag», «I går», «Mandag 26. oktober», og med år når det ikke er i år. */
+export function dayLabel(date: Date | string) {
+  const key = dayKey(date)
+  const now = today()
+  if (key === now.key) return 'I dag'
+  if (key === now.yesterday) return 'I går'
+  const label = weekday(key.slice(0, 4) !== now.key.slice(0, 4)).format(new Date(date))
+  return label.charAt(0).toLocaleUpperCase('nb') + label.slice(1)
+}
+
+/**
+ * Siste aktivitet med dagsoppløsning: «i dag», «i går», «for 5 dager siden».
+ * Økter oppdateres bare omtrent én gang i døgnet, så timer ville vært falsk presisjon.
+ */
+export function lastActive(date: Date | string) {
+  const key = dayKey(date)
+  const now = today()
+  if (key === now.key) return 'i dag'
+  if (key === now.yesterday) return 'i går'
+  return timeAgo(date)
+}
+
 export function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`
 }

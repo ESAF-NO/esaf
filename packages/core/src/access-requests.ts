@@ -252,7 +252,7 @@ export async function listAccessRequests(
     .limit(100)
   if (!rows.length) return []
 
-  // Navnelikhet regnes ut her, ikke i SQL, så «Schüller» også treffer «Schuller».
+  // Navnelikhet regnes ut her, ikke i SQL, så «Müller» også treffer «Muller».
   const unclaimed = rows.some((r) => !r.request.profilePersonId)
     ? await db
         .select({ id: person.id, fullName: person.fullName })

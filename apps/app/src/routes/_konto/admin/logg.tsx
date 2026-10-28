@@ -1,0 +1,379 @@
+import type { AuditPerson } from '@esaf/core'
+import type { MemberRole } from '@esaf/db'
+import { createFileRoute, isNotFound, Link, notFound } from '@tanstack/react-router'
+import { useServerFn } from '@tanstack/react-start'
+import { History, Terminal, UserRound } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
+import { Avatar, Button, Card, EmptyState, ErrorText } from '#/components/ui.tsx'
+import { auditPageSize, fetchAuditLog } from '#/lib/admin.functions.ts'
+import { clockTime, dayKey, dayLabel, plural, timestamp } from '#/lib/format.ts'
+import { roleNames } from '#/lib/roles.ts'
+
+export const Route = createFileRoute('/_konto/admin/logg')({
+  beforeLoad: ({ context: { viewer } }) => {
+    if (!viewer.permissions.includes('audit.read')) throw notFound()
+  },
+  loader: () => fetchAuditLog({ data: {} }),
+  head: () => ({ meta: [{ title: 'Logg – Admin – ESAF' }] }),
+  component: AuditLog,
+  errorComponent: ({ error }) => (
+    <ErrorText>{error instanceof Error ? error.message : 'Noe gikk galt.'}</ErrorText>
+  ),
+})
+
+type Entry = Awaited<ReturnType<typeof fetchAuditLog>>[number]
+
+function AuditLog() {
+  const first = Route.useLoaderData()
+  const fetchPage = useServerFn(fetchAuditLog)
+  // Eldre sider hører til den første siden de ble hentet etter. Hentes loggen på
+  // nytt (ny navigasjon eller invalidering), begynner bla-ingen fra toppen igjen.
+  const [older, setOlder] = useState<{ after: Entry[]; entries: Entry[]; done: boolean } | null>(
+    null,
+  )
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+  const end = useRef<HTMLParagraphElement>(null)
+
+  const more = older?.after === first ? older : null
+  const entries = more ? [...first, ...more.entries] : first
+  const done = more ? more.done : first.length < auditPageSize
+
+  async function loadOlder() {
+    const last = entries.at(-1)
+    if (!last) return
+    setLoading(true)
+    setError(null)
+    try {
+      // Tidspunktene har millisekunder her og mikrosekunder i databasen. Med ett
+      // millisekund ekstra kommer også hendelser fra samme millisekund som den
+      // siste med, og de som allerede vises, filtreres bort.
+      const before = new Date(new Date(last.createdAt).getTime() + 1).toISOString()
+      const page = await fetchPage({ data: { before } })
+      const seen = new Set(entries.map((e) => e.id))
+      const fresh = page.filter((e) => !seen.has(e.id))
+      const finished = page.length < auditPageSize || fresh.length === 0
+      flushSync(() => {
+        setOlder({ after: first, entries: [...(more?.entries ?? []), ...fresh], done: finished })
+        setAnnouncement(
+          fresh.length ? `Viser ${plural(fresh.length, 'eldre hendelse', 'eldre hendelser')}.` : '',
+        )
+      })
+      // Knappen forsvinner når alt er hentet; fokus flyttes til teksten som står der i stedet.
+      if (finished) end.current?.focus()
+    } catch (e) {
+      setError(
+        isNotFound(e)
+          ? 'Du har ikke lenger tilgang til loggen. Last siden på nytt.'
+          : e instanceof Error
+            ? e.message
+            : 'Kunne ikke hente eldre hendelser.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Grupper på dag i norsk tid. Listen er allerede sortert nyeste først.
+  const days: { key: string; label: string; entries: Entry[] }[] = []
+  for (const entry of entries) {
+    const key = dayKey(entry.createdAt)
+    const day = days.at(-1)
+    if (day?.key === key) day.entries.push(entry)
+    else days.push({ key, label: dayLabel(entry.createdAt), entries: [entry] })
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <p className="mb-5 text-sm text-stone-500">
+        Hvem som har gjort hva med tilgang, roller, profiler og andres innhold, nyeste først.
+        Hendelsene kan ikke endres eller slettes i appen.
+      </p>
+
+      {entries.length === 0 ? (
+        <EmptyState icon={History} title="Ingen hendelser ennå">
+          Forespørsler, godkjenninger og rolleendringer havner her.
+        </EmptyState>
+      ) : (
+        <div className="space-y-6">
+          {days.map((day) => (
+            <section key={day.key} aria-labelledby={`dag-${day.key}`}>
+              <h2 id={`dag-${day.key}`} className="mb-2 text-sm font-medium text-stone-500">
+                {day.label}
+              </h2>
+              <Card>
+                <ol className="divide-y divide-stone-100">
+                  {day.entries.map((entry) => (
+                    <LogEntry key={entry.id} entry={entry} />
+                  ))}
+                </ol>
+              </Card>
+            </section>
+          ))}
+        </div>
+      )}
+
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
+      {error && (
+        <div className="mt-4">
+          <ErrorText>{error}</ErrorText>
+        </div>
+      )}
+      {entries.length > 0 && (
+        <div className="mt-6 text-center">
+          {!done ? (
+            <Button variant="secondary" onClick={loadOlder} disabled={loading}>
+              {loading ? 'Henter …' : 'Vis eldre'}
+            </Button>
+          ) : (
+            more && (
+              <p ref={end} tabIndex={-1} className="text-sm text-stone-500 focus:outline-none">
+                Ingen eldre hendelser.
+              </p>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LogEntry({ entry: e }: { entry: Entry }) {
+  const reason = text(e.details.reason)
+  const excerpt = e.action === 'content.remove_comment' ? text(e.details.excerpt) : null
+  const extra = Object.hasOwn(sentences, e.action)
+    ? []
+    : Object.entries(e.details).filter(([key, value]) => key !== 'reason' && value !== null)
+  return (
+    <li className="flex gap-3 px-4 py-3.5">
+      <ActorMark entry={e} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm leading-6 text-stone-700">{describe(e)}</p>
+        {excerpt && (
+          <blockquote className="mt-1 border-l-2 border-stone-200 pl-3 text-sm text-stone-600">
+            «{excerpt}»
+          </blockquote>
+        )}
+        {reason && (
+          <p className="mt-1 text-sm text-stone-600">
+            <span className="text-stone-500">Begrunnelse:</span> {reason}
+          </p>
+        )}
+        {extra.length > 0 && (
+          <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-stone-500">
+            {extra.map(([key, value]) => (
+              <div key={key} className="flex min-w-0 gap-1">
+                <dt>{key}:</dt>
+                <dd className="truncate text-stone-700">
+                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+      <time
+        dateTime={new Date(e.createdAt).toISOString()}
+        title={timestamp(e.createdAt)}
+        className="shrink-0 text-xs leading-6 text-stone-500 tabular-nums"
+      >
+        {clockTime(e.createdAt)}
+      </time>
+    </li>
+  )
+}
+
+/** Hvem som gjorde det: personen, eller et ikon for operatøren på kommandolinjen. */
+function ActorMark({ entry: e }: { entry: Entry }) {
+  if (e.actor) return <Avatar name={e.actor.fullName} size="sm" muted={!e.actor.active} />
+  const Icon = e.action === 'access.request' ? UserRound : Terminal
+  return (
+    <span
+      aria-hidden
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-500 ring-1 ring-stone-200 ring-inset"
+    >
+      <Icon className="size-4" />
+    </span>
+  )
+}
+
+/** En person i en setning. Profilen kan bare åpnes når personen er aktivt medlem. */
+function Who({ person }: { person: AuditPerson | null }) {
+  if (!person) return <>en slettet person</>
+  if (!person.active) return <span className="font-medium text-stone-900">{person.fullName}</span>
+  return (
+    <Link
+      to="/medlemmer/$personId"
+      params={{ personId: person.personId }}
+      className="font-medium text-stone-900 hover:text-brand-600"
+    >
+      {person.fullName}
+    </Link>
+  )
+}
+
+const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
+const count = (value: unknown) => (typeof value === 'number' ? value : 0)
+const role = (value: unknown) =>
+  typeof value === 'string' && value in roleNames
+    ? roleNames[value as MemberRole]
+    : (text(value) ?? 'ukjent rolle')
+
+type Parts = { actor: ReactNode; subject: ReactNode; details: Entry['details']; entry: Entry }
+
+/**
+ * Hver handling koden skriver til `audit_event`, som en setning. Ukjente
+ * handlinger (for eksempel nye som ikke har fått tekst ennå) vises med navnet
+ * og detaljene sine, så ingenting skjules.
+ */
+const sentences: Record<string, (p: Parts) => ReactNode> = {
+  'access.request': ({ details, entry }) => (
+    <>
+      {entry.actor || entry.subject ? <Who person={entry.actor ?? entry.subject} /> : 'En søker'} ba
+      om tilgang{details.profilePersonId ? ' og valgte en profil fra kullisten' : ''}.
+    </>
+  ),
+  'access.approve': ({ actor, subject, details }) =>
+    details.profilePersonId ? (
+      <>
+        {actor} godkjente {subject} og koblet kontoen til profilen fra kullisten.
+      </>
+    ) : (
+      <>
+        {actor} godkjente {subject} som ny person.
+      </>
+    ),
+  'access.reject': ({ actor, subject }) => (
+    <>
+      {actor} avslo forespørselen fra {subject}.
+    </>
+  ),
+  'membership.approve': ({ actor, subject }) => (
+    <>
+      {actor} godkjente medlemskapet til {subject}.
+    </>
+  ),
+  'membership.reject': ({ actor, subject }) => (
+    <>
+      {actor} avslo medlemskapet til {subject}.
+    </>
+  ),
+  'membership.deactivate': ({ actor, subject, details }) =>
+    details.previousRole && details.previousRole !== 'member' ? (
+      <>
+        {actor} deaktiverte {subject} og fjernet rollen som {role(details.previousRole)}.
+      </>
+    ) : (
+      <>
+        {actor} deaktiverte {subject}.
+      </>
+    ),
+  'membership.reactivate': ({ actor, subject }) => (
+    <>
+      {actor} gjenopprettet tilgangen til {subject}.
+    </>
+  ),
+  'role.change': ({ actor, subject, details }) => (
+    <>
+      {actor} endret rollen til {subject} fra {role(details.from)} til {role(details.to)}.
+    </>
+  ),
+  'operator.grant_role': ({ actor, subject, details }) =>
+    granted(actor, subject, role(details.role), Boolean(details.approvedRequest)),
+  // Fra før roller fantes; da var admin den eneste rollen som kunne gis.
+  'operator.grant_admin': ({ actor, subject, details }) =>
+    granted(actor, subject, 'admin', Boolean(details.approvedRequest)),
+  'operator.import_profiles': ({ actor, details }) => {
+    const source = text(details.source)
+    const cohorts = count(details.cohortsCreated)
+    return (
+      <>
+        {actor} importerte {source ? `«${source}»` : 'en kulliste'} fra kommandolinjen:{' '}
+        {plural(count(details.created), 'ny profil', 'nye profiler')}, {count(details.existing)}{' '}
+        fantes fra før
+        {cohorts > 0 && `, ${plural(cohorts, 'nytt kull', 'nye kull')}`}.
+        {details.membershipStatus === 'pending' && ' Nye profiler venter på godkjenning.'}
+      </>
+    )
+  },
+  'profile.admin_edit': ({ actor, subject }) => (
+    <>
+      {actor} redigerte profilen til {subject}.
+    </>
+  ),
+  'profile.link': ({ actor, subject }) => (
+    <>
+      {actor} koblet en konto til profilen til {subject}.
+    </>
+  ),
+  'content.remove_post': ({ actor, subject, details }) => {
+    const title = text(details.title)
+    return (
+      <>
+        {actor} fjernet {title ? `innlegget «${title}»` : 'et innlegg'} av {subject}.
+      </>
+    )
+  },
+  'content.remove_comment': ({ actor, subject, details }) => {
+    const postId = text(details.postId)
+    return (
+      <>
+        {actor} fjernet en kommentar av {subject}
+        {postId && (
+          <>
+            {' '}
+            på{' '}
+            <Link
+              to="/feed/$postId"
+              params={{ postId }}
+              className="font-medium text-stone-900 hover:text-brand-600"
+            >
+              et innlegg
+            </Link>
+          </>
+        )}
+        .
+      </>
+    )
+  },
+}
+
+function granted(actor: ReactNode, subject: ReactNode, roleName: string, approved: boolean) {
+  return approved ? (
+    <>
+      {actor} godkjente {subject} og ga rollen {roleName} fra kommandolinjen.
+    </>
+  ) : (
+    <>
+      {actor} ga {subject} rollen {roleName} fra kommandolinjen.
+    </>
+  )
+}
+
+function describe(entry: Entry): ReactNode {
+  const parts: Parts = {
+    // Uten utfører er det operatøren på kommandolinjen. Unntaket er forespørsler:
+    // søkerens midlertidige person slettes når kontoen kobles til en profil.
+    actor: entry.actor ? <Who person={entry.actor} /> : 'En operatør',
+    subject: <Who person={entry.subject} />,
+    details: entry.details,
+    entry,
+  }
+  if (Object.hasOwn(sentences, entry.action)) return sentences[entry.action]!(parts)
+  return (
+    <>
+      {parts.actor} gjorde «{entry.action}»
+      {entry.subject && (
+        <>
+          {' '}
+          for <Who person={entry.subject} />
+        </>
+      )}
+      .
+    </>
+  )
+}

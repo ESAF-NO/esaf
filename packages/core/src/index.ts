@@ -19,6 +19,7 @@ export {
   setMemberAccess,
   type AccountView,
   type AuditEntry,
+  type AuditPerson,
 } from './admin.ts'
 export { AccessDeniedError, DomainError, NotFoundError, type AccessDeniedReason } from './errors.ts'
 export {

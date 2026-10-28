@@ -7,7 +7,6 @@ import {
   getEditablePost,
   getPost,
   listCohorts,
-  listCompanies,
   listPosts,
   setPostPinned,
   toggleVote,
@@ -84,10 +83,6 @@ export const removeComment = createServerFn({ method: 'POST' })
 export const vote = createServerFn({ method: 'POST' })
   .validator(z.object({ postId: z.uuid() }))
   .handler(({ data }) => run((viewer) => toggleVote(db, viewer, data.postId)))
-
-export const fetchCompanies = createServerFn({ method: 'GET' }).handler(() =>
-  run((viewer) => listCompanies(db, viewer)),
-)
 
 export const fetchCohorts = createServerFn({ method: 'GET' }).handler(() =>
   run((viewer) => listCohorts(db, viewer)),

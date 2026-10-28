@@ -2,8 +2,10 @@ import { schema, type Db } from '@esaf/db'
 import { parse } from 'csv-parse/sync'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import ExcelJS from 'exceljs'
+import { deleteOrphanCompanies, isCompanyName, resolveCompanies } from './companies.ts'
 import { normalizeEmail } from './members.ts'
-import { normalizeLinkedinUrl, tidyTag } from './profiles.ts'
+import { normalizeLinkedinUrl } from './profiles.ts'
+import { tidyTag } from './validation.ts'
 
 const { auditEvent, cohort, experience, membership, person, personCohort, personEmail } = schema
 
@@ -616,11 +618,25 @@ export async function applyProfileImport(
       ).map((c) => [c.graduationYear, c.id]),
     )
 
+    // Selskapene i arket kobles som i appen: samme slug blir samme selskap, og
+    // nye selskaper får skrivemåten som går igjen flest ganger.
+    const mentions = plan
+      .flatMap((row) => [row.role?.company, row.fields.esCompany?.slice(0, 120)])
+      .filter(isCompanyName)
+    const resolved = await resolveCompanies(
+      tx,
+      mentions.map((name) => ({ name })),
+    )
+    const companyIds = new Map(mentions.map((name, i) => [name, resolved[i]!]))
+
     let created = 0
     let existing = 0
     for (const row of plan) {
       let personId: string
-      let addRole = Boolean(row.role)
+      const { esCompany, ...fields } = row.fields
+      const esCompanyId = companyIds.get(esCompany?.slice(0, 120) ?? '') ?? null
+      const companyId = row.role ? companyIds.get(row.role.company) : undefined
+      let addRole = Boolean(companyId)
       if (row.action === 'create') {
         const [p] = await tx
           .insert(person)
@@ -631,7 +647,8 @@ export async function applyProfileImport(
             industries: row.industries,
             phone: row.phone,
             contactEmail: row.emails[0] ?? null,
-            ...row.fields,
+            ...fields,
+            esCompanyId,
           })
           .returning({ id: person.id })
         personId = p!.id
@@ -647,14 +664,15 @@ export async function applyProfileImport(
         existing++
         const fill: Record<string, unknown> = Object.fromEntries(
           Object.entries({
-            ...row.fields,
+            ...fields,
+            esCompanyId: esCompanyId ?? undefined,
             phone: row.phone ?? undefined,
             contactEmail: row.emails[0],
           })
             .filter(([, value]) => value !== undefined)
             .map(([key, value]) => [
               key,
-              sql`coalesce(${person[key as ProfileFieldKey | 'phone' | 'contactEmail']}, ${value})`,
+              sql`coalesce(${person[key as keyof typeof fields | 'esCompanyId' | 'phone' | 'contactEmail']}, ${value})`,
             ]),
         )
         for (const key of ['expertise', 'industries'] as const) {
@@ -678,8 +696,8 @@ export async function applyProfileImport(
           addRole = !row.claimed && !has
         }
       }
-      if (addRole && row.role) {
-        await tx.insert(experience).values({ personId, ...row.role })
+      if (addRole && row.role && companyId) {
+        await tx.insert(experience).values({ personId, companyId, title: row.role.title })
       }
       if (row.emails.length) {
         await tx
@@ -700,6 +718,9 @@ export async function applyProfileImport(
           .onConflictDoNothing()
       }
     }
+
+    // Selskaper fra rader som ikke ble brukt (profilen var alt fylt ut), skal ikke bli liggende.
+    await deleteOrphanCompanies(tx, resolved)
 
     await tx.insert(auditEvent).values({
       actorPersonId: null,

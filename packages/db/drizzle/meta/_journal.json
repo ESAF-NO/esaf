@@ -92,6 +92,13 @@
       "when": 1793228764454,
       "tag": "0012_profile_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793229061766,
+      "tag": "0013_companies",
+      "breakpoints": true
     }
   ]
 }

@@ -145,22 +145,42 @@ Lokalt sendes ingen e-post. Bekreftelseslenken skrives ut i terminalen der `pnpm
 
 ## Deploy
 
-Ingenting er deployet, og CI deployer ikke. DNS for `esaf.no` er ikke endret.
+Nettsiden deployes automatisk til Cloudflare fra GitHub Actions når oppsettet under er gjort. Appen er ikke deployet. `esaf.no` ligger i ESAFs Cloudflare-konto, der Email Routing er slått på for å videresende `styret@esaf.no` til foreningens Gmail. Domenet peker ikke til nettsiden ennå.
 
 ### Nettsiden til Cloudflare Workers Static Assets
 
-`apps/site/wrangler.jsonc` beskriver en Worker uten kode, som bare serverer `apps/site/dist`, med `404.html` for ukjente stier.
+`apps/site/wrangler.jsonc` beskriver en Worker uten kode, som bare serverer `apps/site/dist`, med `404.html` for ukjente stier. Workers Static Assets kan brukes på gratisplanen.
+
+**Automatisk deploy.** Jobben `deploy-site` i `.github/workflows/ci.yml` kjører ved push til `main`, etter at lint, typesjekk, tester, bygg og `verify:site` har gått gjennom. Den bygger nettsiden på nytt, kjører `verify:site` på akkurat de filene som publiseres, og kjører `wrangler deploy`. PR-er deployer aldri, men CI sjekker Cloudflare-oppsettet med `wrangler deploy --dry-run`, som ikke trenger innlogging. For å deploye `main` på nytt uten ny commit: `gh workflow run CI --ref main`.
+
+Slik er deployen sikret:
+
+- API-nøkkelen er en hemmelighet i GitHub-miljøet `production`. Bare jobber på `main` får bruke miljøet, og administratorer kan ikke overstyre det. PR-er og forks får aldri nøkkelen.
+- Nøkkelen har bare rettigheten «Workers Scripts: Edit» i ESAFs Cloudflare-konto. Det dekker også egne domener.
+- Deploy-jobben installerer bare nettsiden og verktøyene i roten, ikke appen og databasepakkene. pnpm kjører bare installasjonsskript for pakkene i `allowBuilds`.
+- Handlingene i arbeidsflyten er låst til commit-SHA. Dependabot foreslår oppdateringer månedlig, tidligst en uke etter at en ny versjon er sluppet.
+
+**Oppsett, én gang.** Krever tilgang til ESAFs Cloudflare-konto.
+
+1. Cloudflare: Manage Account → Account API Tokens → Create Token → Custom token. Gi den navnet `github-actions-esaf-site`, rettigheten Account · Workers Scripts · Edit og bare ESAF-kontoen under Account Resources. Bruk en kontoeid nøkkel, ikke en personlig, så den virker videre når styret byttes ut.
+2. `gh secret set CLOUDFLARE_API_TOKEN --env production --repo ESAF-NO/esaf` og lim inn nøkkelen når du blir spurt.
+3. `gh variable set CLOUDFLARE_ACCOUNT_ID --repo ESAF-NO/esaf --body <konto-ID>`. Konto-ID-en står på kontoens oversiktsside i Cloudflare. Variabelen slår på deploy-jobben, som hoppes over så lenge den mangler. Derfor hoppes den også over i forks.
+4. `gh workflow run CI --ref main`. Første deploy oppretter Workeren `esaf-site` på `esaf-site.<subdomene>.workers.dev`. Hvis kontoen ikke har et workers.dev-subdomene ennå, feiler deployen med beskjed om det. Åpne da Workers & Pages i Cloudflare én gang og velg et.
+
+For å bytte nøkkel: lag en ny, kjør steg 2 på nytt, start en deploy og slett den gamle nøkkelen i Cloudflare.
+
+**Koble til esaf.no.** Fjern kommentaren rundt `routes` i `wrangler.jsonc`, sett `"workers_dev": false` og push til `main`. Deployen oppretter da DNS-oppføringene og sertifikatene for `esaf.no` og `www.esaf.no`. Domenet har ingen nettsideoppføringer i dag, så ingenting blir overskrevet. Siden blir offentlig på `esaf.no`, så det krever en eksplisitt beslutning (se Åpne beslutninger).
+
+**Manuell deploy**, hvis CI ikke kan brukes:
 
 ```sh
 pnpm --filter @esaf/site build
 pnpm verify:site
 cd apps/site
-pnpm exec wrangler login            # én gang, med en konto som har tilgang til ESAF i Cloudflare
+pnpm exec wrangler login            # med en konto som har tilgang til ESAF i Cloudflare
 pnpm exec wrangler deploy --dry-run # valgfritt: viser hva som lastes opp
-pnpm exec wrangler deploy           # publiserer til esaf-site.<konto>.workers.dev
+pnpm exec wrangler deploy
 ```
-
-For å koble til `esaf.no`: fjern kommentaren rundt `routes` i `wrangler.jsonc` (`{ "pattern": "esaf.no", "custom_domain": true }`) og kjør `wrangler deploy` på nytt. Cloudflare oppretter da DNS-oppføringen og sertifikatet. Dette erstatter det som ligger på `esaf.no` i dag, så det krever en eksplisitt beslutning. Workers Static Assets kan brukes på gratisplanen.
 
 ### Appen på Node
 
@@ -187,14 +207,24 @@ Dette gjenstår før appen kan brukes av medlemmer:
 6. **Medlemsimport.** Importverktøyet finnes (se over). Det som gjenstår, er å avgjøre hvem som eier og verifiserer kullisten, rydde e-postadressene og kjøre importen mot produksjon.
 7. **Personvern.** Behandlingsgrunnlag, personvernerklæring og rutine for sletting.
 
+## Før repoet gjøres offentlig
+
+Repoet er privat. CI er laget for å være trygt også som offentlig repo: PR-er fra forks kjører med lesetilgang og uten hemmeligheter, deploy-jobben hoppes over i forks, og ingen arbeidsflyt bruker `pull_request_target`. Dette må gjøres før repoet åpnes, i denne rekkefølgen:
+
+1. **Fjern Gmail-adressen fra historikken.** Foreningens interne Gmail-adresse ligger i den første commiten (`9b9b9ff`), i `apps/site/KILDER.md` og `apps/site/src/site.config.ts`. Dagens filer har den ikke. Skriv om historikken, for eksempel med `git filter-repo --replace-text`, force-push alle grener og be alle med en klone om å klone på nytt. GitHub kan fortsatt vise gamle commits via SHA en stund. Be derfor GitHub Support rydde dem, eller opprett et nytt repo fra den ryddede historikken.
+2. **Skann historikken på nytt**, for eksempel med gitleaks. En gjennomgang i oktober 2026 fant ingen nøkler eller ekte persondata utenom Gmail-adressen. Testdata bruker `example.test`-adresser og oppdiktede telefonnumre.
+3. **Slå på secret scanning og push protection** under Settings → Code security.
+4. **Beskytt `main`** med en ruleset som blokkerer force-push og sletting. Det er ikke tilgjengelig for private repoer på gratisplanen.
+5. **Sjekk commit-forfattere.** E-postadressene i commitene blir synlige. Bruk GitHubs noreply-adresse framover hvis det ikke er ønsket.
+
 ## Åpne beslutninger
 
-- **Tekst og kontakt på esaf.no:** Teksten bygger på ESAFs partnerpresentasjon fra 2025 og NTNUs studieside. Kontaktadressen er foreningens generelle adresse. Styret må godkjenne formuleringene, bekrefte at aktivitetene fortsatt arrangeres og at adressen kan publiseres. Se `apps/site/KILDER.md`. Logo og bilder fra Drive er ikke tatt i bruk før rettigheter og samtykke er avklart.
+- **Tekst og kontakt på esaf.no:** Teksten bygger på ESAFs partnerpresentasjon fra 2025 og NTNUs studieside. Kontaktadressen er `styret@esaf.no`, som videresendes til foreningens Gmail. Styret må godkjenne formuleringene og bekrefte at aktivitetene fortsatt arrangeres. Se `apps/site/KILDER.md`. Logo og bilder fra Drive er ikke tatt i bruk før rettigheter og samtykke er avklart.
 - **Hvem skal få medlemsinnsyn:** Alumni, nåværende studenter, ansatte og/eller mentorer? Datamodellen støtter alle fire via `person_cohort.relation`, men godkjenningen skiller ikke mellom dem ennå.
 - **Hvilke kolonner fra kullisten som skal inn i appen:** Nå importeres bare navn, e-post og kull. Øvrige felt (f.eks. selskap og telefon) krever egne felt i skjemaet og en beslutning om hvem som får se dem.
 - **Medlemsstatus for importerte profiler:** `active` (standard) eller `venter`, se sikkerhetsavveiingen over.
 - **Hva medlemmer ser om hverandre:** Medlemsoversikten viser nå bare navn og kull, ikke e-post. Felttilgang må avgjøres før profiler bygges ut.
-- **Repo og hosting:** GitHub-reponavn og hosting for appen er ikke valgt.
+- **Hosting for appen:** Ikke valgt. Repoet er `ESAF-NO/esaf` og er privat.
 - **Innlogging:** Nå brukes e-post og passord med e-postbekreftelse. Magisk lenke, passkeys eller Google-innlogging kan legges til når e-post er på plass.
 - **MCP:** Ikke implementert. Bygg på `@esaf/core` med den offisielle MCP TypeScript SDK. Better Auths MCP-plugin er i beta og bør testes i en egen integrasjonstest før den velges.
 

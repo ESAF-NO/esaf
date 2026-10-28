@@ -1,0 +1,13 @@
+# Holder handlingene i .github/workflows oppdatert. De er låst til commit-SHA, så uten dette blir de stående.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # Vent en uke etter en ny versjon før den foreslås, i tilfelle den er kompromittert.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ['*']

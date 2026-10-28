@@ -9,7 +9,7 @@ function Home() {
     <main>
       <h1>ESAF-appen</h1>
       <p className="lead">
-        Det lukkede nettverket for ESAF – NTNUs Entreprenørskoles Alumniforening. Appen er under
+        Det lukkede nettverket for ESAF – Entreprenørskolens Alumniforening. Appen er under
         utvikling.
       </p>
       <p>

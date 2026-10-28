@@ -1,4 +1,4 @@
-import { companySlug, listCompanies, listPosts, searchPeople } from '@esaf/core'
+import { listPosts, searchCompanies, searchPeople } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { rethrowForClient } from '#/server/access.server.ts'
@@ -13,18 +13,19 @@ export const quickSearch = createServerFn({ method: 'GET' })
       const viewer = await getRequestViewer()
       const q = data.q.trim()
       if (q.length < 2) return { people: [], companies: [], posts: [] }
-      const slug = companySlug(q)
       const [people, companies, posts] = await Promise.all([
         searchPeople(db, viewer, q, 6),
-        listCompanies(db, viewer),
+        searchCompanies(db, viewer, q, 4),
         listPosts(db, viewer, { q, limit: 5 }),
       ])
       return {
         people,
-        companies: companies
-          .filter((c) => c.slug.includes(slug))
-          .slice(0, 4)
-          .map((c) => ({ slug: c.slug, name: c.name, people: c.people.length })),
+        companies: companies.map(({ slug, name, tagline, people }) => ({
+          slug,
+          name,
+          tagline,
+          people,
+        })),
         posts: posts.map((p) => ({ id: p.id, title: p.title, channel: p.channel })),
       }
     } catch (error) {

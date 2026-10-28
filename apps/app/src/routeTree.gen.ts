@@ -17,7 +17,6 @@ import { Route as KontoAdminRouteImport } from './routes/_konto/admin'
 import { Route as KontoKomIGangRouteImport } from './routes/_konto/kom-i-gang'
 import { Route as KontoKontoRouteImport } from './routes/_konto/konto'
 import { Route as KontoKullRouteImport } from './routes/_konto/kull'
-import { Route as KontoSelskaperRouteImport } from './routes/_konto/selskaper'
 import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -25,9 +24,12 @@ import { Route as KontoFeedIndexRouteImport } from './routes/_konto/feed/index'
 import { Route as KontoFeedPostIdRouteImport } from './routes/_konto/feed/$postId'
 import { Route as KontoFeedNyRouteImport } from './routes/_konto/feed/ny'
 import { Route as KontoMedlemmerIndexRouteImport } from './routes/_konto/medlemmer/index'
+import { Route as KontoSelskaperIndexRouteImport } from './routes/_konto/selskaper/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as KontoMedlemmerPersonIdIndexRouteImport } from './routes/_konto/medlemmer/$personId/index'
 import { Route as KontoMedlemmerPersonIdRedigerRouteImport } from './routes/_konto/medlemmer/$personId/rediger'
+import { Route as KontoSelskaperSlugIndexRouteImport } from './routes/_konto/selskaper/$slug/index'
+import { Route as KontoSelskaperSlugRedigerRouteImport } from './routes/_konto/selskaper/$slug/rediger'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -68,11 +70,6 @@ const KontoKullRoute = KontoKullRouteImport.update({
   path: '/kull',
   getParentRoute: () => KontoRoute,
 } as any)
-const KontoSelskaperRoute = KontoSelskaperRouteImport.update({
-  id: '/selskaper',
-  path: '/selskaper',
-  getParentRoute: () => KontoRoute,
-} as any)
 const KontoVelkommenRoute = KontoVelkommenRouteImport.update({
   id: '/velkommen',
   path: '/velkommen',
@@ -108,6 +105,11 @@ const KontoMedlemmerIndexRoute = KontoMedlemmerIndexRouteImport.update({
   path: '/medlemmer/',
   getParentRoute: () => KontoRoute,
 } as any)
+const KontoSelskaperIndexRoute = KontoSelskaperIndexRouteImport.update({
+  id: '/selskaper/',
+  path: '/selskaper/',
+  getParentRoute: () => KontoRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -125,6 +127,17 @@ const KontoMedlemmerPersonIdRedigerRoute =
     path: '/medlemmer/$personId/rediger',
     getParentRoute: () => KontoRoute,
   } as any)
+const KontoSelskaperSlugIndexRoute = KontoSelskaperSlugIndexRouteImport.update({
+  id: '/selskaper/$slug/',
+  path: '/selskaper/$slug/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoSelskaperSlugRedigerRoute =
+  KontoSelskaperSlugRedigerRouteImport.update({
+    id: '/selskaper/$slug/rediger',
+    path: '/selskaper/$slug/rediger',
+    getParentRoute: () => KontoRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -134,7 +147,6 @@ export interface FileRoutesByFullPath {
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/kull': typeof KontoKullRoute
-  '/selskaper': typeof KontoSelskaperRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
@@ -143,8 +155,11 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/feed/': typeof KontoFeedIndexRoute
   '/medlemmer/': typeof KontoMedlemmerIndexRoute
+  '/selskaper/': typeof KontoSelskaperIndexRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
+  '/selskaper/$slug/': typeof KontoSelskaperSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -154,7 +169,6 @@ export interface FileRoutesByTo {
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/kull': typeof KontoKullRoute
-  '/selskaper': typeof KontoSelskaperRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
@@ -163,8 +177,11 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/feed': typeof KontoFeedIndexRoute
   '/medlemmer': typeof KontoMedlemmerIndexRoute
+  '/selskaper': typeof KontoSelskaperIndexRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/medlemmer/$personId': typeof KontoMedlemmerPersonIdIndexRoute
+  '/selskaper/$slug': typeof KontoSelskaperSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -176,7 +193,6 @@ export interface FileRoutesById {
   '/_konto/kom-i-gang': typeof KontoKomIGangRoute
   '/_konto/konto': typeof KontoKontoRoute
   '/_konto/kull': typeof KontoKullRoute
-  '/_konto/selskaper': typeof KontoSelskaperRoute
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
@@ -185,8 +201,11 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/_konto/feed/': typeof KontoFeedIndexRoute
   '/_konto/medlemmer/': typeof KontoMedlemmerIndexRoute
+  '/_konto/selskaper/': typeof KontoSelskaperIndexRoute
   '/_konto/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/_konto/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/_konto/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
+  '/_konto/selskaper/$slug/': typeof KontoSelskaperSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -198,7 +217,6 @@ export interface FileRouteTypes {
     | '/kom-i-gang'
     | '/konto'
     | '/kull'
-    | '/selskaper'
     | '/velkommen'
     | '/venter'
     | '/api/health'
@@ -207,8 +225,11 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/feed/'
     | '/medlemmer/'
+    | '/selskaper/'
     | '/medlemmer/$personId/rediger'
+    | '/selskaper/$slug/rediger'
     | '/medlemmer/$personId/'
+    | '/selskaper/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -218,7 +239,6 @@ export interface FileRouteTypes {
     | '/kom-i-gang'
     | '/konto'
     | '/kull'
-    | '/selskaper'
     | '/velkommen'
     | '/venter'
     | '/api/health'
@@ -227,8 +247,11 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/feed'
     | '/medlemmer'
+    | '/selskaper'
     | '/medlemmer/$personId/rediger'
+    | '/selskaper/$slug/rediger'
     | '/medlemmer/$personId'
+    | '/selskaper/$slug'
   id:
     | '__root__'
     | '/'
@@ -239,7 +262,6 @@ export interface FileRouteTypes {
     | '/_konto/kom-i-gang'
     | '/_konto/konto'
     | '/_konto/kull'
-    | '/_konto/selskaper'
     | '/_konto/velkommen'
     | '/_konto/venter'
     | '/api/health'
@@ -248,8 +270,11 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/_konto/feed/'
     | '/_konto/medlemmer/'
+    | '/_konto/selskaper/'
     | '/_konto/medlemmer/$personId/rediger'
+    | '/_konto/selskaper/$slug/rediger'
     | '/_konto/medlemmer/$personId/'
+    | '/_konto/selskaper/$slug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -319,13 +344,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoKullRouteImport
       parentRoute: typeof KontoRoute
     }
-    '/_konto/selskaper': {
-      id: '/_konto/selskaper'
-      path: '/selskaper'
-      fullPath: '/selskaper'
-      preLoaderRoute: typeof KontoSelskaperRouteImport
-      parentRoute: typeof KontoRoute
-    }
     '/_konto/velkommen': {
       id: '/_konto/velkommen'
       path: '/velkommen'
@@ -375,6 +393,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoMedlemmerIndexRouteImport
       parentRoute: typeof KontoRoute
     }
+    '/_konto/selskaper/': {
+      id: '/_konto/selskaper/'
+      path: '/selskaper'
+      fullPath: '/selskaper/'
+      preLoaderRoute: typeof KontoSelskaperIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -396,6 +421,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoMedlemmerPersonIdRedigerRouteImport
       parentRoute: typeof KontoRoute
     }
+    '/_konto/selskaper/$slug/': {
+      id: '/_konto/selskaper/$slug/'
+      path: '/selskaper/$slug'
+      fullPath: '/selskaper/$slug/'
+      preLoaderRoute: typeof KontoSelskaperSlugIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/selskaper/$slug/rediger': {
+      id: '/_konto/selskaper/$slug/rediger'
+      path: '/selskaper/$slug/rediger'
+      fullPath: '/selskaper/$slug/rediger'
+      preLoaderRoute: typeof KontoSelskaperSlugRedigerRouteImport
+      parentRoute: typeof KontoRoute
+    }
   }
 }
 
@@ -404,15 +443,17 @@ interface KontoRouteChildren {
   KontoKomIGangRoute: typeof KontoKomIGangRoute
   KontoKontoRoute: typeof KontoKontoRoute
   KontoKullRoute: typeof KontoKullRoute
-  KontoSelskaperRoute: typeof KontoSelskaperRoute
   KontoVelkommenRoute: typeof KontoVelkommenRoute
   KontoVenterRoute: typeof KontoVenterRoute
   KontoFeedPostIdRoute: typeof KontoFeedPostIdRoute
   KontoFeedNyRoute: typeof KontoFeedNyRoute
   KontoFeedIndexRoute: typeof KontoFeedIndexRoute
   KontoMedlemmerIndexRoute: typeof KontoMedlemmerIndexRoute
+  KontoSelskaperIndexRoute: typeof KontoSelskaperIndexRoute
   KontoMedlemmerPersonIdRedigerRoute: typeof KontoMedlemmerPersonIdRedigerRoute
+  KontoSelskaperSlugRedigerRoute: typeof KontoSelskaperSlugRedigerRoute
   KontoMedlemmerPersonIdIndexRoute: typeof KontoMedlemmerPersonIdIndexRoute
+  KontoSelskaperSlugIndexRoute: typeof KontoSelskaperSlugIndexRoute
 }
 
 const KontoRouteChildren: KontoRouteChildren = {
@@ -420,15 +461,17 @@ const KontoRouteChildren: KontoRouteChildren = {
   KontoKomIGangRoute: KontoKomIGangRoute,
   KontoKontoRoute: KontoKontoRoute,
   KontoKullRoute: KontoKullRoute,
-  KontoSelskaperRoute: KontoSelskaperRoute,
   KontoVelkommenRoute: KontoVelkommenRoute,
   KontoVenterRoute: KontoVenterRoute,
   KontoFeedPostIdRoute: KontoFeedPostIdRoute,
   KontoFeedNyRoute: KontoFeedNyRoute,
   KontoFeedIndexRoute: KontoFeedIndexRoute,
   KontoMedlemmerIndexRoute: KontoMedlemmerIndexRoute,
+  KontoSelskaperIndexRoute: KontoSelskaperIndexRoute,
   KontoMedlemmerPersonIdRedigerRoute: KontoMedlemmerPersonIdRedigerRoute,
+  KontoSelskaperSlugRedigerRoute: KontoSelskaperSlugRedigerRoute,
   KontoMedlemmerPersonIdIndexRoute: KontoMedlemmerPersonIdIndexRoute,
+  KontoSelskaperSlugIndexRoute: KontoSelskaperSlugIndexRoute,
 }
 
 const KontoRouteWithChildren = KontoRoute._addFileChildren(KontoRouteChildren)

@@ -2,18 +2,17 @@ import { schema, type Db } from '@esaf/db'
 import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import {
+  companyName,
+  deleteOrphanCompanies,
+  optionalCompanyName,
+  resolveCompanies,
+} from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
+import { optionalText, tagList, yearInput } from './validation.ts'
 
-const { auditEvent, cohort, experience, membership, person, personCohort } = schema
-
-const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max, `Maks ${max} tegn.`)
-    .transform((v) => (v === '' ? null : v))
-    .nullable()
+const { auditEvent, cohort, company, experience, membership, person, personCohort } = schema
 
 export const LINKEDIN_URL = /^https:\/\/([a-z]{2,3}\.)?linkedin\.com\/(in|company)\/[^\s/?#]+\/?$/i
 
@@ -38,37 +37,17 @@ export function normalizeLinkedinUrl(raw: string): string | null {
   return LINKEDIN_URL.test(normalized) ? normalized : null
 }
 
+const year = yearInput(1950)
+
 /**
- * Stikkord skrevet med bare små bokstaver får stor forbokstav, så samme emne ser
- * likt ut på tvers av profiler og import («strategi» → «Strategi»). «iOS» og
- * «B2B-salg» røres ikke.
+ * Én jobb eller ett selskap i erfaringslisten. Uten sluttår er det nåværende.
+ * `companyId` er selskapet som ble valgt i forslagslisten; uten det kobles navnet
+ * til selskapet med samme slug, eller blir et nytt selskap.
  */
-export const tidyTag = (tag: string) =>
-  tag === tag.toLocaleLowerCase('nb') ? tag.charAt(0).toLocaleUpperCase('nb') + tag.slice(1) : tag
-
-/** Stikkord (emner, bransjer): maks 10 à 40 tegn. Duplikater fjernes uavhengig av store/små bokstaver. */
-const tagList = (one: string, many: string) =>
-  z
-    .array(z.string().trim().min(1).max(40, `Hvert ${one} kan ha maks 40 tegn.`).transform(tidyTag))
-    .max(10, `Maks 10 ${many}.`)
-    .transform((tags) =>
-      tags.filter(
-        (t, i) =>
-          tags.findIndex((o) => o.toLocaleLowerCase('nb') === t.toLocaleLowerCase('nb')) === i,
-      ),
-    )
-
-const year = z
-  .number()
-  .int()
-  .min(1950, 'Ugyldig årstall.')
-  .refine((y) => y <= new Date().getFullYear() + 1, 'Årstallet kan ikke være så langt fram i tid.')
-  .nullable()
-
-/** Én jobb eller ett selskap i erfaringslisten. Uten sluttår er det nåværende. */
 export const experienceInput = z
   .object({
-    company: z.string().trim().min(1, 'Skriv inn selskapet.').max(120, 'Maks 120 tegn.'),
+    companyId: z.uuid().nullable().optional(),
+    company: companyName,
     title: optionalText(120),
     startYear: year,
     endYear: year,
@@ -88,7 +67,9 @@ export const profileInput = z.object({
   fullName: z.string().trim().min(2, 'Navn må ha minst 2 tegn.').max(120),
   city: optionalText(80),
   studyBackground: optionalText(120),
-  esCompany: optionalText(120),
+  /** Selskapet på Entreprenørskolen, koblet til et selskap som erfaringen. */
+  esCompany: optionalCompanyName,
+  esCompanyId: z.uuid().nullable().optional(),
   bio: optionalText(1000),
   expertise: tagList('emne', 'emner'),
   industries: tagList('bransjenavn', 'bransjer'),
@@ -123,7 +104,9 @@ const profileColumns = {
   userId: person.userId,
   city: person.city,
   studyBackground: person.studyBackground,
-  esCompany: person.esCompany,
+  esCompanyId: person.esCompanyId,
+  esCompany: company.name,
+  esCompanySlug: company.slug,
   bio: person.bio,
   expertise: person.expertise,
   industries: person.industries,
@@ -144,6 +127,7 @@ export type Profile = {
   city: string | null
   studyBackground: string | null
   esCompany: string | null
+  esCompanySlug: string | null
   bio: string | null
   expertise: string[]
   industries: string[]
@@ -169,6 +153,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     .select({ ...profileColumns, status: membership.status })
     .from(person)
     .innerJoin(membership, eq(membership.personId, person.id))
+    .leftJoin(company, eq(company.id, person.esCompanyId))
     .where(eq(person.id, personId))
   const isOwn = viewer.personId === personId
   if (!row || (row.status !== 'active' && !isOwn)) throw new NotFoundError('Fant ikke profilen.')
@@ -193,6 +178,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     city: row.city,
     studyBackground: row.studyBackground,
     esCompany: row.esCompany,
+    esCompanySlug: row.esCompanySlug,
     bio: row.bio,
     expertise: row.expertise,
     industries: row.industries,
@@ -213,8 +199,9 @@ function assertCanEdit(viewer: Viewer, personId: string) {
   return isOwn
 }
 
-export type EditableProfile = Omit<z.output<typeof profileInput>, 'experience'> & {
+export type EditableProfile = Omit<z.output<typeof profileInput>, 'experience' | 'esCompanyId'> & {
   personId: string
+  esCompanyId: string | null
   isOwn: boolean
   experience: Experience[]
 }
@@ -229,9 +216,13 @@ export async function getEditableProfile(
   personId: string,
 ): Promise<EditableProfile> {
   const isOwn = assertCanEdit(viewer, personId)
-  const [row] = await db.select(profileColumns).from(person).where(eq(person.id, personId))
+  const [row] = await db
+    .select(profileColumns)
+    .from(person)
+    .leftJoin(company, eq(company.id, person.esCompanyId))
+    .where(eq(person.id, personId))
   if (!row) throw new NotFoundError('Fant ikke profilen.')
-  const { userId: _userId, ...fields } = row
+  const { userId: _userId, esCompanySlug: _esCompanySlug, ...fields } = row
   const experiences = await loadExperience(db, [personId])
   const contact = isOwn
     ? {}
@@ -259,24 +250,52 @@ export async function updateProfile(
     phone,
     phoneVisible,
     experience: roles,
+    esCompany,
+    esCompanyId,
     ...fields
   } = parsed.data
   const contact = { contactEmail, contactEmailVisible, phone, phoneVisible }
 
   await db.transaction(async (tx) => {
-    const updated = await tx
-      .update(person)
-      .set(isOwn ? { ...fields, ...contact } : fields)
+    const [before] = await tx
+      .select({ esCompanyId: person.esCompanyId })
+      .from(person)
       .where(eq(person.id, personId))
-      .returning({ id: person.id })
-    if (updated.length === 0) throw new NotFoundError('Fant ikke profilen.')
+      .for('update')
+    if (!before) throw new NotFoundError('Fant ikke profilen.')
+    const previous = await tx
+      .select({ companyId: experience.companyId })
+      .from(experience)
+      .where(eq(experience.personId, personId))
+
+    // ES-selskapet sist, så rekkefølgen på erfaringen beholdes.
+    const companyIds = await resolveCompanies(tx, [
+      ...roles.map((r) => ({ companyId: r.companyId, name: r.company })),
+      ...(esCompany ? [{ companyId: esCompanyId, name: esCompany }] : []),
+    ])
+    const esId = esCompany ? companyIds.at(-1)! : null
+
+    await tx
+      .update(person)
+      .set({ ...(isOwn ? { ...fields, ...contact } : fields), esCompanyId: esId })
+      .where(eq(person.id, personId))
     // Listen lagres som en helhet, i rekkefølgen personen satte opp.
     await tx.delete(experience).where(eq(experience.personId, personId))
     if (roles.length) {
-      await tx
-        .insert(experience)
-        .values(roles.map((role, position) => ({ ...role, personId, position })))
+      await tx.insert(experience).values(
+        roles.map(({ company: _name, companyId: _chosen, ...role }, position) => ({
+          ...role,
+          companyId: companyIds[position]!,
+          personId,
+          position,
+        })),
+      )
     }
+    // Et selskap som bare fantes fordi personen skrev det (f.eks. en skrivefeil), ryddes bort.
+    await deleteOrphanCompanies(tx, [
+      ...previous.map((p) => p.companyId).filter((id) => !companyIds.includes(id)),
+      before.esCompanyId !== esId ? before.esCompanyId : null,
+    ])
     if (!isOwn) {
       await tx.insert(auditEvent).values({
         actorPersonId: viewer!.personId,

@@ -2,6 +2,7 @@ import type { Experience } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, BriefcaseBusiness, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { CompanyInput, type CompanyValue } from '#/components/CompanyInput.tsx'
 import { TagInput } from '#/components/TagInput.tsx'
 import {
   Avatar,
@@ -14,6 +15,7 @@ import {
   Input,
   Textarea,
 } from '#/components/ui.tsx'
+import { industrySuggestions } from '#/lib/industries.ts'
 import { fetchEditableProfile, saveProfile } from '#/lib/profiles.functions.ts'
 
 export const Route = createFileRoute('/_konto/medlemmer/$personId/rediger')({
@@ -43,31 +45,6 @@ const expertiseSuggestions = [
   'Ledelse',
   'Internasjonal ekspansjon',
   'Offentlige anbud',
-]
-
-const industrySuggestions = [
-  'Energi',
-  'Fornybar energi',
-  'Olje og gass',
-  'Maritim',
-  'Havbruk',
-  'Helse og medtech',
-  'Finans',
-  'Bank og forsikring',
-  'IT og programvare',
-  'Telekom',
-  'Media',
-  'Bygg og eiendom',
-  'Industri',
-  'Logistikk',
-  'Handel og netthandel',
-  'Konsulent',
-  'Venture capital',
-  'Offentlig sektor',
-  'Utdanning',
-  'Reiseliv',
-  'Mat og landbruk',
-  'Forskning',
 ]
 
 function Section({
@@ -114,6 +91,8 @@ function Toggle({
 type Role = {
   key: string
   company: string
+  /** Selskapet som ble valgt i forslagslisten. */
+  companyId: string | null
   title: string
   startYear: string
   endYear: string
@@ -124,6 +103,7 @@ type Role = {
 const toRole = (e: Experience): Role => ({
   key: e.id,
   company: e.company,
+  companyId: e.companyId,
   title: e.title ?? '',
   startYear: e.startYear ? String(e.startYear) : '',
   endYear: e.endYear ? String(e.endYear) : '',
@@ -134,6 +114,7 @@ const toRole = (e: Experience): Role => ({
 const blankRole = (): Role => ({
   key: crypto.randomUUID(),
   company: '',
+  companyId: null,
   title: '',
   startYear: '',
   endYear: '',
@@ -186,15 +167,13 @@ function RoleEditor({
         )}
         <div className="min-w-0 flex-1 space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Selskap">
-              <Input
-                value={role.company}
-                onChange={(e) => onChange({ company: e.target.value })}
-                maxLength={120}
-                placeholder="Equinor"
-                autoFocus={!role.company && !role.title}
-              />
-            </Field>
+            <CompanyInput
+              label="Selskap"
+              value={{ name: role.company, companyId: role.companyId }}
+              onChange={({ name, companyId }) => onChange({ company: name, companyId })}
+              placeholder="Equinor"
+              autoFocus={!role.company && !role.title}
+            />
             <Field label="Stilling">
               <Input
                 value={role.title}
@@ -264,6 +243,7 @@ function toExperience(roles: Role[]) {
     }
   }
   return filled.map((r) => ({
+    companyId: r.companyId,
     company: r.company,
     title: r.title,
     startYear: year(r.startYear),
@@ -280,6 +260,10 @@ function EditProfile() {
   const [roles, setRoles] = useState<Role[]>(() => profile.experience.map(toRole))
   const [expertise, setExpertise] = useState(profile.expertise)
   const [industries, setIndustries] = useState(profile.industries)
+  const [esCompany, setEsCompany] = useState<CompanyValue>({
+    name: profile.esCompany ?? '',
+    companyId: profile.esCompanyId,
+  })
 
   const patchRole = (key: string, patch: Partial<Role>) =>
     setRoles((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)))
@@ -298,7 +282,8 @@ function EditProfile() {
             fullName: text('fullName'),
             city: text('city'),
             studyBackground: text('studyBackground'),
-            esCompany: text('esCompany'),
+            esCompany: esCompany.name,
+            esCompanyId: esCompany.companyId,
             bio: text('bio'),
             expertise,
             industries,
@@ -437,9 +422,11 @@ function EditProfile() {
                 maxLength={120}
               />
             </Field>
-            <Field label="Selskap på Entreprenørskolen">
-              <Input name="esCompany" defaultValue={profile.esCompany ?? ''} maxLength={120} />
-            </Field>
+            <CompanyInput
+              label="Selskap på Entreprenørskolen"
+              value={esCompany}
+              onChange={setEsCompany}
+            />
           </div>
           <Field label="LinkedIn">
             <Input

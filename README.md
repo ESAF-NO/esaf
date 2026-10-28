@@ -64,21 +64,24 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 
 ### Datamodell
 
-| Tabell                                       | Innhold                                                                                                                                                                                                       |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`, `session`, `account`, `verification` | Better Auth: innloggingsidentitet. Gir ingen tilgang alene.                                                                                                                                                   |
-| `person`                                     | En person ESAF kjenner til. Uten `user_id` er det en _profil_ (f.eks. fra kullisten). Med `user_id` har personen selv tatt den i bruk (`claimed_at`). `source` sier om den kom fra registrering eller import. |
-| `experience`                                 | Hvor personen jobber og har jobbet: selskap, stilling, fra- og til-år og om personen grunnla selskapet. Uten til-år er det nåværende. Den nyeste nåværende vises som stilling under navnet.                   |
-| `cohort`                                     | Et kull, identifisert ved uteksamineringsåret, slik ES selv navngir kull: «ES 2024» startet høsten 2022.                                                                                                      |
-| `person_cohort`                              | Tilknytning mellom person og kull, med type: `student`, `staff` eller `mentor`.                                                                                                                               |
-| `person_email`                               | Alle kjente e-postadresser for en person (registrering, kulliste, NTNU-mail, senere andre kilder). Brukes til å koble en konto til riktig profil. Vises aldri for andre medlemmer.                            |
-| `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`admin`).                                                                                                          |
-| `access_request`                             | Forespørsel om tilgang fra en konto med bekreftet e-post: navn, kull, valgfri LinkedIn og melding, og eventuelt profilen fra kullisten personen sier er dem. Status `open`, `approved` eller `rejected`.      |
-| `audit_event`                                | Revisjonslogg for forespørsler, godkjenninger, admintildelinger og importer.                                                                                                                                  |
+| Tabell                                       | Innhold                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user`, `session`, `account`, `verification` | Better Auth: innloggingsidentitet. Gir ingen tilgang alene.                                                                                                                                                                                                          |
+| `person`                                     | En person ESAF kjenner til. Uten `user_id` er det en _profil_ (f.eks. fra kullisten). Med `user_id` har personen selv tatt den i bruk (`claimed_at`). `source` sier om den kom fra registrering eller import.                                                        |
+| `experience`                                 | Hvor personen jobber og har jobbet: selskap (`company_id`), stilling, fra- og til-år og om personen grunnla selskapet. Uten til-år er det nåværende. Den nyeste nåværende vises som stilling under navnet.                                                           |
+| `company`                                    | Et selskap: unik `slug` (følger navnet), navn, kort beskrivelse, «om selskapet», nettside, grunnlagt, sted, bransjer og status (`active`/`acquired`/`closed`). `alias_slugs` er tidligere slugger og sammenslåtte duplikater. `person.es_company_id` peker også hit. |
+| `cohort`                                     | Et kull, identifisert ved uteksamineringsåret, slik ES selv navngir kull: «ES 2024» startet høsten 2022.                                                                                                                                                             |
+| `person_cohort`                              | Tilknytning mellom person og kull, med type: `student`, `staff` eller `mentor`.                                                                                                                                                                                      |
+| `person_email`                               | Alle kjente e-postadresser for en person (registrering, kulliste, NTNU-mail, senere andre kilder). Brukes til å koble en konto til riktig profil. Vises aldri for andre medlemmer.                                                                                   |
+| `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`admin`).                                                                                                                                                                 |
+| `access_request`                             | Forespørsel om tilgang fra en konto med bekreftet e-post: navn, kull, valgfri LinkedIn og melding, og eventuelt profilen fra kullisten personen sier er dem. Status `open`, `approved` eller `rejected`.                                                             |
+| `audit_event`                                | Revisjonslogg for forespørsler, godkjenninger, admintildelinger og importer.                                                                                                                                                                                         |
 
 **Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (årstall, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
 
 **Hvorfor uteksamineringsår:** Kullistene, fanene i telefonlista og folk selv bruker uteksamineringsåret. ES 2024 gikk 2022–2024. Profilen viser begge («ES 2024 (2022–2024)»). Migrering `0006` flyttet eksisterende kull fra opptaksår til uteksamineringsår (+2).
+
+**Hvorfor selskap er en egen tabell:** Med selskapet som fritekst ble «Kahoot!» og «kahoot» to ting, og det fantes ikke noe sted å skrive hva selskapet gjør. Nå peker erfaring og ES-selskap på et `company`, så info skrives én gang og vises for alle. Migrering `0010` laget selskapene fra navnene som fantes: navn med samme slug ble ett selskap, og skrivemåten som var brukt flest ganger ble navnet. SQL-funksjonen `company_slug` i databasen er samme regel som `companySlug` i `@esaf/core`, og en test sjekker at de gir samme svar.
 
 **Hvorfor erfaring er en egen tabell:** Én person har ofte jobbet flere steder og startet flere selskaper. Med en liste kan man søke på tidligere arbeidsgivere, og selskapssiden kan vise både gründerselskaper og hvor alumni jobber. Stilling og selskap lå tidligere som to felt på personen. Migrering `0007` flyttet dem over.
 
@@ -91,7 +94,7 @@ Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lu
 - **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatter eller admin kan slette.
 - **Personer** (`/medlemmer`) er en katalog med søk, kullfilter, filter for verifiserte og de mest brukte emnene og bransjene som snarveier. Søket treffer også tidligere selskaper og stillinger.
 - **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden.
-- **Selskaper** (`/selskaper`) viser selskaper startet av alumni, både ES-selskaper (fra «Selskap på Entreprenørskolen») og selskaper noen har grunnlagt (fra erfaring). «Alle selskaper» viser også arbeidsgivere, med hvem som jobber der nå og hvem som har jobbet der.
+- **Selskaper** (`/selskaper`) viser selskaper startet av alumni, både ES-selskaper (fra «Selskap på Entreprenørskolen») og selskaper noen har grunnlagt (fra erfaring). «Alle selskaper» viser også arbeidsgivere. Oversikten kan søkes og filtreres på bransje (`?q=…&bransje=…`). Hvert selskap har en egen side (`/selskaper/:slug`), se «Selskaper» under.
 - **Søk** med ⌘K (eller `/`) finner personer, selskaper og innlegg fra hvor som helst i appen.
 - **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom.
 - **Profiler, redigering og admin**, se under.
@@ -108,6 +111,16 @@ Hver person har en profilside (`/medlemmer/:id`) med erfaring (nåværende og ti
 - **Stikkord** (emner og bransjer) med bare små bokstaver får stor forbokstav, så «strategi» og «Strategi» blir samme emne.
 - **Validering** ligger i `profileInput` i `@esaf/core`, så MCP senere kan bruke den samme.
 - **Profilbilder** er ikke på plass ennå. Initialer vises i stedet. Opplasting krever lagring, for eksempel Cloudflare R2.
+
+## Selskaper
+
+Selskapssiden (`/selskaper/:slug`) viser navn, kort beskrivelse, status (aktiv, oppkjøpt, nedlagt), nettside, grunnlagt, sted, bransjer og «om selskapet». Under «Fra ES» står gründerne, ES-teamet (med kull), de som jobber der nå og de som har jobbet der, med stilling og år, og lenker til profilene. Bare aktive medlemmer vises.
+
+- **Redigering:** Gründere (også tidligere), ES-teamet og de som jobber der nå kan redigere selskapsinfoen, og admins med `profiles.edit`. Tidligere ansatte og andre medlemmer kan ikke. Admins som ikke selv er knyttet til selskapet, logges som `company.admin_edit`. Validering ligger i `companyInput` i `@esaf/core`; nettsider må være http eller https.
+- **Nytt navn** gir ny slug. Den gamle blir et alias, så gamle lenker sendes videre og den gamle skrivemåten kobles fortsatt til selskapet. Et navn som tilhører et annet selskap, avvises.
+- **Erfaring:** Selskapsfeltet i profilen og velkomststegene foreslår selskaper som finnes mens man skriver. Et valgt forslag kobles på id. Skriver man et navn, kobles det til selskapet med samme slug («kahoot» blir «Kahoot!»), ellers blir det et nytt selskap. Et selskap som bare ble laget fra et navn og som ingen lenger er knyttet til (for eksempel en rettet skrivefeil), ryddes bort. Importen fra kullisten kobler selskaper på samme måte.
+- **Duplikater:** «Statkraft AS» og «Statkraft» er to slugger. Forslagene viser «Statkraft» når man skriver «Statkraft AS», og en admin kan slå dem sammen nederst på redigeringssiden. Erfaring og ES-team flyttes, tomme felt fylles fra duplikatet, og duplikatets slug blir et alias. Logges som `company.merge`.
+- **Søk:** ⌘K finner selskaper uansett skrivemåte og går til selskapssiden.
 
 ## Profiler og import av kullisten
 

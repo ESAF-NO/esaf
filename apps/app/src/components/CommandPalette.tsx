@@ -3,7 +3,7 @@ import { Building2, CornerDownLeft, FileText, Search, Users } from 'lucide-react
 import { useEffect, useMemo, useState } from 'react'
 import { channels, type ChannelKey } from '#/lib/channels.ts'
 import { quickSearch } from '#/lib/search.functions.ts'
-import { Avatar, cx, Verified } from './ui.tsx'
+import { Avatar, CompanyMark, cx, Verified } from './ui.tsx'
 
 type Results = Awaited<ReturnType<typeof quickSearch>>
 type Item = {
@@ -91,19 +91,31 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const companies: Item[] = results.companies.map((c) => ({
       key: `c-${c.slug}`,
       label: c.name,
-      go: go(() => router.navigate({ to: '/selskaper', search: { q: c.name } })),
+      go: go(() => router.navigate({ to: '/selskaper/$slug', params: { slug: c.slug } })),
       render: () => (
         <>
-          <span className="grid size-8 place-items-center rounded-lg bg-stone-900 text-xs font-semibold text-white">
-            {c.name[0]}
-          </span>
-          <span className="flex-1">
-            <span className="block font-medium text-stone-900">{c.name}</span>
-            <span className="block text-xs text-stone-500">{c.people} fra ES</span>
+          <CompanyMark name={c.name} size="sm" className="size-8 text-xs" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium text-stone-900">{c.name}</span>
+            <span className="block truncate text-xs text-stone-500">
+              {[c.tagline, c.people ? `${c.people} fra ES` : null].filter(Boolean).join(' · ')}
+            </span>
           </span>
         </>
       ),
     }))
+    if (results.companies.length) {
+      companies.push({
+        key: 'all-companies',
+        label: 'Alle selskaper',
+        go: go(() => router.navigate({ to: '/selskaper', search: { q: term, vis: 'alle' } })),
+        render: () => (
+          <span className="pl-11 text-sm text-stone-500">
+            Se alle selskaper som matcher «{term}»
+          </span>
+        ),
+      })
+    }
     const posts: Item[] = results.posts.map((p) => {
       const Icon = channels[p.channel as ChannelKey].icon
       return {

@@ -1,4 +1,5 @@
 // @ts-check
+import sitemap from '@astrojs/sitemap'
 import { defineConfig } from 'astro/config'
 
 // Ren statisk side. Ingen adapter, ingen server og ingen avhengighet til apps/app.
@@ -9,5 +10,7 @@ export default defineConfig({
   // Interne lenker og kanoniske URL-er skrives derfor uten skråstrek på slutten.
   trailingSlash: 'never',
   build: { format: 'file' },
+  // sitemap-index.xml med alle sider unntatt 404. robots.txt peker hit.
+  integrations: [sitemap({ filter: (page) => !/\/404\/?$/.test(page) })],
   server: { port: 4321 },
 })

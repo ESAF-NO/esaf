@@ -1,5 +1,6 @@
-// Lager Open Graph-bilde og apple-touch-icon fra SVG. Kjør på nytt når identiteten endres:
+// Lager Open Graph-bilde, apple-touch-icon og favicon.ico fra SVG. Kjør på nytt når identiteten endres:
 //   pnpm --filter @esaf/site exec node scripts/generate-images.mjs
+import { readFile, writeFile } from 'node:fs/promises'
 import sharp from 'sharp'
 
 const ink = '#16191d'
@@ -28,4 +29,26 @@ await sharp(Buffer.from(og))
 await sharp(Buffer.from(icon))
   .png()
   .toFile(new URL('../public/apple-touch-icon.png', import.meta.url).pathname)
-console.log('Skrev public/og.png og public/apple-touch-icon.png')
+
+// favicon.ico for nettlesere som ikke bruker SVG-ikonet, blant annet Safari: PNG-bilder i 16, 32 og 48 px i en ICO-fil.
+const faviconSvg = await readFile(new URL('../public/favicon.svg', import.meta.url))
+const sizes = [16, 32, 48]
+const pngs = await Promise.all(
+  sizes.map((size) => sharp(faviconSvg, { density: 384 }).resize(size, size).png().toBuffer()),
+)
+const header = Buffer.alloc(6 + 16 * sizes.length)
+header.writeUInt16LE(1, 2) // filtype: ikon
+header.writeUInt16LE(sizes.length, 4)
+let offset = header.length
+sizes.forEach((size, i) => {
+  const entry = 6 + 16 * i
+  header.writeUInt8(size, entry)
+  header.writeUInt8(size, entry + 1)
+  header.writeUInt16LE(1, entry + 4) // fargeplan
+  header.writeUInt16LE(32, entry + 6) // biter per piksel
+  header.writeUInt32LE(pngs[i].length, entry + 8)
+  header.writeUInt32LE(offset, entry + 12)
+  offset += pngs[i].length
+})
+await writeFile(new URL('../public/favicon.ico', import.meta.url), Buffer.concat([header, ...pngs]))
+console.log('Skrev public/og.png, public/apple-touch-icon.png og public/favicon.ico')

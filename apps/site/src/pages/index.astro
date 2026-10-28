@@ -5,6 +5,27 @@ import Header from '../components/Header.astro'
 import Base from '../layouts/Base.astro'
 import { siteConfig } from '../site.config'
 
+// Strukturerte data for søkemotorer: navnet på nettstedet og foreningen.
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      name: siteConfig.name,
+      alternateName: siteConfig.fullName,
+      url: `${siteConfig.url}/`,
+      inLanguage: 'nb',
+    },
+    {
+      '@type': 'Organization',
+      name: siteConfig.name,
+      alternateName: siteConfig.fullName,
+      url: `${siteConfig.url}/`,
+      ...(siteConfig.contactEmail ? { email: siteConfig.contactEmail } : {}),
+    },
+  ],
+}
+
 const events = [
   {
     title: 'ESAF-helg',
@@ -22,6 +43,12 @@ const events = [
 ---
 
 <Base>
+  <script
+    is:inline
+    slot="head"
+    type="application/ld+json"
+    set:html={JSON.stringify(structuredData)}
+  />
   <Header />
   <main id="innhold">
     <section class="hero" aria-labelledby="hero-title">

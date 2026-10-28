@@ -7,6 +7,8 @@ export type {
   CohortRelation,
   MemberRole,
   MembershipStatus,
+  NotificationPayload,
+  NotificationType,
   PersonSource,
   PostChannel,
 } from './schema.ts'

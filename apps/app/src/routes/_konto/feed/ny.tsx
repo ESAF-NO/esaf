@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { z } from 'zod'
-import { Button, Card, cx, ErrorText, Field, Input, Textarea } from '#/components/ui.tsx'
+import { MentionTextarea } from '#/components/MentionTextarea.tsx'
+import { Button, Card, cx, ErrorText, Field, Input } from '#/components/ui.tsx'
 import { channelKeys, channelOrder, channels, type ChannelKey } from '#/lib/channels.ts'
 import { submitPost } from '#/lib/feed.functions.ts'
 
@@ -16,6 +17,8 @@ function NewPost() {
   const { kanal } = Route.useSearch()
   const router = useRouter()
   const [channel, setChannel] = useState<ChannelKey>(kanal ?? 'sporsmal')
+  const [body, setBody] = useState('')
+  const bodyId = useId()
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const c = channels[channel]
@@ -31,7 +34,7 @@ function NewPost() {
         data: {
           channel,
           title: String(form.get('title') ?? ''),
-          body: String(form.get('body') ?? ''),
+          body,
           url: String(form.get('url') ?? ''),
         },
       })
@@ -104,12 +107,23 @@ function NewPost() {
               autoFocus
             />
           </Field>
-          <Field
-            label="Detaljer"
-            hint="Gi nok kontekst til at folk kan hjelpe. Hold det kort og konkret."
-          >
-            <Textarea name="body" rows={7} maxLength={10000} />
-          </Field>
+          {/* Ikke i en <label>: forslagslista hører ikke til navnet på feltet. */}
+          <div className="space-y-1.5">
+            <label htmlFor={bodyId} className="block text-sm font-medium text-stone-800">
+              Detaljer
+            </label>
+            <MentionTextarea
+              id={bodyId}
+              value={body}
+              onValueChange={setBody}
+              rows={7}
+              maxLength={10000}
+              aria-describedby={`${bodyId}-hint`}
+            />
+            <p id={`${bodyId}-hint`} className="text-xs text-stone-500">
+              Gi nok kontekst til at folk kan hjelpe. Skriv @ for å nevne noen.
+            </p>
+          </div>
           {wantsUrl && (
             <Field
               label="Lenke"

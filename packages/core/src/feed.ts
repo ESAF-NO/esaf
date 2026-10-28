@@ -4,6 +4,8 @@ import { z } from 'zod'
 import { assertMember, can, type Viewer } from './access.ts'
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience } from './experience.ts'
+import { mentionsToPlainText, resolveMentions } from './mentions.ts'
+import { notifyComment, notifyMentions } from './notifications.ts'
 
 const { auditEvent, cohort, comment, person, personCohort, post, postVote } = schema
 
@@ -116,7 +118,8 @@ const voted = (personId: string) =>
 const hotness = sql`(${voteCount} + ${commentCount} * 0.5 + 1) / power(extract(epoch from (now() - ${sql.raw('"post"."created_at"')})) / 3600 + 2, 1.5)`
 
 const excerptOf = (body: string) => {
-  const flat = body.replace(/\s+/g, ' ').trim()
+  // Omtaler blir «@Navn», så utdraget aldri kutter midt i en omtale.
+  const flat = mentionsToPlainText(body).replace(/\s+/g, ' ').trim()
   return flat.length > 280 ? `${flat.slice(0, 277)}…` : flat
 }
 
@@ -249,11 +252,19 @@ function parse<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
 export async function createPost(db: Db, viewer: Viewer, input: PostInput): Promise<string> {
   assertMember(viewer)
   const data = parse(postInput, input)
-  const [created] = await db
-    .insert(post)
-    .values({ ...data, authorPersonId: viewer.personId })
-    .returning({ id: post.id })
-  return created!.id
+  return db.transaction(async (tx) => {
+    const { text: body, personIds } = await resolveMentions(tx, data.body)
+    const [created] = await tx
+      .insert(post)
+      .values({ ...data, body, authorPersonId: viewer.personId })
+      .returning({ id: post.id })
+    await notifyMentions(tx, {
+      postId: created!.id,
+      actorPersonId: viewer.personId,
+      mentioned: personIds,
+    })
+    return created!.id
+  })
 }
 
 /** Forfatteren eller en admin kan slette. Innlegget skjules, kommentarene beholdes i databasen. */
@@ -288,16 +299,25 @@ export async function addComment(
 ): Promise<string> {
   assertMember(viewer)
   const data = parse(commentInput, input)
-  const [target] = await db
-    .select({ id: post.id })
-    .from(post)
-    .where(and(eq(post.id, postId), isNull(post.deletedAt)))
-  if (!target) throw new NotFoundError('Fant ikke innlegget.')
-  const [created] = await db
-    .insert(comment)
-    .values({ postId, authorPersonId: viewer.personId, body: data.body })
-    .returning({ id: comment.id })
-  return created!.id
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({ id: post.id })
+      .from(post)
+      .where(and(eq(post.id, postId), isNull(post.deletedAt)))
+    if (!target) throw new NotFoundError('Fant ikke innlegget.')
+    const { text: body, personIds } = await resolveMentions(tx, data.body)
+    const [created] = await tx
+      .insert(comment)
+      .values({ postId, authorPersonId: viewer.personId, body })
+      .returning({ id: comment.id })
+    await notifyComment(tx, {
+      postId,
+      commentId: created!.id,
+      actorPersonId: viewer.personId,
+      mentioned: personIds,
+    })
+    return created!.id
+  })
 }
 
 export async function deleteComment(db: Db, viewer: Viewer, commentId: string): Promise<void> {

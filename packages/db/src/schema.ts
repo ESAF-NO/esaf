@@ -397,3 +397,66 @@ export const postVote = pgTable(
 )
 
 export type PostChannel = (typeof postChannel.enumValues)[number]
+
+// ---------------------------------------------------------------------------
+// Varsler: kommentarer, omtaler (@navn) og nye medlemmer
+// ---------------------------------------------------------------------------
+
+export const notificationType = pgEnum('notification_type', [
+  /** Noen kommenterte et innlegg mottakeren skrev. */
+  'comment_on_post',
+  /** Noen kommenterte et innlegg mottakeren selv har kommentert. */
+  'comment_on_thread',
+  /** Noen nevnte mottakeren i et innlegg eller en kommentar. */
+  'mention',
+  /** Forespørselen om tilgang ble godkjent. */
+  'welcome',
+  /** Noen fra mottakerens kull ble godkjent som medlem. */
+  'cohort_joined',
+])
+
+export type NotificationPayload = {
+  /** Kullet varselet gjelder, for velkomst og nye fra kullet. */
+  graduationYear?: number
+}
+
+/**
+ * Et varsel til ett medlem. Innlegg og kommentarer hentes ved visning, så
+ * varselet viser gjeldende tittel og skjules når innholdet er slettet. Bare
+ * aktive medlemmer med egen konto får varsler.
+ */
+export const notification = pgTable(
+  'notification',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    recipientPersonId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    type: notificationType().notNull(),
+    /** Den som utløste varselet. Null for varsler fra ESAF selv, som velkomsten. */
+    actorPersonId: uuid().references(() => person.id, { onDelete: 'cascade' }),
+    postId: uuid().references(() => post.id, { onDelete: 'cascade' }),
+    commentId: uuid().references(() => comment.id, { onDelete: 'cascade' }),
+    /**
+     * Hendelsen varselet gjelder, for eksempel `comment:<id>`. Unik per mottaker:
+     * én hendelse gir aldri mer enn ett varsel til samme person, heller ikke når
+     * en kommentar både svarer på innlegget ditt og nevner deg.
+     */
+    eventKey: text().notNull(),
+    payload: jsonb().$type<NotificationPayload>().notNull().default({}),
+    readAt: timestamp({ withTimezone: true }),
+    /** Når varselet ble sendt i en e-postoppsummering. Null til det er sendt. */
+    emailedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex().on(t.recipientPersonId, t.eventKey),
+    index().on(t.recipientPersonId, t.createdAt),
+    // Antall uleste hentes ved hver navigering, så de har sin egen lille indeks.
+    index('notification_unread_index')
+      .on(t.recipientPersonId, t.createdAt)
+      .where(sql`${t.readAt} is null`),
+  ],
+)
+
+export type NotificationType = (typeof notificationType.enumValues)[number]

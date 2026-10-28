@@ -1,8 +1,10 @@
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useLocation, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, ExternalLink, MessageCircle, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { MentionText } from '#/components/MentionText.tsx'
+import { MentionTextarea } from '#/components/MentionTextarea.tsx'
 import { AuthorLine, VoteButton } from '#/components/PostCard.tsx'
-import { Avatar, Button, Card, ChannelBadge, ErrorText, Textarea } from '#/components/ui.tsx'
+import { Avatar, Button, Card, ChannelBadge, cx, ErrorText } from '#/components/ui.tsx'
 import { fetchPost, removeComment, removePost, submitComment } from '#/lib/feed.functions.ts'
 import { plural } from '#/lib/format.ts'
 
@@ -16,6 +18,8 @@ function PostPage() {
   const post = Route.useLoaderData()
   const { viewer } = Route.useRouteContext()
   const router = useRouter()
+  // Varsler lenker til kommentaren med #kommentar-<id>; den markeres når siden åpnes.
+  const hash = useLocation({ select: (l) => l.hash })
   const [body, setBody] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -73,7 +77,7 @@ function PostPage() {
         </div>
         {post.body && (
           <div className="mt-5 text-[15px] leading-relaxed whitespace-pre-line text-stone-700">
-            {post.body}
+            <MentionText text={post.body} />
           </div>
         )}
         {post.url && (
@@ -113,9 +117,10 @@ function PostPage() {
             <Avatar name={viewer.fullName} size="md" className="mt-0.5 hidden sm:inline-grid" />
           )}
           <div className="flex-1 space-y-2">
-            <Textarea
+            <MentionTextarea
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onValueChange={setBody}
+              suggestFirst={[post.author, ...post.commentList.map((c) => c.author)]}
               placeholder="Skriv en kommentar …"
               aria-label="Kommentar"
               className="min-h-20"
@@ -126,7 +131,9 @@ function PostPage() {
             />
             {error && <ErrorText>{error}</ErrorText>}
             <div className="flex items-center justify-end gap-3">
-              <span className="hidden text-xs text-stone-400 sm:inline">⌘ + Enter for å sende</span>
+              <span className="hidden text-xs text-stone-400 sm:inline">
+                @ for å nevne noen · ⌘ + Enter for å sende
+              </span>
               <Button type="submit" variant="primary" size="sm" disabled={sending || !body.trim()}>
                 {sending ? 'Sender …' : 'Kommenter'}
               </Button>
@@ -136,7 +143,7 @@ function PostPage() {
 
         <ol className="space-y-4">
           {post.commentList.map((c) => (
-            <li key={c.id} className="group flex gap-3">
+            <li key={c.id} id={`kommentar-${c.id}`} className="group flex scroll-mt-24 gap-3">
               <Link
                 to="/medlemmer/$personId"
                 params={{ personId: c.author.personId }}
@@ -144,7 +151,14 @@ function PostPage() {
               >
                 <Avatar name={c.author.fullName} size="md" muted={!c.author.claimed} />
               </Link>
-              <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-card ring-1 ring-stone-200/70">
+              <div
+                className={cx(
+                  'min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-card transition',
+                  hash === `kommentar-${c.id}`
+                    ? 'ring-2 ring-brand-300'
+                    : 'ring-1 ring-stone-200/70',
+                )}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <AuthorLine author={c.author} date={c.createdAt} avatar={false} />
                   {c.canDelete && (
@@ -159,7 +173,7 @@ function PostPage() {
                   )}
                 </div>
                 <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-line text-stone-700">
-                  {c.body}
+                  <MentionText text={c.body} />
                 </p>
               </div>
             </li>

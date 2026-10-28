@@ -17,6 +17,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { authClient } from '#/lib/auth-client.ts'
 import { channelOrder, channels } from '#/lib/channels.ts'
 import { CommandPalette } from './CommandPalette.tsx'
+import { NotificationBell } from './Notifications.tsx'
 import { Avatar, buttonClass, cx, Logo } from './ui.tsx'
 
 function NavItem({
@@ -280,7 +281,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             </kbd>
           </button>
 
-          <div className="ml-auto shrink-0">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <NotificationBell />
             <Link
               to="/feed/ny"
               className={buttonClass({ variant: 'brand' }, 'px-3 sm:px-4')}

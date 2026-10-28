@@ -19,7 +19,8 @@ const {
 const pageTitle = title
   ? `${title} – ${siteConfig.name}`
   : `${siteConfig.name} – ${siteConfig.fullName}`
-const canonical = new URL(Astro.url.pathname, Astro.site)
+// Bygget lager sponsorer.html (build.format: 'file'), men den kanoniske URL-en er /sponsorer.
+const canonical = new URL(Astro.url.pathname.replace(/(index)?\.html$/, ''), Astro.site)
 const ogImage = new URL('/og.png', Astro.site)
 ---
 

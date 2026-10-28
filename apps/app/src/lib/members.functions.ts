@@ -2,6 +2,7 @@ import {
   accessLevel,
   activeRole,
   can,
+  countUnreadNotifications,
   listActiveMembers,
   permissions,
   roleAtLeast,
@@ -24,10 +25,14 @@ import { getRequestViewer } from '#/server/viewer.server.ts'
 
 export const getViewerSummary = createServerFn({ method: 'GET' }).handler(async () => {
   const viewer = await getRequestViewer()
-  const card = await viewerCard(db, viewer)
+  const level = accessLevel(viewer)
+  const [card, unreadNotifications] = await Promise.all([
+    viewerCard(db, viewer),
+    level === 'member' ? countUnreadNotifications(db, viewer) : 0,
+  ])
   const role = activeRole(viewer)
   return {
-    level: accessLevel(viewer),
+    level,
     /** Rollen til et aktivt medlem. */
     role,
     /** Rettighetene den innloggede kan bruke nå. Bare for visning; serveren sjekker selv. */
@@ -48,6 +53,8 @@ export const getViewerSummary = createServerFn({ method: 'GET' }).handler(async 
     onboarded: card?.onboarded ?? false,
     /** Forespørselen om tilgang, for dem som ikke er medlem ennå. */
     requestStatus: card?.requestStatus ?? null,
+    /** Uleste varsler. Hentes ved hver navigering, så klokka i toppen alltid er oppdatert. */
+    unreadNotifications,
   }
 })
 

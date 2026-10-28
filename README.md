@@ -75,6 +75,7 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 | `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`admin`).                                                                                                          |
 | `access_request`                             | Forespørsel om tilgang fra en konto med bekreftet e-post: navn, kull, valgfri LinkedIn og melding, og eventuelt profilen fra kullisten personen sier er dem. Status `open`, `approved` eller `rejected`.      |
 | `audit_event`                                | Revisjonslogg for forespørsler, godkjenninger, admintildelinger og importer.                                                                                                                                  |
+| `notification`                               | Varsler til ett medlem: type, hvem som utløste det, innlegget og kommentaren det gjelder, `read_at` og `emailed_at`. Unik `event_key` per mottaker hindrer doble varsler.                                     |
 
 **Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (årstall, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
 
@@ -89,6 +90,7 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lucide-ikoner. Komponentene ligger i `apps/app/src/components/ui.tsx`. Appen har ingen egen forside, siden den offentlige siden er esaf.no (`apps/site`). `/` sender folk til innlogging, til steget de står på, eller til feeden.
 
 - **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatter eller admin kan slette.
+- **Varsler og omtaler**, se under.
 - **Personer** (`/medlemmer`) er en katalog med søk, kullfilter, filter for verifiserte og de mest brukte emnene og bransjene som snarveier. Søket treffer også tidligere selskaper og stillinger.
 - **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden.
 - **Selskaper** (`/selskaper`) viser selskaper startet av alumni, både ES-selskaper (fra «Selskap på Entreprenørskolen») og selskaper noen har grunnlagt (fra erfaring). «Alle selskaper» viser også arbeidsgivere, med hvem som jobber der nå og hvem som har jobbet der.
@@ -96,7 +98,19 @@ Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lu
 - **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom.
 - **Profiler, redigering og admin**, se under.
 
-Ikke bygget ennå: direktemeldinger, varsler, profilbilder, redigering av innlegg, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
+Ikke bygget ennå: direktemeldinger, varsler på e-post, profilbilder, redigering av innlegg, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
+
+### Varsler og omtaler
+
+Klokka i toppen viser antall uleste varsler og de siste varslene. Et klikk åpner innlegget eller kommentaren og merker varselet som lest. `/varsler` viser alle, delt i i dag og tidligere, med «Merk alle som lest».
+
+- **Hvem får varsel:** forfatteren når noen kommenterer innlegget, alle som har kommentert et innlegg når noen kommenterer det igjen, den som blir nevnt med @ i et innlegg eller en kommentar, den som blir godkjent (velkomst), og de fra samme kull når noen fra kullet blir godkjent.
+- **Reglene** ligger i `packages/core/src/notifications.ts`: ingen får varsel om noe de selv gjorde, bare aktive medlemmer med egen konto får varsler, og én hendelse gir høyst ett varsel per person (unik `event_key` per mottaker). Nevner en kommentar forfatteren av innlegget, blir det ett varsel om omtalen. Varslene lages i samme transaksjon som kommentaren, innlegget eller godkjenningen.
+- **Slettet innhold:** varsler om slettede innlegg og kommentarer skjules og telles ikke som uleste. Tittel og utdrag hentes når varselet vises, så de alltid er oppdatert.
+- **Lest:** å åpne et varsel om et innlegg merker alle varslene om det innlegget som lest, siden siden viser alle kommentarene. Man ser og endrer bare sine egne varsler.
+- **Antall uleste** kommer med fra serveren ved hver navigering, og hentes på nytt hvert minutt mens fanen er synlig og når den blir synlig igjen. Ingen websockets.
+- **Omtaler:** skriv @ i et innlegg eller en kommentar for å få forslag. Lista styres med piltastene, Enter eller Tab velger, Esc lukker. Teksten lagres med `@[Kari Nordmann](<personId>)`, og vises som en lenke til profilen (bygget med React, aldri som HTML). Serveren skriver om alle omtaler før lagring: aktive medlemmer med konto får navnet fra profilen, alle andre blir vanlig tekst uten lenke og uten varsel. Maks 20 personer per tekst.
+- **E-post:** `notification.emailed_at` er klar for en senere e-postoppsummering av uleste varsler.
 
 ## Profiler og katalog
 
@@ -159,7 +173,7 @@ pnpm db:seed --fil ~/Downloads/telefonliste.xlsx --admin deg@example.com
 
 Tømmer den **lokale** databasen og importerer lista med samme kode som `profiles:import`. Med `--admin` får du en innlogging med den e-posten du står med i lista (passord `korrekt-hest-batteri`). Kontoen går samme vei som en ekte bruker: forespørsel om å være profilen med den adressen, som operatøren godkjenner med adminrolle. Første innlogging viser velkomststegene. Det lages ingen innlegg, så ingen ekte personer får tekst de ikke har skrevet. Fila leses bare og havner aldri i repoet.
 
-Uten `--fil` lager `pnpm db:seed` oppdiktede data, inkludert to åpne forespørsler på `/admin`: Kari Nordmann (adressen står på profilen) og Nils Nyregistrert (ikke funnet i lista). De logger inn med `kari@example.test` og `nils@example.test`.
+Uten `--fil` lager `pnpm db:seed` oppdiktede data, inkludert to åpne forespørsler på `/admin`: Kari Nordmann (adressen står på profilen) og Nils Nyregistrert (ikke funnet i lista). De logger inn med `kari@example.test` og `nils@example.test`. `sara@example.test` er et vanlig medlem, så varsler og omtaler kan prøves med to brukere. Ada har allerede to varsler fra henne.
 
 ## Tilgangsgrensen
 

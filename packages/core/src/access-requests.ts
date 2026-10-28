@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { accessLevel, assertCan, assertMember, type Viewer } from './access.ts'
 import { AccessDeniedError, DomainError } from './errors.ts'
 import { ensurePersonForVerifiedUser, linkAccountInTx, normalizeEmail, type Tx } from './members.ts'
+import { notifyMemberApproved } from './notifications.ts'
 import { normalizeLinkedinUrl } from './profiles.ts'
 
 const { accessRequest, auditEvent, cohort, membership, person, personCohort, personEmail, user } =
@@ -372,6 +373,8 @@ async function approveInTx(
     .update(accessRequest)
     .set({ status: 'approved', profilePersonId, ...decided })
     .where(eq(accessRequest.id, request.id))
+  // Først nå er personen aktiv, koblet til profilen og i riktig kull.
+  await notifyMemberApproved(tx, personId)
   return personId
 }
 

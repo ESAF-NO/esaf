@@ -145,6 +145,9 @@ describe.skipIf(!url)('roller og medlemsadministrasjon', () => {
     expect(entry).toMatchObject({
       action: 'membership.deactivate',
       details: { reason: 'Ikke ES-alumn likevel', previousRole: 'moderator' },
+      // Loggen sier om profilen kan åpnes; en deaktivert persons profil kan ikke det.
+      actor: { personId: admin!.personId, active: true },
+      subject: { personId: moderator!.personId, active: false },
     })
 
     // Gjenoppretting gir vanlig medlemskap; rollen må gis på nytt.

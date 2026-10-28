@@ -14,6 +14,8 @@ const buttonVariants = {
     'bg-white text-stone-800 shadow-card ring-1 ring-stone-200 hover:bg-stone-50 hover:ring-stone-300',
   ghost: 'text-stone-600 hover:bg-stone-100 hover:text-stone-900',
   danger: 'text-red-700 hover:bg-red-50',
+  /** Bekrefter noe som er vanskelig å angre, som å deaktivere et medlem. */
+  destructive: 'bg-red-600 text-white shadow-sm hover:bg-red-700',
 }
 const buttonSizes = { sm: 'h-8 px-3 text-sm', md: 'h-10 px-4 text-sm', lg: 'h-12 px-6 text-base' }
 

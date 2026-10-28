@@ -13,7 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as KontoRouteImport } from './routes/_konto'
 import { Route as LoggInnRouteImport } from './routes/logg-inn'
 import { Route as RegistrerRouteImport } from './routes/registrer'
-import { Route as KontoAdminRouteImport } from './routes/_konto/admin'
+import { Route as KontoAdminRouteRouteImport } from './routes/_konto/admin/route'
 import { Route as KontoKomIGangRouteImport } from './routes/_konto/kom-i-gang'
 import { Route as KontoKontoRouteImport } from './routes/_konto/konto'
 import { Route as KontoKullRouteImport } from './routes/_konto/kull'
@@ -21,6 +21,9 @@ import { Route as KontoSelskaperRouteImport } from './routes/_konto/selskaper'
 import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
+import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
+import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
 import { Route as KontoFeedIndexRouteImport } from './routes/_konto/feed/index'
 import { Route as KontoFeedPostIdRouteImport } from './routes/_konto/feed/$postId'
 import { Route as KontoFeedNyRouteImport } from './routes/_konto/feed/ny'
@@ -48,7 +51,7 @@ const RegistrerRoute = RegistrerRouteImport.update({
   path: '/registrer',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KontoAdminRoute = KontoAdminRouteImport.update({
+const KontoAdminRouteRoute = KontoAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => KontoRoute,
@@ -87,6 +90,21 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
+} as any)
+const KontoAdminIndexRoute = KontoAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminLoggRoute = KontoAdminLoggRouteImport.update({
+  id: '/logg',
+  path: '/logg',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminMedlemmerRoute = KontoAdminMedlemmerRouteImport.update({
+  id: '/medlemmer',
+  path: '/medlemmer',
+  getParentRoute: () => KontoAdminRouteRoute,
 } as any)
 const KontoFeedIndexRoute = KontoFeedIndexRouteImport.update({
   id: '/feed/',
@@ -130,7 +148,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
-  '/admin': typeof KontoAdminRoute
+  '/admin': typeof KontoAdminRouteRouteWithChildren
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/kull': typeof KontoKullRoute
@@ -138,9 +156,12 @@ export interface FileRoutesByFullPath {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/admin/logg': typeof KontoAdminLoggRoute
+  '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/': typeof KontoAdminIndexRoute
   '/feed/': typeof KontoFeedIndexRoute
   '/medlemmer/': typeof KontoMedlemmerIndexRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
@@ -150,7 +171,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
-  '/admin': typeof KontoAdminRoute
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/kull': typeof KontoKullRoute
@@ -158,9 +178,12 @@ export interface FileRoutesByTo {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/admin/logg': typeof KontoAdminLoggRoute
+  '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin': typeof KontoAdminIndexRoute
   '/feed': typeof KontoFeedIndexRoute
   '/medlemmer': typeof KontoMedlemmerIndexRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
@@ -172,7 +195,7 @@ export interface FileRoutesById {
   '/_konto': typeof KontoRouteWithChildren
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
-  '/_konto/admin': typeof KontoAdminRoute
+  '/_konto/admin': typeof KontoAdminRouteRouteWithChildren
   '/_konto/kom-i-gang': typeof KontoKomIGangRoute
   '/_konto/konto': typeof KontoKontoRoute
   '/_konto/kull': typeof KontoKullRoute
@@ -180,9 +203,12 @@ export interface FileRoutesById {
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/_konto/admin/logg': typeof KontoAdminLoggRoute
+  '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/_konto/feed/$postId': typeof KontoFeedPostIdRoute
   '/_konto/feed/ny': typeof KontoFeedNyRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/_konto/admin/': typeof KontoAdminIndexRoute
   '/_konto/feed/': typeof KontoFeedIndexRoute
   '/_konto/medlemmer/': typeof KontoMedlemmerIndexRoute
   '/_konto/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
@@ -202,9 +228,12 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/admin/logg'
+    | '/admin/medlemmer'
     | '/feed/$postId'
     | '/feed/ny'
     | '/api/auth/$'
+    | '/admin/'
     | '/feed/'
     | '/medlemmer/'
     | '/medlemmer/$personId/rediger'
@@ -214,7 +243,6 @@ export interface FileRouteTypes {
     | '/'
     | '/logg-inn'
     | '/registrer'
-    | '/admin'
     | '/kom-i-gang'
     | '/konto'
     | '/kull'
@@ -222,9 +250,12 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/admin/logg'
+    | '/admin/medlemmer'
     | '/feed/$postId'
     | '/feed/ny'
     | '/api/auth/$'
+    | '/admin'
     | '/feed'
     | '/medlemmer'
     | '/medlemmer/$personId/rediger'
@@ -243,9 +274,12 @@ export interface FileRouteTypes {
     | '/_konto/velkommen'
     | '/_konto/venter'
     | '/api/health'
+    | '/_konto/admin/logg'
+    | '/_konto/admin/medlemmer'
     | '/_konto/feed/$postId'
     | '/_konto/feed/ny'
     | '/api/auth/$'
+    | '/_konto/admin/'
     | '/_konto/feed/'
     | '/_konto/medlemmer/'
     | '/_konto/medlemmer/$personId/rediger'
@@ -295,7 +329,7 @@ declare module '@tanstack/react-router' {
       id: '/_konto/admin'
       path: '/admin'
       fullPath: '/admin'
-      preLoaderRoute: typeof KontoAdminRouteImport
+      preLoaderRoute: typeof KontoAdminRouteRouteImport
       parentRoute: typeof KontoRoute
     }
     '/_konto/kom-i-gang': {
@@ -346,6 +380,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_konto/admin/': {
+      id: '/_konto/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof KontoAdminIndexRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/logg': {
+      id: '/_konto/admin/logg'
+      path: '/logg'
+      fullPath: '/admin/logg'
+      preLoaderRoute: typeof KontoAdminLoggRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/medlemmer': {
+      id: '/_konto/admin/medlemmer'
+      path: '/medlemmer'
+      fullPath: '/admin/medlemmer'
+      preLoaderRoute: typeof KontoAdminMedlemmerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
     }
     '/_konto/feed/': {
       id: '/_konto/feed/'
@@ -399,8 +454,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface KontoAdminRouteRouteChildren {
+  KontoAdminLoggRoute: typeof KontoAdminLoggRoute
+  KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
+  KontoAdminIndexRoute: typeof KontoAdminIndexRoute
+}
+
+const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
+  KontoAdminLoggRoute: KontoAdminLoggRoute,
+  KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
+  KontoAdminIndexRoute: KontoAdminIndexRoute,
+}
+
+const KontoAdminRouteRouteWithChildren = KontoAdminRouteRoute._addFileChildren(
+  KontoAdminRouteRouteChildren,
+)
+
 interface KontoRouteChildren {
-  KontoAdminRoute: typeof KontoAdminRoute
+  KontoAdminRouteRoute: typeof KontoAdminRouteRouteWithChildren
   KontoKomIGangRoute: typeof KontoKomIGangRoute
   KontoKontoRoute: typeof KontoKontoRoute
   KontoKullRoute: typeof KontoKullRoute
@@ -416,7 +487,7 @@ interface KontoRouteChildren {
 }
 
 const KontoRouteChildren: KontoRouteChildren = {
-  KontoAdminRoute: KontoAdminRoute,
+  KontoAdminRouteRoute: KontoAdminRouteRouteWithChildren,
   KontoKomIGangRoute: KontoKomIGangRoute,
   KontoKontoRoute: KontoKontoRoute,
   KontoKullRoute: KontoKullRoute,

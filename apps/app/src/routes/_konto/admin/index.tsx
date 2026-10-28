@@ -1,5 +1,5 @@
 import type { AccessRequestView } from '@esaf/core'
-import { createFileRoute, Link, notFound, redirect, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, notFound, useRouter } from '@tanstack/react-router'
 import {
   AlertTriangle,
   Check,
@@ -10,7 +10,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
 import {
   Avatar,
@@ -21,16 +21,14 @@ import {
   ErrorText,
   Input,
   LinkedInIcon,
-  PageHeader,
 } from '#/components/ui.tsx'
 import { decideRequest, fetchAccessRequests } from '#/lib/access.functions.ts'
 import { timeAgo } from '#/lib/format.ts'
 import { findUnclaimedProfiles } from '#/lib/members.functions.ts'
 
-export const Route = createFileRoute('/_konto/admin')({
+export const Route = createFileRoute('/_konto/admin/')({
   beforeLoad: ({ context: { viewer } }) => {
-    if (!viewer.adminArea) throw notFound()
-    if (viewer.twoFactorMissing) throw redirect({ to: '/konto', search: { krav: 'tofaktor' } })
+    if (!viewer.permissions.includes('members.review')) throw notFound()
   },
   validateSearch: z.object({ vis: z.enum(['behandlet']).optional().catch(undefined) }),
   loaderDeps: ({ search }) => ({ vis: search.vis }),
@@ -46,23 +44,23 @@ export const Route = createFileRoute('/_konto/admin')({
     )
     return { open, decided }
   },
-  head: () => ({ meta: [{ title: 'Forespørsler – ESAF' }] }),
-  component: Admin,
+  head: () => ({ meta: [{ title: 'Forespørsler – Admin – ESAF' }] }),
+  component: Requests,
   errorComponent: ({ error }) => (
     <ErrorText>{error instanceof Error ? error.message : 'Noe gikk galt.'}</ErrorText>
   ),
 })
 
-function Admin() {
+function Requests() {
   const { open, decided } = Route.useLoaderData()
   const { vis } = Route.useSearch()
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <PageHeader
-        title="Forespørsler om tilgang"
-        description="Ingen slipper inn uten at en admin har godkjent. Se hva som faktisk er bekreftet før du godkjenner."
-      />
+    <div className="max-w-3xl">
+      <p className="mb-5 text-sm text-stone-500">
+        Ingen slipper inn uten at en admin har godkjent. Se hva som faktisk er bekreftet før du
+        godkjenner.
+      </p>
       <div className="mb-6 inline-flex rounded-xl bg-stone-200/60 p-1" role="tablist">
         {(
           [
@@ -155,6 +153,7 @@ function RequestCard({ request: r }: { request: AccessRequestView }) {
   const [selected, setSelected] = useState<string | null>(r.profile?.personId ?? null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const profilesLabel = useId()
   const chosen = options.find((o) => o.personId === selected) ?? null
   const strong = r.emailOnProfile && selected === r.profile?.personId
 
@@ -221,9 +220,7 @@ function RequestCard({ request: r }: { request: AccessRequestView }) {
 
       <div className="space-y-5 border-t border-stone-100 bg-stone-50/60 p-5">
         <div>
-          <p className="text-[11px] font-semibold tracking-wider text-stone-400 uppercase">
-            Hva er bekreftet
-          </p>
+          <p className="text-sm font-medium text-stone-900">Hva er bekreftet</p>
           <ul className="mt-2 space-y-1.5">
             <Signal tone="ok">
               E-postadressen er bekreftet: personen har tilgang til innboksen.
@@ -243,10 +240,10 @@ function RequestCard({ request: r }: { request: AccessRequestView }) {
         </div>
 
         <div>
-          <p className="text-[11px] font-semibold tracking-wider text-stone-400 uppercase">
+          <p id={profilesLabel} className="text-sm font-medium text-stone-900">
             Koble til profil fra kullisten
           </p>
-          <ul className="mt-2 space-y-1.5" role="radiogroup" aria-label="Profil">
+          <ul className="mt-2 space-y-1.5" role="radiogroup" aria-labelledby={profilesLabel}>
             {options.map((o) => (
               <ProfileOption
                 key={o.personId}

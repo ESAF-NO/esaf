@@ -215,14 +215,17 @@ export async function setMemberAccess(
   })
 }
 
+/** En person i loggen. Profilen kan bare åpnes når medlemskapet er aktivt. */
+export type AuditPerson = { personId: string; fullName: string; active: boolean }
+
 export type AuditEntry = {
   id: string
   action: string
   createdAt: Date
   details: Record<string, unknown>
   /** Null betyr lokal operatør (CLI). */
-  actor: { personId: string; fullName: string } | null
-  subject: { personId: string; fullName: string } | null
+  actor: AuditPerson | null
+  subject: AuditPerson | null
 }
 
 /** Revisjonsloggen, nyeste først. Bla bakover med `before`. */
@@ -234,6 +237,8 @@ export async function listAuditEvents(
   assertCan(viewer, 'audit.read')
   const actor = alias(person, 'actor')
   const subject = alias(person, 'subject')
+  const actorMembership = alias(membership, 'actor_membership')
+  const subjectMembership = alias(membership, 'subject_membership')
   const rows = await db
     .select({
       id: auditEvent.id,
@@ -242,22 +247,27 @@ export async function listAuditEvents(
       details: auditEvent.details,
       actorId: actor.id,
       actorName: actor.fullName,
+      actorStatus: actorMembership.status,
       subjectId: subject.id,
       subjectName: subject.fullName,
+      subjectStatus: subjectMembership.status,
     })
     .from(auditEvent)
     .leftJoin(actor, eq(actor.id, auditEvent.actorPersonId))
+    .leftJoin(actorMembership, eq(actorMembership.personId, actor.id))
     .leftJoin(subject, eq(subject.id, auditEvent.subjectPersonId))
+    .leftJoin(subjectMembership, eq(subjectMembership.personId, subject.id))
     .where(options.before ? lt(auditEvent.createdAt, options.before) : undefined)
     .orderBy(desc(auditEvent.createdAt))
     .limit(Math.min(options.limit ?? 50, 200))
+  const who = (id: string | null, fullName: string | null, status: MembershipStatus | null) =>
+    id && fullName ? { personId: id, fullName, active: status === 'active' } : null
   return rows.map((r) => ({
     id: r.id,
     action: r.action,
     createdAt: r.createdAt,
     details: r.details,
-    actor: r.actorId && r.actorName ? { personId: r.actorId, fullName: r.actorName } : null,
-    subject:
-      r.subjectId && r.subjectName ? { personId: r.subjectId, fullName: r.subjectName } : null,
+    actor: who(r.actorId, r.actorName, r.actorStatus),
+    subject: who(r.subjectId, r.subjectName, r.subjectStatus),
   }))
 }

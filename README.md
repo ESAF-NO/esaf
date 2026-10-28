@@ -47,7 +47,7 @@ Bare én av dem: `pnpm dev:site` (krever ingen database) eller `pnpm dev:app`.
 | `pnpm db:migrate`             | Kjører migreringer mot `DATABASE_URL`                                                                                                                                                                                                                           |
 | `pnpm db:seed`                | Fyller en **lokal** database med oppdiktede alumni, selskaper og innlegg. Sletter alt først, og nekter å kjøre mot noe annet enn localhost. Logg inn som `admin@example.test` / `korrekt-hest-batteri`. Med den ekte lista, se «Lokalt med den ekte kullisten». |
 | `pnpm db:studio`              | Drizzle Studio mot lokal database                                                                                                                                                                                                                               |
-| `pnpm admin:grant`            | Gir adminrolle, se «Første admin» under                                                                                                                                                                                                                         |
+| `pnpm admin:grant`            | Gir en rolle fra kommandolinjen (standard hovedadmin), se «Første hovedadmin» under                                                                                                                                                                             |
 | `pnpm profiles:import`        | Importerer profiler fra kullisten (Excel eller CSV), se «Profiler og import av kullisten» under                                                                                                                                                                 |
 
 Integrasjonstestene hoppes over lokalt hvis `TEST_DATABASE_URL` mangler. I CI må de kjøre. Testene migrerer og tømmer `esaf_test` selv, aldri utviklingsdatabasen.
@@ -72,9 +72,9 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 | `cohort`                                     | Et kull, identifisert ved uteksamineringsåret, slik ES selv navngir kull: «ES 2024» startet høsten 2022.                                                                                                      |
 | `person_cohort`                              | Tilknytning mellom person og kull, med type: `student`, `staff` eller `mentor`.                                                                                                                               |
 | `person_email`                               | Alle kjente e-postadresser for en person (registrering, kulliste, NTNU-mail, senere andre kilder). Brukes til å koble en konto til riktig profil. Vises aldri for andre medlemmer.                            |
-| `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`admin`).                                                                                                          |
+| `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`moderator`/`admin`/`owner`).                                                                                      |
 | `access_request`                             | Forespørsel om tilgang fra en konto med bekreftet e-post: navn, kull, valgfri LinkedIn og melding, og eventuelt profilen fra kullisten personen sier er dem. Status `open`, `approved` eller `rejected`.      |
-| `audit_event`                                | Revisjonslogg for forespørsler, godkjenninger, admintildelinger og importer.                                                                                                                                  |
+| `audit_event`                                | Revisjonslogg: forespørsler, godkjenninger, roller, deaktiveringer, importer, adminredigering og moderering. Skrives aldri over.                                                                              |
 
 **Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (årstall, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
 
@@ -88,13 +88,14 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 
 Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lucide-ikoner. Komponentene ligger i `apps/app/src/components/ui.tsx`. Appen har ingen egen forside, siden den offentlige siden er esaf.no (`apps/site`). `/` sender folk til innlogging, til steget de står på, eller til feeden.
 
-- **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatter eller admin kan slette.
+- **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatteren eller en moderator kan slette.
 - **Personer** (`/medlemmer`) er en katalog med søk, kullfilter, filter for verifiserte og de mest brukte emnene og bransjene som snarveier. Søket treffer også tidligere selskaper og stillinger.
 - **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden.
 - **Selskaper** (`/selskaper`) viser selskaper startet av alumni, både ES-selskaper (fra «Selskap på Entreprenørskolen») og selskaper noen har grunnlagt (fra erfaring). «Alle selskaper» viser også arbeidsgivere, med hvem som jobber der nå og hvem som har jobbet der.
 - **Søk** med ⌘K (eller `/`) finner personer, selskaper og innlegg fra hvor som helst i appen.
 - **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom.
-- **Profiler, redigering og admin**, se under.
+- **Admin** (`/admin`) med fanene Forespørsler, Medlemmer og Logg, se «Roller og rettigheter».
+- **Profiler og redigering**, se under.
 
 Ikke bygget ennå: direktemeldinger, varsler, profilbilder, redigering av innlegg, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
 
@@ -167,25 +168,45 @@ Uten `--fil` lager `pnpm db:seed` oppdiktede data, inkludert to åpne forespørs
 | ----------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------- |
 | `anonymous` | Ikke innlogget                                                                             | Offentlige sider, innlogging, registrering         |
 | `pending`   | Innlogget, men e-post ikke bekreftet eller medlemskap ikke godkjent (`pending`/`inactive`) | «Hvem er du?» (`/velkommen`) og status (`/venter`) |
-| `member`    | Bekreftet e-post og `status = active`                                                      | Appen                                              |
-| `admin`     | Som `member`, og i tillegg `role = admin`                                                  | Forespørsler om tilgang (`/admin`)                 |
+| `member`    | Bekreftet e-post og `status = active`                                                      | Appen, og det rollen gir i tillegg (se under)      |
 
-Regelen ligger i én funksjon, `accessLevel` i `packages/core/src/access.ts`. Den håndheves **på serveren**: alle private data hentes gjennom serverfunksjoner (`apps/app/src/lib/members.functions.ts`). De slår opp sesjonen og kaller `@esaf/core`, som sjekker tilgang ved hvert kall, også etter klientnavigasjon og ved direkte RPC-kall. Rutevaktene i UI-et er bare for brukervennligheten. Vanlige medlemmer får 404 på adminsider.
+Regelen ligger i én funksjon, `accessLevel` i `packages/core/src/access.ts`. Den håndheves **på serveren**: alle private data hentes gjennom serverfunksjoner (`apps/app/src/lib/*.functions.ts`). De slår opp sesjonen og kaller `@esaf/core`, som sjekker tilgang ved hvert kall, også etter klientnavigasjon og ved direkte RPC-kall. Rutevaktene i UI-et er bare for brukervennligheten. Den som mangler rettigheten, får 404 på adminsider.
 
-Adminrolle kan **ikke** gis via registrering, godkjenning eller noe web-endepunkt. Godkjenning setter bare `status`. Better Auths admin-plugin er ikke i bruk, og `user`-tabellen har ikke noe rollefelt.
+### Roller og rettigheter
 
-Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten adminrett, selvgodkjenning, at en bekreftet adresse fra kullisten ikke gir tilgang alene, at søkere ikke kan velge andres profil, godkjenning med og uten profil, avslag og operatørens adminrolle.
+Et aktivt medlem har én rolle. En rolle har alt rollene under den har. Hva hver rolle får, står i `permissions` i `packages/core/src/access.ts`, og hver handling sjekker rettigheten på serveren.
 
-### Første admin
+| Rettighet          | Hva den gir                                                          | Moderator | Admin | Hovedadmin |
+| ------------------ | -------------------------------------------------------------------- | :-------: | :---: | :--------: |
+| `content.moderate` | Fjerne andres innlegg og kommentarer                                 |     ✓     |   ✓   |     ✓      |
+| `members.review`   | Behandle forespørsler om tilgang og koble kontoer til profiler       |           |   ✓   |     ✓      |
+| `members.manage`   | Deaktivere og gjenopprette medlemmer (se under om admins)            |           |   ✓   |     ✓      |
+| `profiles.edit`    | Rette andres profiler, men aldri kontaktinfo                         |           |   ✓   |     ✓      |
+| `audit.read`       | Lese revisjonsloggen                                                 |           |   ✓   |     ✓      |
+| `roles.manage`     | Gi og fjerne roller, og endre tilgangen til admins og hovedadmins    |           |       |     ✓      |
+| Tofaktor påkrevd   | Uten tofaktor kan rollen ikke brukes; adminsidene sender til oppsett |           |   ✓   |     ✓      |
 
-Det finnes ingen standardbruker og ingen automatisk admin basert på e-postdomene. Første (og senere) admin gis av en operatør med direkte databasetilgang:
+Vanlige medlemmer (`member`) har ingen av rettighetene. `owner` heter «hovedadmin» i appen.
+
+- **Tofaktor:** Admins og hovedadmins må slå på tofaktor (autentiseringsapp) under «Konto og sikkerhet» før rettighetene virker. Uten det sender `/admin` dit, og serveren svarer `two_factor_required`.
+- **Roller gis i appen** av en hovedadmin under Admin → Medlemmer, med valgfri begrunnelse. Ingen kan endre sin egen rolle, og det finnes alltid minst én aktiv hovedadmin. Registrering og godkjenning gir aldri rolle; godkjenning setter bare `status`. Better Auths admin-plugin er ikke i bruk, og `user`-tabellen har ikke noe rollefelt.
+- **Deaktivering** (Admin → Medlemmer) krever begrunnelse. Personen logges ut på alle enheter med en gang (øktene slettes), mister tilgangen og vises ikke lenger i katalogen. Rollen settes tilbake til medlem, så rettigheter må gis på nytt om tilgangen gjenopprettes. Admins kan deaktivere og gjenopprette medlemmer og moderatorer; bare en hovedadmin kan endre tilgangen til admins og hovedadmins. Ingen kan deaktivere seg selv.
+- **Revisjonsloggen** (Admin → Logg) viser hvem som gjorde hva, nyeste først, med begrunnelsen når den finnes. Den dekker forespørsler og godkjenninger (`access.*`, `membership.*`), roller (`role.change`, `operator.grant_role`), import (`operator.import_profiles`), adminredigering og kobling av profiler (`profile.admin_edit`, `profile.link`) og moderering (`content.remove_post`, `content.remove_comment`). Hendelser uten utfører kommer fra en operatør på kommandolinjen. Loggen kan ikke endres i appen.
+
+Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten rettigheter, selvgodkjenning, at en bekreftet adresse fra kullisten ikke gir tilgang alene, at søkere ikke kan velge andres profil, godkjenning med og uten profil, avslag, operatørens rolletildeling, rolleendringer, tofaktorkravet, deaktivering og revisjonsloggen.
+
+### Første hovedadmin
+
+Det finnes ingen standardbruker og ingen automatisk admin basert på e-postdomene. Den første hovedadmin gis av en operatør med direkte databasetilgang. Etter det gir hovedadmins roller i appen.
 
 1. Personen registrerer seg i appen, bekrefter e-postadressen og svarer på «Hvem er du?».
-2. Operatøren kjører, med `DATABASE_URL` mot riktig database. Det godkjenner forespørselen (og kobler kontoen til profilen personen valgte fra kullisten) og gir adminrolle:
+2. Operatøren kjører, med `DATABASE_URL` mot riktig database. Det godkjenner forespørselen (og kobler kontoen til profilen personen valgte fra kullisten) og gir rollen hovedadmin:
    ```sh
    pnpm admin:grant --email navn@example.com --reason "Styreleder 2026"
+   pnpm admin:grant --email navn@example.com --reason "…" --rolle admin   # eller moderator
    ```
-3. Skriptet viser hvilken database det kobler til og krever at e-postadressen skrives inn på nytt. Det nekter å kjøre uten interaktiv terminal, og nekter kontoer med ubekreftet e-post. Tildelingen havner i `audit_event` med begrunnelsen.
+3. Skriptet viser hvilken database det kobler til og krever at e-postadressen skrives inn på nytt. Det nekter å kjøre uten interaktiv terminal, og nekter kontoer med ubekreftet e-post. Tildelingen havner i revisjonsloggen med begrunnelsen.
+4. Personen slår på tofaktor under «Konto og sikkerhet». Før det virker ikke adminrettighetene.
 
 ### Lokal innlogging
 

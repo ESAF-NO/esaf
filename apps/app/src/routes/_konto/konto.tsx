@@ -5,19 +5,13 @@ import { z } from 'zod'
 import { QrCode } from '#/components/QrCode.tsx'
 import { Button, Card, ErrorText, Field, Input, PageHeader } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { roleNames } from '#/lib/roles.ts'
 
 export const Route = createFileRoute('/_konto/konto')({
   validateSearch: z.object({ krav: z.enum(['tofaktor']).optional().catch(undefined) }),
   head: () => ({ meta: [{ title: 'Konto og sikkerhet – ESAF' }] }),
   component: Account,
 })
-
-const roleNames = {
-  member: 'medlem',
-  moderator: 'moderator',
-  admin: 'admin',
-  owner: 'hovedadmin',
-} as const
 
 function Section({
   title,

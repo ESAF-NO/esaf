@@ -124,7 +124,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               to="/admin"
               icon={ShieldCheck}
               label="Admin"
-              active={path === '/admin'}
+              active={path === '/admin' || path.startsWith('/admin/')}
               onNavigate={onNavigate}
             />
           )}

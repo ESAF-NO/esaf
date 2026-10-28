@@ -1,6 +1,6 @@
 # ESAF
 
-Monorepo for ESAF – NTNUs Entreprenørskoles Alumniforening. Det inneholder den offentlige nettsiden for `esaf.no` og grunnmuren til ESAF-appen, en lukket app for godkjente medlemmer.
+Monorepo for ESAF – Entreprenørskolens Alumniforening. Det inneholder den offentlige nettsiden for `esaf.no` og grunnmuren til ESAF-appen, en lukket app for godkjente medlemmer.
 
 ## Mappestruktur
 

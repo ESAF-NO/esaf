@@ -145,7 +145,7 @@ Lokalt sendes ingen e-post. Bekreftelseslenken skrives ut i terminalen der `pnpm
 
 ## Deploy
 
-Nettsiden deployes automatisk til Cloudflare fra GitHub Actions når oppsettet under er gjort. Appen er ikke deployet. `esaf.no` ligger i ESAFs Cloudflare-konto, der Email Routing er slått på for å videresende `styret@esaf.no` til foreningens Gmail. Domenet peker ikke til nettsiden ennå.
+Nettsiden ligger på https://esaf.no og deployes automatisk til Cloudflare fra GitHub Actions. Appen er ikke deployet. `esaf.no` ligger i ESAFs Cloudflare-konto, der Email Routing også er slått på for å videresende `styret@esaf.no` til foreningens Gmail.
 
 ### Nettsiden til Cloudflare Workers Static Assets
 
@@ -165,11 +165,16 @@ Slik er deployen sikret:
 1. Cloudflare: Manage Account → Account API Tokens → Create Token → Custom token. Gi den navnet `github-actions-esaf-site`, rettigheten Account · Workers Scripts · Edit og bare ESAF-kontoen under Account Resources. Bruk en kontoeid nøkkel, ikke en personlig, så den virker videre når styret byttes ut.
 2. `gh secret set CLOUDFLARE_API_TOKEN --env production --repo ESAF-NO/esaf` og lim inn nøkkelen når du blir spurt.
 3. `gh variable set CLOUDFLARE_ACCOUNT_ID --repo ESAF-NO/esaf --body <konto-ID>`. Konto-ID-en står på kontoens oversiktsside i Cloudflare. Variabelen slår på deploy-jobben, som hoppes over så lenge den mangler. Derfor hoppes den også over i forks.
-4. `gh workflow run CI --ref main`. Første deploy oppretter Workeren `esaf-site` på `esaf-site.<subdomene>.workers.dev`. Hvis kontoen ikke har et workers.dev-subdomene ennå, feiler deployen med beskjed om det. Åpne da Workers & Pages i Cloudflare én gang og velg et.
+4. `gh workflow run CI --ref main` starter en deploy uten ny commit.
 
 For å bytte nøkkel: lag en ny, kjør steg 2 på nytt, start en deploy og slett den gamle nøkkelen i Cloudflare.
 
-**Koble til esaf.no.** Fjern kommentaren rundt `routes` i `wrangler.jsonc`, sett `"workers_dev": false` og push til `main`. Deployen oppretter da DNS-oppføringene og sertifikatene for `esaf.no` og `www.esaf.no`. Domenet har ingen nettsideoppføringer i dag, så ingenting blir overskrevet. Siden blir offentlig på `esaf.no`, så det krever en eksplisitt beslutning (se Åpne beslutninger).
+**Domener.** `esaf.no` og `www.esaf.no` er egne domener for Workeren i `wrangler.jsonc`, så Cloudflare lager DNS-oppføringene og sertifikatene ved deploy. `workers.dev` og forhåndsvisnings-URL-er er slått av, så siden bare ligger på `esaf.no`. To innstillinger ligger i Cloudflare og ikke i koden, fordi deploy-nøkkelen ikke har tilgang til dem:
+
+- Redirect Rule `www til esaf.no` sender `www.esaf.no` videre til `https://esaf.no` med 301 og beholder sti og spørrestreng.
+- Always Use HTTPS (SSL/TLS → Edge Certificates) sender `http://` videre til `https://`.
+
+Sikkerhetsoverskriftene, blant annet HSTS, settes i `apps/site/public/_headers`.
 
 **Manuell deploy**, hvis CI ikke kan brukes:
 

@@ -1,0 +1,37 @@
+---
+import { siteConfig } from '../site.config'
+const year = new Date().getFullYear()
+---
+
+<footer class="footer">
+  <div class="wrap row">
+    <p>
+      <strong>{siteConfig.name}</strong> – {siteConfig.fullName}
+    </p>
+    <p>
+      <a href={siteConfig.schoolUrl}>NTNUs Entreprenørskole</a>
+      <span aria-hidden="true"> · </span>© {year}
+    </p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    border-top: 1px solid var(--line);
+    padding-block: 2rem 2.5rem;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 2rem;
+  }
+  p {
+    margin: 0;
+  }
+  strong {
+    color: var(--ink);
+  }
+</style>

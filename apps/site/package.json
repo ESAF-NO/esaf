@@ -1,0 +1,21 @@
+{
+  "name": "@esaf/site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "deploy:dry-run": "wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "astro": "^7.4.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "sharp": "^0.35.5",
+    "typescript": "~6.0.3",
+    "wrangler": "^4.154.0"
+  }
+}

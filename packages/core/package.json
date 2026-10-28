@@ -1,0 +1,25 @@
+{
+  "name": "@esaf/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "admin:grant": "tsx scripts/grant-admin.ts",
+    "profiles:import": "tsx scripts/import-profiles.ts"
+  },
+  "dependencies": {
+    "@esaf/db": "workspace:*",
+    "csv-parse": "^7.0.3",
+    "drizzle-orm": "^0.45.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.5"
+  }
+}

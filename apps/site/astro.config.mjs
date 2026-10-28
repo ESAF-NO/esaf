@@ -5,6 +5,9 @@ import { defineConfig } from 'astro/config'
 export default defineConfig({
   site: 'https://esaf.no',
   output: 'static',
-  trailingSlash: 'ignore',
+  // Sider bygges som sponsorer.html, så Cloudflare serverer /sponsorer direkte uten omdirigering.
+  // Interne lenker og kanoniske URL-er skrives derfor uten skråstrek på slutten.
+  trailingSlash: 'never',
+  build: { format: 'file' },
   server: { port: 4321 },
 })

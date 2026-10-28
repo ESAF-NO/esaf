@@ -1,0 +1,145 @@
+---
+import Footer from '../components/Footer.astro'
+import Header from '../components/Header.astro'
+import Base from '../layouts/Base.astro'
+import { siteConfig } from '../site.config'
+import { currentSponsors, previousSponsors } from '../sponsors'
+
+const lists = [
+  { id: 'naa', title: 'Nåværende sponsorer', sponsors: currentSponsors },
+  { id: 'tidligere', title: 'Tidligere sponsorer', sponsors: previousSponsors },
+].filter((l) => l.sponsors.length > 0)
+---
+
+<Base
+  title="Sponsorer"
+  description="ESAF ser etter sponsorer og samarbeidspartnere, for hele året eller for enkeltarrangementer som ESAF-helg."
+>
+  <Header />
+  <main id="innhold">
+    <section class="hero" aria-labelledby="sponsorer-title">
+      <div class="wrap">
+        <h1 id="sponsorer-title">Sponsorer og samarbeid</h1>
+        <div class="split">
+          <p class="lead">
+            ESAF drives av alumni, og vi ser alltid etter sponsorer og samarbeidspartnere til
+            arrangementene våre. Bedrifter kan bli partner for hele året eller for
+            enkeltarrangementer som <span class="nowrap">ESAF-helg</span>. Vil bedriften din støtte
+            miljøet, eller møte studenter og alumni som bygger selskaper? Ta kontakt med styret.
+          </p>
+          {siteConfig.contactEmail && (
+            <p class="cta">
+              <a class="arrow" href={`mailto:${siteConfig.contactEmail}?subject=Sponsing`}>
+                Bli sponsor
+              </a>
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+
+    {lists.map((l) => (
+      <section class="section" aria-labelledby={`${l.id}-title`}>
+        <div class="wrap split">
+          <h2 id={`${l.id}-title`}>{l.title}</h2>
+          <ul class="sponsors">
+            {l.sponsors.map((s) => (
+              <li>
+                <div class="sponsor">
+                  {s.url ? <a href={s.url}>{s.name}</a> : <span>{s.name}</span>}
+                  {(s.partnership || s.period) && (
+                    <span class="meta">
+                      {[s.partnership, s.period].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                </div>
+                {s.description && <p>{s.description}</p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    ))}
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .hero {
+    padding-block: clamp(4rem, 10vw, 7.5rem) clamp(3.5rem, 8vw, 6rem);
+  }
+  .hero h1 {
+    max-width: 16ch;
+    margin-bottom: clamp(2rem, 5vw, 3.5rem);
+  }
+  .lead {
+    font-size: clamp(1.15rem, 2vw, 1.35rem);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+  .cta {
+    margin: 0;
+    align-self: end;
+  }
+
+  .split {
+    display: grid;
+    gap: 1.5rem 5rem;
+  }
+  @media (min-width: 52rem) {
+    .split {
+      grid-template-columns: 1.4fr 1fr;
+    }
+    .section .split {
+      grid-template-columns: 1fr 1.3fr;
+    }
+  }
+
+  .section {
+    padding-bottom: clamp(3.5rem, 8vw, 6rem);
+  }
+  .section .wrap {
+    padding-top: clamp(3.5rem, 8vw, 6rem);
+    border-top: 1px solid var(--line);
+  }
+
+  .sponsors {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .sponsors li {
+    padding-block: 1rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .sponsors li:first-child {
+    padding-top: 0.25rem;
+  }
+  .sponsor {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+    font-family: var(--serif);
+    font-size: 1.4rem;
+  }
+  .sponsors a {
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .sponsors a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .meta {
+    font-family: var(--sans);
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+  .sponsors p {
+    margin: 0.4rem 0 0;
+    color: var(--ink-soft);
+  }
+</style>

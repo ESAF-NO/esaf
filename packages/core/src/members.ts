@@ -4,6 +4,7 @@ import { alias } from 'drizzle-orm/pg-core'
 import { assertCan, assertMember, type Viewer } from './access.ts'
 import { DomainError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
+import { photoUrls, type ProfilePhoto } from './photos.ts'
 
 const {
   accessRequest,
@@ -81,6 +82,7 @@ export async function loadViewer(db: Db, userId: string): Promise<Viewer> {
 export type MemberListItem = {
   personId: string
   fullName: string
+  photo: ProfilePhoto | null
   /** `true` når personen selv har tatt i bruk profilen med en bekreftet konto. */
   claimed: boolean
   /** Fra den øverste nåværende erfaringen. */
@@ -130,6 +132,7 @@ export async function listActiveMembers(
     .select({
       personId: person.id,
       fullName: person.fullName,
+      photoKey: person.photoKey,
       userId: person.userId,
       city: person.city,
       studyBackground: person.studyBackground,
@@ -156,6 +159,7 @@ export async function listActiveMembers(
     const item = byPerson.get(row.personId) ?? {
       personId: row.personId,
       fullName: row.fullName,
+      photo: photoUrls(row.photoKey),
       claimed: row.userId !== null,
       ...currentRole(roles),
       city: row.city,
@@ -331,6 +335,7 @@ export async function linkAccountToProfile(
 export type PersonHit = {
   personId: string
   fullName: string
+  photo: ProfilePhoto | null
   claimed: boolean
   jobTitle: string | null
   currentCompany: string | null
@@ -355,6 +360,7 @@ export async function searchPeople(
     .select({
       personId: person.id,
       fullName: person.fullName,
+      photoKey: person.photoKey,
       userId: person.userId,
     })
     .from(person)
@@ -371,8 +377,9 @@ export async function searchPeople(
     db,
     rows.map((r) => r.personId),
   )
-  return rows.map(({ userId, ...r }) => ({
+  return rows.map(({ userId, photoKey, ...r }) => ({
     ...r,
+    photo: photoUrls(photoKey),
     ...currentRole(experiences.get(r.personId) ?? []),
     claimed: userId !== null,
   }))
@@ -382,7 +389,11 @@ export async function searchPeople(
 export async function viewerCard(db: Db, viewer: Viewer) {
   if (!viewer?.personId) return null
   const [row] = await db
-    .select({ fullName: person.fullName, onboardedAt: person.onboardedAt })
+    .select({
+      fullName: person.fullName,
+      photoKey: person.photoKey,
+      onboardedAt: person.onboardedAt,
+    })
     .from(person)
     .where(eq(person.id, viewer.personId))
   if (!row) return null
@@ -396,6 +407,7 @@ export async function viewerCard(db: Db, viewer: Viewer) {
   ])
   return {
     fullName: row.fullName,
+    photo: photoUrls(row.photoKey),
     email: account?.email ?? null,
     onboarded: row.onboardedAt !== null,
     requestStatus: request?.status ?? null,

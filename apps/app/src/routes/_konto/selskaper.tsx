@@ -171,7 +171,7 @@ function CompanyCard({ company: c }: { company: Company }) {
                 params={{ personId: p.personId }}
                 className="flex items-center gap-2 rounded-lg text-sm text-stone-700 hover:text-brand-600"
               >
-                <Avatar name={p.fullName} size="xs" muted={!p.claimed} />
+                <Avatar name={p.fullName} photo={p.photo} size="xs" muted={!p.claimed} />
                 <span className="min-w-0 flex-1 truncate">{p.fullName}</span>
                 <span className="max-w-[45%] shrink-0 truncate text-xs text-stone-500">
                   {roleText(p.role, p.title)}

@@ -1,6 +1,7 @@
 import { schema, type Db } from '@esaf/db'
 import { and, eq, inArray, isNotNull } from 'drizzle-orm'
 import { assertMember, type Viewer } from './access.ts'
+import { photoUrls, type ProfilePhoto } from './photos.ts'
 
 const { cohort, experience, membership, person, personCohort } = schema
 
@@ -11,6 +12,7 @@ const rank: Record<CompanyRole, number> = { founder: 0, es: 1, current: 2, past:
 export type CompanyPerson = {
   personId: string
   fullName: string
+  photo: ProfilePhoto | null
   claimed: boolean
   role: CompanyRole
   title: string | null
@@ -52,6 +54,7 @@ export async function listCompanies(db: Db, viewer: Viewer): Promise<Company[]> 
       .select({
         personId: person.id,
         fullName: person.fullName,
+        photoKey: person.photoKey,
         userId: person.userId,
         company: person.esCompany,
       })
@@ -62,6 +65,7 @@ export async function listCompanies(db: Db, viewer: Viewer): Promise<Company[]> 
       .select({
         personId: person.id,
         fullName: person.fullName,
+        photoKey: person.photoKey,
         userId: person.userId,
         company: experience.company,
         title: experience.title,
@@ -104,6 +108,7 @@ export async function listCompanies(db: Db, viewer: Viewer): Promise<Company[]> 
       company.people.push({
         personId: link.personId,
         fullName: link.fullName,
+        photo: photoUrls(link.photoKey),
         claimed: link.userId !== null,
         role: link.role,
         title: link.title,

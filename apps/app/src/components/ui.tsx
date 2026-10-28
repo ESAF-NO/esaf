@@ -1,6 +1,7 @@
+import type { ProfilePhoto } from '@esaf/core'
 import { clsx } from 'clsx'
 import { BadgeCheck } from 'lucide-react'
-import type { ComponentProps, ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
 import { channels, type ChannelKey } from '#/lib/channels.ts'
 
 export { clsx as cx }
@@ -108,18 +109,59 @@ const avatarSizes = {
   xl: 'size-24 text-3xl sm:size-28 sm:text-4xl',
 }
 
-/** Initialer på en farge avledet av navnet, til profilbilder er på plass. */
+/** Hvor bred avataren vises, så nettleseren henter den minste bildestørrelsen som holder. */
+const avatarWidths = {
+  xs: '24px',
+  sm: '32px',
+  md: '40px',
+  lg: '56px',
+  xl: '(min-width: 640px) 112px, 96px',
+}
+
+/**
+ * Profilbildet, eller initialer på en farge avledet av navnet når personen ikke
+ * har bilde eller det ikke lar seg laste. Navnet står alltid ved siden av, så
+ * avataren er pynt for skjermlesere.
+ */
 export function Avatar({
   name,
+  photo,
   size = 'md',
   muted = false,
   className,
 }: {
   name: string
+  photo?: ProfilePhoto | null
   size?: keyof typeof avatarSizes
   muted?: boolean
   className?: string
 }) {
+  // Bildet som ikke lot seg laste, f.eks. ett som nettopp ble fjernet. Et nytt bilde prøves.
+  const [broken, setBroken] = useState<string | null>(null)
+  if (photo && broken !== photo.small) {
+    return (
+      <img
+        // Størrelsene er de samme som PHOTO_SIZES i @esaf/core.
+        src={photo.small}
+        srcSet={`${photo.small} 192w, ${photo.large} 512w`}
+        sizes={avatarWidths[size]}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        onError={() => setBroken(photo.small)}
+        // Feilet bildet før siden ble interaktiv, kommer det ingen error-hendelse.
+        ref={(img) => {
+          if (img?.complete && img.naturalWidth === 0) setBroken(photo.small)
+        }}
+        className={clsx(
+          'inline-block shrink-0 rounded-full bg-stone-100 object-cover select-none',
+          avatarSizes[size],
+          className,
+        )}
+      />
+    )
+  }
   return (
     <span
       aria-hidden
@@ -171,13 +213,13 @@ export function CompanyMark({
 export function AvatarStack({
   people,
 }: {
-  people: { personId: string; fullName: string; claimed: boolean }[]
+  people: { personId: string; fullName: string; photo: ProfilePhoto | null; claimed: boolean }[]
 }) {
   return (
     <span className="flex -space-x-1.5">
       {people.map((p) => (
         <span key={p.personId} className="inline-flex rounded-full ring-2 ring-white">
-          <Avatar name={p.fullName} size="sm" muted={!p.claimed} />
+          <Avatar name={p.fullName} photo={p.photo} size="sm" muted={!p.claimed} />
         </span>
       ))}
     </span>

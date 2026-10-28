@@ -23,3 +23,5 @@ coverage
 
 # Worktrees for parallelle agenter
 .claude/worktrees/
+# Opplastede filer i utvikling (profilbilder), se UPLOAD_DIR
+.data/

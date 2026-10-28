@@ -198,7 +198,12 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
   return (
     <form onSubmit={onSubmit} className="mb-6 flex gap-3">
       {viewer.fullName && (
-        <Avatar name={viewer.fullName} size="md" className="mt-8 hidden sm:inline-grid" />
+        <Avatar
+          name={viewer.fullName}
+          photo={viewer.photo}
+          size="md"
+          className="mt-8 hidden sm:inline-grid"
+        />
       )}
       <div className="min-w-0 flex-1 space-y-2">
         <MarkdownEditor
@@ -273,7 +278,12 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
   return (
     <li id={`kommentar-${c.id}`} className="group flex scroll-mt-24 gap-3">
       <Link to="/medlemmer/$personId" params={{ personId: c.author.personId }} className="mt-0.5">
-        <Avatar name={c.author.fullName} size="md" muted={!c.author.claimed} />
+        <Avatar
+          name={c.author.fullName}
+          photo={c.author.photo}
+          size="md"
+          muted={!c.author.claimed}
+        />
       </Link>
       <div
         className={cx(

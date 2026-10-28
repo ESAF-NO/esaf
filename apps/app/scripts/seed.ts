@@ -20,7 +20,9 @@ import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
+  addComment,
   applyProfileImport,
+  formatMention,
   getAccessState,
   grantRoleAsOperator,
   loadViewer,
@@ -254,7 +256,7 @@ const {
 } = schema
 
 await db.execute(
-  sql`truncate ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
+  sql`truncate ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
 )
 
 /** En innloggingskonto med bekreftet e-post og passord, som om personen hadde registrert seg. */
@@ -590,7 +592,41 @@ async function seedDemo() {
     }
   }
 
+  // Et vanlig medlem som også kan logge inn, så varsler og omtaler kan prøves med
+  // to brukere. Kommentarene går gjennom @esaf/core, så Ada får ekte varsler.
+  const saraUserId = await createLogin('Sara Holm', 'sara@example.test')
+  const [sara] = await db
+    .insert(person)
+    .values({
+      fullName: 'Sara Holm',
+      userId: saraUserId,
+      claimedAt: new Date(),
+      onboardedAt: new Date(),
+      studyBackground: 'Industriell økonomi',
+      city: 'Oslo',
+    })
+    .returning({ id: person.id })
+  await db
+    .insert(membership)
+    .values({ personId: sara!.id, status: 'active', decidedAt: new Date() })
+  await db.insert(personCohort).values({ personId: sara!.id, cohortId: cohortId.get(2016)! })
+  await db
+    .insert(personEmail)
+    .values({ email: 'sara@example.test', personId: sara!.id, source: 'signup' })
+  const saraViewer = await loadViewer(db, saraUserId)
+  const [weekend] = await db
+    .select({ id: post.id })
+    .from(post)
+    .where(sql`${post.authorPersonId} = ${people[0]!.id}`)
+  const ada = formatMention({ personId: people[0]!.id, name: 'Ada Aasen' })
+  await addComment(db, saraViewer, weekend!.id, {
+    body: 'Jeg kommer gjerne og holder en workshop om salg lørdag formiddag.',
+  })
+  await addComment(db, saraViewer, weekend!.id, {
+    body: `${ada}, trenger dere hjelp med middagen også? Jeg kan ta kontakt med et sted i Bakklandet.`,
+  })
+
   console.log(
-    `Seedet ${people.length} oppdiktede personer, ${posts.length} innlegg og ${years.length} kull. Logg inn som admin@example.test / ${PASSWORD}.`,
+    `Seedet ${people.length + 1} oppdiktede personer, ${posts.length} innlegg og ${years.length} kull. Logg inn som admin@example.test eller sara@example.test, passord ${PASSWORD}.`,
   )
 }

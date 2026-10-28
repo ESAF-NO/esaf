@@ -18,6 +18,7 @@ import { Route as KontoKomIGangRouteImport } from './routes/_konto/kom-i-gang'
 import { Route as KontoKontoRouteImport } from './routes/_konto/konto'
 import { Route as KontoKullRouteImport } from './routes/_konto/kull'
 import { Route as KontoSelskaperRouteImport } from './routes/_konto/selskaper'
+import { Route as KontoVarslerRouteImport } from './routes/_konto/varsler'
 import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -74,6 +75,11 @@ const KontoKullRoute = KontoKullRouteImport.update({
 const KontoSelskaperRoute = KontoSelskaperRouteImport.update({
   id: '/selskaper',
   path: '/selskaper',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoVarslerRoute = KontoVarslerRouteImport.update({
+  id: '/varsler',
+  path: '/varsler',
   getParentRoute: () => KontoRoute,
 } as any)
 const KontoVelkommenRoute = KontoVelkommenRouteImport.update({
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/konto': typeof KontoKontoRoute
   '/kull': typeof KontoKullRoute
   '/selskaper': typeof KontoSelskaperRoute
+  '/varsler': typeof KontoVarslerRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   '/konto': typeof KontoKontoRoute
   '/kull': typeof KontoKullRoute
   '/selskaper': typeof KontoSelskaperRoute
+  '/varsler': typeof KontoVarslerRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
@@ -200,6 +208,7 @@ export interface FileRoutesById {
   '/_konto/konto': typeof KontoKontoRoute
   '/_konto/kull': typeof KontoKullRoute
   '/_konto/selskaper': typeof KontoSelskaperRoute
+  '/_konto/varsler': typeof KontoVarslerRoute
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
@@ -225,6 +234,7 @@ export interface FileRouteTypes {
     | '/konto'
     | '/kull'
     | '/selskaper'
+    | '/varsler'
     | '/velkommen'
     | '/venter'
     | '/api/health'
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/konto'
     | '/kull'
     | '/selskaper'
+    | '/varsler'
     | '/velkommen'
     | '/venter'
     | '/api/health'
@@ -271,6 +282,7 @@ export interface FileRouteTypes {
     | '/_konto/konto'
     | '/_konto/kull'
     | '/_konto/selskaper'
+    | '/_konto/varsler'
     | '/_konto/velkommen'
     | '/_konto/venter'
     | '/api/health'
@@ -358,6 +370,13 @@ declare module '@tanstack/react-router' {
       path: '/selskaper'
       fullPath: '/selskaper'
       preLoaderRoute: typeof KontoSelskaperRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/varsler': {
+      id: '/_konto/varsler'
+      path: '/varsler'
+      fullPath: '/varsler'
+      preLoaderRoute: typeof KontoVarslerRouteImport
       parentRoute: typeof KontoRoute
     }
     '/_konto/velkommen': {
@@ -476,6 +495,7 @@ interface KontoRouteChildren {
   KontoKontoRoute: typeof KontoKontoRoute
   KontoKullRoute: typeof KontoKullRoute
   KontoSelskaperRoute: typeof KontoSelskaperRoute
+  KontoVarslerRoute: typeof KontoVarslerRoute
   KontoVelkommenRoute: typeof KontoVelkommenRoute
   KontoVenterRoute: typeof KontoVenterRoute
   KontoFeedPostIdRoute: typeof KontoFeedPostIdRoute
@@ -492,6 +512,7 @@ const KontoRouteChildren: KontoRouteChildren = {
   KontoKontoRoute: KontoKontoRoute,
   KontoKullRoute: KontoKullRoute,
   KontoSelskaperRoute: KontoSelskaperRoute,
+  KontoVarslerRoute: KontoVarslerRoute,
   KontoVelkommenRoute: KontoVelkommenRoute,
   KontoVenterRoute: KontoVenterRoute,
   KontoFeedPostIdRoute: KontoFeedPostIdRoute,

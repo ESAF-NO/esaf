@@ -1,0 +1,39 @@
+{
+  "name": "esaf",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:site": "turbo run dev --filter=@esaf/site",
+    "dev:app": "turbo run dev --filter=@esaf/app",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "turbo run test",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @esaf/db generate",
+    "db:migrate": "pnpm --filter @esaf/db migrate",
+    "db:studio": "pnpm --filter @esaf/db studio",
+    "admin:grant": "pnpm --filter @esaf/core admin:grant",
+    "profiles:import": "pnpm --filter @esaf/core profiles:import",
+    "verify:site": "node scripts/verify-site-build.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "eslint-plugin-astro": "^3.2.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "prettier-plugin-astro": "^1.1.2",
+    "turbo": "^2.11.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

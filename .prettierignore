@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+**/routeTree.gen.ts
+packages/db/drizzle/meta
+dist
+.output
+.astro
+.turbo

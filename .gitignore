@@ -1,0 +1,20 @@
+node_modules
+.DS_Store
+dist
+.output
+.nitro
+.tanstack
+.astro
+.wrangler
+.turbo
+coverage
+*.local
+*.log
+
+# Miljøvariabler: kun .env.example skal committes
+.env
+.env.*
+!.env.example
+
+# Eksporterte kullister inneholder persondata og skal aldri committes
+*.csv

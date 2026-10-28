@@ -1,0 +1,16 @@
+{
+  // Cloudflare Workers Static Assets: kun statiske filer, ingen Worker-kode.
+  // Bygg først med `pnpm --filter @esaf/site build`. Se README for deploy.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "esaf-site",
+  "compatibility_date": "2026-10-28",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+  },
+  // Legg til når esaf.no skal peke hit (krever eksplisitt beslutning):
+  // "routes": [
+  //   { "pattern": "esaf.no", "custom_domain": true },
+  //   { "pattern": "www.esaf.no", "custom_domain": true }
+  // ]
+}

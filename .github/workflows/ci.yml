@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Kortlevd Postgres kun for integrasjonstestene. Ingen hemmeligheter kreves.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: esaf
+          POSTGRES_PASSWORD: esaf_ci
+          POSTGRES_DB: esaf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U esaf -d esaf_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      TEST_DATABASE_URL: postgres://esaf:esaf_ci@localhost:5432/esaf_test
+      TURBO_TELEMETRY_DISABLED: 1
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - name: Sjekk at skjema og migreringer er i synk
+        run: pnpm db:generate && git diff --exit-code packages/db/drizzle
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm verify:site

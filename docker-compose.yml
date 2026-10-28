@@ -1,0 +1,21 @@
+# Kun for lokal utvikling. Produksjonsdatabase settes opp separat (se README).
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: esaf
+      POSTGRES_PASSWORD: esaf_local_dev
+      POSTGRES_DB: esaf
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - esaf-postgres:/var/lib/postgresql
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U esaf -d esaf']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  esaf-postgres:

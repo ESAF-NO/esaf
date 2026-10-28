@@ -1,6 +1,6 @@
 # ESAF
 
-Monorepo for ESAF – NTNUs Entreprenørskoles Alumniforening. Det inneholder den offentlige nettsiden for `esaf.no` og grunnmuren til ESAF-appen, en lukket app for godkjente medlemmer.
+Monorepo for ESAF – Entreprenørskolens Alumniforening. Det inneholder den offentlige nettsiden for `esaf.no` og grunnmuren til ESAF-appen, en lukket app for godkjente medlemmer.
 
 ## Mappestruktur
 
@@ -34,20 +34,21 @@ Bare én av dem: `pnpm dev:site` (krever ingen database) eller `pnpm dev:app`.
 
 ### Kommandoer
 
-| Kommando                      | Hva den gjør                                                                                    |
-| ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| `pnpm dev`                    | Starter site og app i utviklingsmodus                                                           |
-| `pnpm build`                  | Produksjonsbygg av begge appene                                                                 |
-| `pnpm typecheck`              | `tsc` i alle pakker og `astro check` for siden                                                  |
-| `pnpm lint`                   | ESLint og Prettier-sjekk (`pnpm format` retter formatering)                                     |
-| `pnpm test`                   | Enhetstester og integrasjonstester mot `TEST_DATABASE_URL`                                      |
-| `pnpm verify:site`            | Sjekker at `apps/site/dist` ikke inneholder hemmeligheter, appkode eller ukjente e-postadresser |
-| `pnpm db:up` / `pnpm db:down` | Starter eller stopper lokal Postgres                                                            |
-| `pnpm db:generate`            | Lager en ny SQL-migrering fra endringer i `packages/db/src/schema.ts`                           |
-| `pnpm db:migrate`             | Kjører migreringer mot `DATABASE_URL`                                                           |
-| `pnpm db:studio`              | Drizzle Studio mot lokal database                                                               |
-| `pnpm admin:grant`            | Gir adminrolle, se «Første admin» under                                                         |
-| `pnpm profiles:import`        | Importerer profiler fra kullisten (CSV), se «Profiler og import av kullisten» under             |
+| Kommando                      | Hva den gjør                                                                                                                                                                                                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                    | Starter site og app i utviklingsmodus                                                                                                                                                                                                                           |
+| `pnpm build`                  | Produksjonsbygg av begge appene                                                                                                                                                                                                                                 |
+| `pnpm typecheck`              | `tsc` i alle pakker og `astro check` for siden                                                                                                                                                                                                                  |
+| `pnpm lint`                   | ESLint og Prettier-sjekk (`pnpm format` retter formatering)                                                                                                                                                                                                     |
+| `pnpm test`                   | Enhetstester og integrasjonstester mot `TEST_DATABASE_URL`                                                                                                                                                                                                      |
+| `pnpm verify:site`            | Sjekker at `apps/site/dist` ikke inneholder hemmeligheter, appkode eller ukjente e-postadresser                                                                                                                                                                 |
+| `pnpm db:up` / `pnpm db:down` | Starter eller stopper lokal Postgres                                                                                                                                                                                                                            |
+| `pnpm db:generate`            | Lager en ny SQL-migrering fra endringer i `packages/db/src/schema.ts`                                                                                                                                                                                           |
+| `pnpm db:migrate`             | Kjører migreringer mot `DATABASE_URL`                                                                                                                                                                                                                           |
+| `pnpm db:seed`                | Fyller en **lokal** database med oppdiktede alumni, selskaper og innlegg. Sletter alt først, og nekter å kjøre mot noe annet enn localhost. Logg inn som `admin@example.test` / `korrekt-hest-batteri`. Med den ekte lista, se «Lokalt med den ekte kullisten». |
+| `pnpm db:studio`              | Drizzle Studio mot lokal database                                                                                                                                                                                                                               |
+| `pnpm admin:grant`            | Gir adminrolle, se «Første admin» under                                                                                                                                                                                                                         |
+| `pnpm profiles:import`        | Importerer profiler fra kullisten (Excel eller CSV), se «Profiler og import av kullisten» under                                                                                                                                                                 |
 
 Integrasjonstestene hoppes over lokalt hvis `TEST_DATABASE_URL` mangler. I CI må de kjøre. Testene migrerer og tømmer `esaf_test` selv, aldri utviklingsdatabasen.
 
@@ -67,14 +68,46 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `user`, `session`, `account`, `verification` | Better Auth: innloggingsidentitet. Gir ingen tilgang alene.                                                                                                                                                   |
 | `person`                                     | En person ESAF kjenner til. Uten `user_id` er det en _profil_ (f.eks. fra kullisten). Med `user_id` har personen selv tatt den i bruk (`claimed_at`). `source` sier om den kom fra registrering eller import. |
-| `cohort`                                     | Et kull, identifisert ved opptaksår.                                                                                                                                                                          |
+| `experience`                                 | Hvor personen jobber og har jobbet: selskap, stilling, fra- og til-år og om personen grunnla selskapet. Uten til-år er det nåværende. Den nyeste nåværende vises som stilling under navnet.                   |
+| `cohort`                                     | Et kull, identifisert ved uteksamineringsåret, slik ES selv navngir kull: «ES 2024» startet høsten 2022.                                                                                                      |
 | `person_cohort`                              | Tilknytning mellom person og kull, med type: `student`, `staff` eller `mentor`.                                                                                                                               |
+| `person_email`                               | Alle kjente e-postadresser for en person (registrering, kulliste, NTNU-mail, senere andre kilder). Brukes til å koble en konto til riktig profil. Vises aldri for andre medlemmer.                            |
 | `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`admin`).                                                                                                          |
-| `audit_event`                                | Revisjonslogg for godkjenninger, admintildelinger, importer og krav på profiler.                                                                                                                              |
+| `access_request`                             | Forespørsel om tilgang fra en konto med bekreftet e-post: navn, kull, valgfri LinkedIn og melding, og eventuelt profilen fra kullisten personen sier er dem. Status `open`, `approved` eller `rejected`.      |
+| `audit_event`                                | Revisjonslogg for forespørsler, godkjenninger, admintildelinger og importer.                                                                                                                                  |
 
-**Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (opptaksår, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
+**Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (årstall, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
 
-**Hvorfor innlogging ikke gir medlemsinnsyn:** Hvem som helst kan opprette en konto med en vilkårlig e-postadresse. At kontoen finnes, beviser ikke at personen er alumn. Medlemsinnsyn krever derfor bekreftet e-post **og** et aktivt medlemskap som ESAF har godkjent. Det holder rollene og medlemskapet i ESAFs eget domene, ikke i innloggingsleverandøren.
+**Hvorfor uteksamineringsår:** Kullistene, fanene i telefonlista og folk selv bruker uteksamineringsåret. ES 2024 gikk 2022–2024. Profilen viser begge («ES 2024 (2022–2024)»). Migrering `0006` flyttet eksisterende kull fra opptaksår til uteksamineringsår (+2).
+
+**Hvorfor erfaring er en egen tabell:** Én person har ofte jobbet flere steder og startet flere selskaper. Med en liste kan man søke på tidligere arbeidsgivere, og selskapssiden kan vise både gründerselskaper og hvor alumni jobber. Stilling og selskap lå tidligere som to felt på personen. Migrering `0007` flyttet dem over.
+
+**Hvorfor innlogging ikke gir medlemsinnsyn:** Hvem som helst kan opprette en konto med en vilkårlig e-postadresse. At kontoen finnes, beviser ikke at personen er alumn. Medlemsinnsyn krever derfor bekreftet e-post **og** et aktivt medlemskap som en admin har godkjent. Det gjelder også dem som står i kullisten: å kjenne en adresse fra lista gir ingenting, og selv en bekreftet adresse fra lista er bare et sterkt tegn som en admin vurderer. Det holder rollene og medlemskapet i ESAFs eget domene, ikke i innloggingsleverandøren.
+
+## Appen
+
+Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lucide-ikoner. Komponentene ligger i `apps/app/src/components/ui.tsx`. Appen har ingen egen forside, siden den offentlige siden er esaf.no (`apps/site`). `/` sender folk til innlogging, til steget de står på, eller til feeden.
+
+- **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatter eller admin kan slette.
+- **Personer** (`/medlemmer`) er en katalog med søk, kullfilter, filter for verifiserte og de mest brukte emnene og bransjene som snarveier. Søket treffer også tidligere selskaper og stillinger.
+- **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden.
+- **Selskaper** (`/selskaper`) viser selskaper startet av alumni, både ES-selskaper (fra «Selskap på Entreprenørskolen») og selskaper noen har grunnlagt (fra erfaring). «Alle selskaper» viser også arbeidsgivere, med hvem som jobber der nå og hvem som har jobbet der.
+- **Søk** med ⌘K (eller `/`) finner personer, selskaper og innlegg fra hvor som helst i appen.
+- **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom.
+- **Profiler, redigering og admin**, se under.
+
+Ikke bygget ennå: direktemeldinger, varsler, profilbilder, redigering av innlegg, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
+
+## Profiler og katalog
+
+Hver person har en profilside (`/medlemmer/:id`) med erfaring (nåværende og tidligere selskaper, stilling, år og om personen grunnla selskapet), bransjer, by, kull, studieretning før ES, ES-selskap, kort bio, «kan hjelpe med» (opptil 10 emner) og kontaktinfo. «Min profil» i menyen går til din egen.
+
+- **Katalogen** (`/medlemmer`) kan søkes på navn, nåværende og tidligere selskaper og stillinger, bransjer, by, ES-selskap og ekspertise, og filtreres på kull. Søket ligger i URL-en (`?q=…&kull=…`), så det kan deles. Hele katalogen hentes én gang, og filtreringen skjer i nettleseren. Det holder fint for noen tusen personer.
+- **Redigering:** Eieren redigerer sin egen profil. Admin kan fylle ut og rette profilfelt for andre, for eksempel profiler fra kullisten. Slike endringer logges som `profile.admin_edit`.
+- **Kontaktinfo:** LinkedIn vises når den er fylt ut. E-post og telefon vises bare når personen selv har krysset av for det, og aldri på profiler ingen har tatt i bruk. Admin kan verken se eller endre andres skjulte kontaktinfo. Skjult kontaktinfo filtreres bort på serveren og sendes aldri til nettleseren.
+- **Stikkord** (emner og bransjer) med bare små bokstaver får stor forbokstav, så «strategi» og «Strategi» blir samme emne.
+- **Validering** ligger i `profileInput` i `@esaf/core`, så MCP senere kan bruke den samme.
+- **Profilbilder** er ikke på plass ennå. Initialer vises i stedet. Opplasting krever lagring, for eksempel Cloudflare R2.
 
 ## Profiler og import av kullisten
 
@@ -83,50 +116,72 @@ ESAF kan legge inn alle fra kullisten som **profiler** før de har registrert se
 - **✓ Verifisert:** personen har registrert seg, bekreftet e-postadressen og tatt i bruk profilen.
 - **Profil:** lagt inn av ESAF fra kullisten. Personen har ikke tatt den i bruk ennå.
 
-### Krav på profilen
+### Veien inn: forespørsel og godkjenning
 
-Når noen registrerer seg og bekrefter en e-postadresse som står på en profil, kobles kontoen automatisk til profilen. Personen arver da kull og medlemskap, og navnet fra kullisten beholdes. Dette skjer bare etter bekreftet e-post, så å registrere seg med andres adresse er ikke nok. Hvert krav logges som `profile.claim`.
+Ingen får tilgang automatisk. Veien inn er fire steg:
 
-Står personen i arket med en gammel adresse (f.eks. studentadresse), blir kontoen ventende. Admin kan da velge **Koble til eksisterende profil** på `/admin`, søke opp riktig profil og koble kontoen. Den tomme personen fra registreringen slettes, og koblingen logges som `profile.link`.
+1. **Opprett konto** (`/registrer`) med bare e-post og passord. Siden svarer likt om adressen allerede har en konto, så den kan ikke brukes til å sjekke hvem som er registrert.
+2. **Bekreft e-posten.** Det beviser at personen leser den innboksen, ikke bare kjenner adressen.
+3. **Hvem er du?** (`/velkommen`). Står kontoens bekreftede adresse på en profil i kullisten, får personen spørsmål om det er dem. Ellers oppgir de navn og kull. Søkere ser aldri andres data, bare profilen med sin egen adresse. LinkedIn og en melding til styret er valgfritt.
+4. **En admin godkjenner** (`/admin`). For hver forespørsel vises hva som faktisk er bekreftet. En bekreftet adresse som står på den valgte profilen i kullisten, er et sterkt tegn. Navn, kull, telefon og LinkedIn kan alle med lista skrive inn, så de vises som informasjon, ikke som bevis. Uten sterkt tegn viser kortet profiler med likt navn og telefonnummeret fra lista, så admin kan ringe og spørre. Admin kan koble kontoen til en annen profil, godkjenne den som ny person i oppgitt kull, eller avslå. Avslåtte kan ikke sende på nytt, men må kontakte styret.
+
+Ved godkjenning med profil kobles kontoen til profilen. Personen arver kull, og navnet fra kullisten beholdes. Den tomme personen fra registreringen slettes. Alt logges (`access.request`, `access.approve`, `access.reject`).
+
+**Velkomst etter godkjenning** (`/kom-i-gang`): første gang et nytt medlem kommer inn, får de tre korte steg. Først hva de jobber med, så hva de kan hjelpe med og hvilke bransjer de kjenner. Til slutt om e-post og telefon fra telefonlista skal vises for andre. Alt kan hoppes over.
 
 ### Import
 
-Eksporter arket fra Google Sheets (Fil → Last ned → Kommaseparerte verdier). Filen bør ikke ligge i repoet. Deretter:
+Importen leser Excel-fila med telefonlista direkte (`.xlsx`), eller en CSV. Fila inneholder persondata og skal ikke ligge i repoet (`*.csv` er gitignorert; legg `.xlsx` utenfor repoet).
 
 ```sh
-pnpm profiles:import --fil ~/Downloads/kulliste.csv --kull-er opptak          # forhåndsvisning
-pnpm profiles:import --fil ~/Downloads/kulliste.csv --kull-er opptak --apply  # skriver til databasen
+pnpm profiles:import --fil ~/Downloads/telefonliste.xlsx          # forhåndsvisning
+pnpm profiles:import --fil ~/Downloads/telefonliste.xlsx --apply  # skriver til databasen
 ```
 
-- **Kolonner:** Navn (eller fornavn og etternavn) og kull er påkrevd. E-post er valgfri, men trengs for automatisk krav. Vanlige overskrifter som «Navn», «Fullt navn», «E-post» og «Kull» kjennes igjen. Andre kan oppgis med `--kolonne navn="…"`, `--kolonne epost="…"` og `--kolonne kull="…"`. Kolonner som ikke brukes, listes i forhåndsvisningen og importeres ikke.
-- **Kull:** Det første firesifrede årstallet i cellen brukes. `--kull-er` er påkrevd fordi arket kan bruke enten opptaksår eller uteksamineringsår. Med `uteksaminert` trekkes to år fra, siden programmet er toårig.
-- **Forhåndsvisningen** viser antall nye og eksisterende profiler, nye uten e-post, overhoppede rader (manglende navn, ukjent kull, duplikat i filen) og rader å se på (flere e-poster, navneavvik).
-- **Idempotent:** Eksisterende personer kjennes igjen på e-post, ellers på navn og kull. De endres ikke, men får kulltilknytningen hvis den mangler. Importen kan derfor kjøres på nytt når arket oppdateres.
-- **Medlemsstatus:** Nye profiler får standard `active`, fordi kullisten er ESAFs egen oversikt over hvem som er alumni. Med `--status venter` må hver person i stedet godkjennes etter at de har gjort krav på profilen. Importen gir aldri adminrolle.
+- **Excel:** Hver fane som heter «ES 2024», «ES 2013» osv. er ett kull. Faner som dekker flere år, for eksempel «ES 2005-2009», må ha en kolonne «ES-kull» eller «Kull». Andre faner, som «Mailliste - alle», «Støtteark» og «Klasserepresentanter», hoppes over, og det samme gjelder skjulte faner.
+- **Overskrifter:** Overskriftene varierer mellom kullene, og vanlige varianter kjennes igjen: Fornavn/Etternavn/Navn/Name, «E-post (den du bruker!)», «Gmail-adresse», «Primær e-post», «E-mail Address», «NTNU-mail» (lagres som ekstra adresse), Telefon/Mobil/Mobilnr/Mobile Phone, Studieretning/Studiebakgrunn/Profession, LinkedIn, «Spør meg gjerne om» eller «Kompetanseområder» (blir «Kan hjelpe med») og «Bransjer». Mangler første kolonne en gyldig overskrift, tolkes den ut fra nabokolonnene, og forhåndsvisningen sier fra om det.
+- **Telefon og e-post** lagres som skjult kontaktinfo på profilen. Ingen andre ser dem før personen selv har tatt i bruk profilen og slått dem på; da er de allerede fylt inn. Numrene ryddes («41234567», «0047 …», «M: +47…» blir «+47 412 34 567»). Står det flere, brukes det første.
+- **Importeres aldri:** Facebook, adresse, postnummer, poststed og andre kolonner som ikke er nevnt over. Forhåndsvisningen lister dem per fane.
+- **E-post:** Alle gyldige adresser på raden lagres. En konto gjør krav på profilen hvis den registreres med hvilken som helst av dem.
+- **LinkedIn:** Delingslenker blir ryddet opp (`?utm_…` og undersider fjernes). Lenker som ikke går til en profil, hoppes over med et varsel.
+- **Profilfelt i CSV:** By og LinkedIn kjennes igjen automatisk. Selskap, stilling og ES-selskap må oppgis eksplisitt, fordi «Selskap» kan bety begge deler: `--kolonne selskap="Arbeidsgiver" --kolonne stilling="Jobb" --kolonne es-selskap="ES-selskap"`.
+- **Kull:** Årstallet kommer fra fanenavnet eller kullkolonnen, og er uteksamineringsåret slik ES bruker det. Har en kilde opptaksår i stedet, bruk `--kull-er opptak`; da legges to år til. En kullcelle som «2005/2006» kobler personen til begge kull.
+- **Samme person flere steder:** Står samme navn og e-post i to faner, kobles personen til begge kull. Samme e-post med et annet navn hoppes over. Rader uten kull tas med hvis de har e-post (så de kjennes igjen neste gang), ellers hoppes de over.
+- **Forhåndsvisningen** viser hvilke kolonner som brukes per fane, antall nye og eksisterende profiler, rader som hoppes over (manglende navn, ukjent kull, duplikat på tvers av faner) og rader å se på. Navn vises bare der du må finne raden i arket. `--vis-rader` lister alle rader.
+- **Idempotent og berikbar:** Personer kjennes igjen på hvilken som helst kjent e-post, ellers på navn og kull. Ved ny import eller import fra en annen kilde fylles bare tomme felt, og bare på profiler ingen har tatt i bruk. Det gjelder også telefon, bransjer og stilling. Nye e-postadresser legges til. Navn og alt en person selv har skrevet, overskrives aldri.
+- **Medlemsstatus:** Nye profiler får standard `active`, så de vises i katalogen for medlemmer. Med `--status venter` vises de ikke før personen er godkjent. Uansett status gir importen aldri tilgang til noen konto (se «Veien inn»), og aldri adminrolle.
 
-**Sikkerhetsavveiing:** Med `active` får den som kontrollerer en e-postadresse i arket medlemsinnsyn ved første innlogging. Er adressene gamle eller usikre, bruk `--status venter`, eller fjern adressene før import.
+### Lokalt med den ekte kullisten
+
+```sh
+pnpm db:seed --fil ~/Downloads/telefonliste.xlsx --admin deg@example.com
+```
+
+Tømmer den **lokale** databasen og importerer lista med samme kode som `profiles:import`. Med `--admin` får du en innlogging med den e-posten du står med i lista (passord `korrekt-hest-batteri`). Kontoen går samme vei som en ekte bruker: forespørsel om å være profilen med den adressen, som operatøren godkjenner med adminrolle. Første innlogging viser velkomststegene. Det lages ingen innlegg, så ingen ekte personer får tekst de ikke har skrevet. Fila leses bare og havner aldri i repoet.
+
+Uten `--fil` lager `pnpm db:seed` oppdiktede data, inkludert to åpne forespørsler på `/admin`: Kari Nordmann (adressen står på profilen) og Nils Nyregistrert (ikke funnet i lista). De logger inn med `kari@example.test` og `nils@example.test`.
 
 ## Tilgangsgrensen
 
-| Nivå        | Hvem                                                                                       | Ser                                           |
-| ----------- | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| `anonymous` | Ikke innlogget                                                                             | Offentlige sider, innlogging, registrering    |
-| `pending`   | Innlogget, men e-post ikke bekreftet eller medlemskap ikke godkjent (`pending`/`inactive`) | Egen statusside (`/venter`)                   |
-| `member`    | Bekreftet e-post og `status = active`                                                      | Medlemsoversikt                               |
-| `admin`     | Som `member`, og i tillegg `role = admin`                                                  | Godkjenning av ventende medlemskap (`/admin`) |
+| Nivå        | Hvem                                                                                       | Ser                                                |
+| ----------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `anonymous` | Ikke innlogget                                                                             | Offentlige sider, innlogging, registrering         |
+| `pending`   | Innlogget, men e-post ikke bekreftet eller medlemskap ikke godkjent (`pending`/`inactive`) | «Hvem er du?» (`/velkommen`) og status (`/venter`) |
+| `member`    | Bekreftet e-post og `status = active`                                                      | Appen                                              |
+| `admin`     | Som `member`, og i tillegg `role = admin`                                                  | Forespørsler om tilgang (`/admin`)                 |
 
 Regelen ligger i én funksjon, `accessLevel` i `packages/core/src/access.ts`. Den håndheves **på serveren**: alle private data hentes gjennom serverfunksjoner (`apps/app/src/lib/members.functions.ts`). De slår opp sesjonen og kaller `@esaf/core`, som sjekker tilgang ved hvert kall, også etter klientnavigasjon og ved direkte RPC-kall. Rutevaktene i UI-et er bare for brukervennligheten. Vanlige medlemmer får 404 på adminsider.
 
 Adminrolle kan **ikke** gis via registrering, godkjenning eller noe web-endepunkt. Godkjenning setter bare `status`. Better Auths admin-plugin er ikke i bruk, og `user`-tabellen har ikke noe rollefelt.
 
-Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten adminrett, selvgodkjenning og kobling til person fra kulliste.
+Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten adminrett, selvgodkjenning, at en bekreftet adresse fra kullisten ikke gir tilgang alene, at søkere ikke kan velge andres profil, godkjenning med og uten profil, avslag og operatørens adminrolle.
 
 ### Første admin
 
 Det finnes ingen standardbruker og ingen automatisk admin basert på e-postdomene. Første (og senere) admin gis av en operatør med direkte databasetilgang:
 
-1. Personen registrerer seg i appen og bekrefter e-postadressen.
-2. Operatøren kjører, med `DATABASE_URL` mot riktig database:
+1. Personen registrerer seg i appen, bekrefter e-postadressen og svarer på «Hvem er du?».
+2. Operatøren kjører, med `DATABASE_URL` mot riktig database. Det godkjenner forespørselen (og kobler kontoen til profilen personen valgte fra kullisten) og gir adminrolle:
    ```sh
    pnpm admin:grant --email navn@example.com --reason "Styreleder 2026"
    ```
@@ -134,7 +189,7 @@ Det finnes ingen standardbruker og ingen automatisk admin basert på e-postdomen
 
 ### Lokal innlogging
 
-Lokalt sendes ingen e-post. Bekreftelseslenken skrives ut i terminalen der `pnpm dev` kjører («Bekreftelseslenke for …»). Åpne den for å bekrefte kontoen. I produksjon kaster samme kode en feil til en e-postleverandør er satt opp (se under). Da kan ingen kontoer bekreftes, og det finnes ingen vei utenom.
+Lokalt sendes ingen e-post. Bekreftelseslenken skrives ut i terminalen der `pnpm dev` kjører («Bekreftelseslenke for …»). Åpne den for å bekrefte kontoen. Da logges du inn og havner på «Hvem er du?». I produksjon kaster samme kode en feil til en e-postleverandør er satt opp (se under). Da kan ingen kontoer bekreftes, og det finnes ingen vei utenom.
 
 ## Sikkerhet i koden
 
@@ -191,9 +246,9 @@ Dette gjenstår før appen kan brukes av medlemmer:
 
 - **Tekst og kontakt på esaf.no:** Teksten bygger på ESAFs partnerpresentasjon fra 2025 og NTNUs studieside. Kontaktadressen er foreningens generelle adresse. Styret må godkjenne formuleringene, bekrefte at aktivitetene fortsatt arrangeres og at adressen kan publiseres. Se `apps/site/KILDER.md`. Logo og bilder fra Drive er ikke tatt i bruk før rettigheter og samtykke er avklart.
 - **Hvem skal få medlemsinnsyn:** Alumni, nåværende studenter, ansatte og/eller mentorer? Datamodellen støtter alle fire via `person_cohort.relation`, men godkjenningen skiller ikke mellom dem ennå.
-- **Hvilke kolonner fra kullisten som skal inn i appen:** Nå importeres bare navn, e-post og kull. Øvrige felt (f.eks. selskap og telefon) krever egne felt i skjemaet og en beslutning om hvem som får se dem.
+- **Telefonnumrene fra lista:** De er importert, men vises ikke før personen selv slår dem på. Lista ble delt for at ES-ere skulle kunne ringe hverandre, så styret kan velge å vise numrene for godkjente medlemmer fra start, med mulighet til å skjule dem. Det er én endring i `getProfile`.
 - **Medlemsstatus for importerte profiler:** `active` (standard) eller `venter`, se sikkerhetsavveiingen over.
-- **Hva medlemmer ser om hverandre:** Medlemsoversikten viser nå bare navn og kull, ikke e-post. Felttilgang må avgjøres før profiler bygges ut.
+- **Hva medlemmer ser om hverandre:** Alle profilfelt er synlige for aktive medlemmer. E-post og telefon vises bare når personen selv slår det på.
 - **Repo og hosting:** GitHub-reponavn og hosting for appen er ikke valgt.
 - **Innlogging:** Nå brukes e-post og passord med e-postbekreftelse. Magisk lenke, passkeys eller Google-innlogging kan legges til når e-post er på plass.
 - **MCP:** Ikke implementert. Bygg på `@esaf/core` med den offisielle MCP TypeScript SDK. Better Auths MCP-plugin er i beta og bør testes i en egen integrasjonstest før den velges.

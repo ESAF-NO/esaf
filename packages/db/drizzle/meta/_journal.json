@@ -15,6 +15,62 @@
       "when": 1793219477744,
       "tag": "0001_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793220433216,
+      "tag": "0002_profile_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793221119314,
+      "tag": "0003_person_emails",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793221124340,
+      "tag": "0004_drop_person_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793221513584,
+      "tag": "0005_feed",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793223093206,
+      "tag": "0006_cohort_graduation_year",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793223175834,
+      "tag": "0007_experience",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793224648580,
+      "tag": "0008_access_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793226000526,
+      "tag": "0009_roles_two_factor",
+      "breakpoints": true
     }
   ]
 }

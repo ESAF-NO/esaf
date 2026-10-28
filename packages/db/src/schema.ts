@@ -33,6 +33,8 @@ export const user = pgTable('user', {
   email: text().notNull().unique(),
   emailVerified: boolean().notNull().default(false),
   image: text(),
+  /** Tofaktor med autentiseringsapp (Better Auths two-factor-plugin). Påkrevd for admins. */
+  twoFactorEnabled: boolean().notNull().default(false),
   ...timestamps,
 })
 
@@ -73,6 +75,25 @@ export const account = pgTable(
   (t) => [index().on(t.userId)],
 )
 
+/** Hemmeligheten bak tofaktor og reservekodene, kryptert av Better Auth. */
+export const twoFactor = pgTable(
+  'two_factor',
+  {
+    id: text().primaryKey(),
+    secret: text().notNull(),
+    backupCodes: text().notNull(),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Usann til første kode er bekreftet; først da er tofaktor slått på. */
+    verified: boolean().notNull().default(true),
+    failedVerificationCount: integer().notNull().default(0),
+    /** Settes etter for mange feil koder på rad. */
+    lockedUntil: timestamp({ withTimezone: true }),
+  },
+  (t) => [index().on(t.secret), index().on(t.userId)],
+)
+
 export const verification = pgTable(
   'verification',
   {
@@ -91,7 +112,7 @@ export const verification = pgTable(
 
 /**
  * Et kull er en egen enhet, ikke et årstall på personen: kullet har egne
- * egenskaper (opptaksår, senere navn, syretester, kontaktperson), en person kan
+ * egenskaper (årstall, senere navn, syretester, kontaktperson), en person kan
  * ha flere tilknytninger (f.eks. student i ett kull og mentor for et annet),
  * og import, invitasjon og oversikter skjer per kull.
  */
@@ -99,13 +120,16 @@ export const cohort = pgTable(
   'cohort',
   {
     id: uuid().primaryKey().defaultRandom(),
-    /** Opptaksåret til kullet ved NTNUs Entreprenørskole. */
-    startYear: integer().notNull().unique(),
+    /**
+     * Året kullet blir uteksaminert. Slik navngir ES kullene sine: «ES 2024»
+     * startet høsten 2022 og ble uteksaminert våren 2024.
+     */
+    graduationYear: integer().notNull().unique(),
     /** Valgfritt kallenavn kullet selv bruker. */
     name: text(),
     ...timestamps,
   },
-  (t) => [check('cohort_start_year_range', sql`${t.startYear} between 1990 and 2100`)],
+  (t) => [check('cohort_graduation_year_range', sql`${t.graduationYear} between 1990 and 2100`)],
 )
 
 export const personSource = pgEnum('person_source', ['signup', 'import'])
@@ -121,15 +145,93 @@ export const person = pgTable(
   {
     id: uuid().primaryKey().defaultRandom(),
     fullName: text().notNull(),
-    /** Normalisert til små bokstaver. Brukes til å koble kulliste mot konto. */
-    email: text(),
     userId: text().references(() => user.id, { onDelete: 'set null' }),
     /** Når personen selv tok i bruk profilen. Null for profiler uten konto. */
     claimedAt: timestamp({ withTimezone: true }),
     source: personSource().notNull().default('signup'),
+
+    // Profil. Synlig for aktive medlemmer. Stilling og selskap ligger i `experience`.
+    city: text(),
+    /** Studieretning før Entreprenørskolen. */
+    studyBackground: text(),
+    /** Selskapet personen startet eller jobbet med på Entreprenørskolen. */
+    esCompany: text(),
+    bio: text(),
+    /** Emner personen kan hjelpe andre med. */
+    expertise: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** Bransjer personen har jobbet i, nå eller tidligere. */
+    industries: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    linkedinUrl: text(),
+
+    // Kontakt. Vises bare når personen selv har slått det på, og aldri for
+    // profiler ingen har tatt i bruk.
+    contactEmail: text(),
+    contactEmailVisible: boolean().notNull().default(false),
+    phone: text(),
+    phoneVisible: boolean().notNull().default(false),
+    /** Når personen var gjennom (eller hoppet over) velkomststegene etter godkjenning. */
+    onboardedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
-  (t) => [uniqueIndex().on(t.email), uniqueIndex().on(t.userId)],
+  (t) => [uniqueIndex().on(t.userId)],
+)
+
+/**
+ * Hvor en person har jobbet eller hva de har bygget, nå og tidligere. Rader uten
+ * `endYear` er nåværende; den nyeste av dem vises som stilling under navnet.
+ */
+export const experience = pgTable(
+  'experience',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    company: text().notNull(),
+    title: text(),
+    startYear: integer(),
+    /** Null betyr at personen fortsatt er der. */
+    endYear: integer(),
+    /** Personen grunnla eller var med å grunnlegge selskapet. */
+    founder: boolean().notNull().default(false),
+    /** Rekkefølgen personen la dem inn i. Avgjør ved likt årstall. */
+    position: integer().notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.personId),
+    check(
+      'experience_years',
+      sql`(${t.startYear} is null or ${t.startYear} between 1950 and 2100) and (${t.endYear} is null or ${t.endYear} between 1950 and 2100) and (${t.startYear} is null or ${t.endYear} is null or ${t.endYear} >= ${t.startYear})`,
+    ),
+  ],
+)
+
+export const emailSource = pgEnum('email_source', ['signup', 'import', 'admin'])
+
+/**
+ * Kjente e-postadresser for en person, fra registrering, kullister og andre
+ * kilder. Brukes til å koble en konto til riktig profil: en bekreftet konto gjør
+ * krav på profilen som har kontoens adresse. Vises aldri for andre medlemmer.
+ */
+export const personEmail = pgTable(
+  'person_email',
+  {
+    /** Normalisert til små bokstaver. */
+    email: text().primaryKey(),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    source: emailSource().notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index().on(t.personId)],
 )
 
 export const cohortRelation = pgEnum('cohort_relation', ['student', 'staff', 'mentor'])
@@ -150,7 +252,12 @@ export const personCohort = pgTable(
 )
 
 export const membershipStatus = pgEnum('membership_status', ['pending', 'active', 'inactive'])
-export const memberRole = pgEnum('member_role', ['member', 'admin'])
+/**
+ * Roller fra minst til mest. Hva hver rolle får gjøre, står i `permissions` i
+ * `@esaf/core` (access.ts). `owner` vises som «hovedadmin» og er den eneste som
+ * kan gi og fjerne roller.
+ */
+export const memberRole = pgEnum('member_role', ['member', 'moderator', 'admin', 'owner'])
 
 /**
  * Medlemskap i ESAF er en ESAF-beslutning, ikke en konsekvens av å ha en konto.
@@ -168,6 +275,40 @@ export const membership = pgTable('membership', {
   decidedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
   ...timestamps,
 })
+
+export const accessRequestStatus = pgEnum('access_request_status', ['open', 'approved', 'rejected'])
+
+/**
+ * En forespørsel om tilgang fra en konto med bekreftet e-post. Ingen får
+ * medlemsinnsyn uten at en admin har godkjent forespørselen, heller ikke de som
+ * står i kullisten: å kjenne en adresse fra lista er ikke nok, og selv en
+ * bekreftet adresse er bare et sterkt tegn som en admin vurderer.
+ */
+export const accessRequest = pgTable(
+  'access_request',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: text()
+      .notNull()
+      .unique()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /**
+     * Profilen fra kullisten personen sier er dem. Kan bare være en profil med
+     * kontoens egen e-postadresse. Null betyr «fant meg ikke i lista».
+     */
+    profilePersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    fullName: text().notNull(),
+    /** Kullet personen oppgir, som uteksamineringsår. */
+    graduationYear: integer(),
+    linkedinUrl: text(),
+    note: text(),
+    status: accessRequestStatus().notNull().default('open'),
+    decidedAt: timestamp({ withTimezone: true }),
+    decidedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.status, t.createdAt)],
+)
 
 /** Revisjonslogg for tilgangsendringer. Skrives aldri over. */
 export const auditEvent = pgTable(
@@ -188,3 +329,71 @@ export type MembershipStatus = (typeof membershipStatus.enumValues)[number]
 export type MemberRole = (typeof memberRole.enumValues)[number]
 export type CohortRelation = (typeof cohortRelation.enumValues)[number]
 export type PersonSource = (typeof personSource.enumValues)[number]
+export type AccessRequestStatus = (typeof accessRequestStatus.enumValues)[number]
+
+// ---------------------------------------------------------------------------
+// Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)
+// ---------------------------------------------------------------------------
+
+export const postChannel = pgEnum('post_channel', [
+  'generelt',
+  'sporsmal',
+  'intro',
+  'lansering',
+  'jobb',
+  'arrangement',
+])
+
+export const post = pgTable(
+  'post',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    authorPersonId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    channel: postChannel().notNull().default('generelt'),
+    title: text().notNull(),
+    body: text().notNull().default(''),
+    /** Valgfri lenke, f.eks. til en lansering eller stillingsannonse. */
+    url: text(),
+    /** Satt når forfatteren har redigert innlegget. */
+    editedAt: timestamp({ withTimezone: true }),
+    /** Myk sletting: innholdet skjules, men kommentarene består. */
+    deletedAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.channel, t.createdAt), index().on(t.authorPersonId)],
+)
+
+export const comment = pgTable(
+  'comment',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    postId: uuid()
+      .notNull()
+      .references(() => post.id, { onDelete: 'cascade' }),
+    authorPersonId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    body: text().notNull(),
+    deletedAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.postId, t.createdAt)],
+)
+
+export const postVote = pgTable(
+  'post_vote',
+  {
+    postId: uuid()
+      .notNull()
+      .references(() => post.id, { onDelete: 'cascade' }),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.postId, t.personId] })],
+)
+
+export type PostChannel = (typeof postChannel.enumValues)[number]

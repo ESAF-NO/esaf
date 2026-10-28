@@ -19,6 +19,7 @@
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @esaf/db generate",
     "db:migrate": "pnpm --filter @esaf/db migrate",
+    "db:seed": "pnpm --filter @esaf/app seed",
     "db:studio": "pnpm --filter @esaf/db studio",
     "admin:grant": "pnpm --filter @esaf/core admin:grant",
     "profiles:import": "pnpm --filter @esaf/core profiles:import",

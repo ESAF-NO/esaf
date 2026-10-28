@@ -1,4 +1,5 @@
-export type AccessDeniedReason = 'unauthenticated' | 'not_member' | 'not_admin'
+export type AccessDeniedReason =
+  'unauthenticated' | 'not_member' | 'forbidden' | 'two_factor_required'
 
 /** Kastes når en handling krever mer tilgang enn den som spør har. */
 export class AccessDeniedError extends Error {
@@ -9,7 +10,8 @@ export class AccessDeniedError extends Error {
       {
         unauthenticated: 'Du må logge inn.',
         not_member: 'Krever godkjent ESAF-medlemskap.',
-        not_admin: 'Krever adminrolle i ESAF.',
+        forbidden: 'Du har ikke tilgang til dette.',
+        two_factor_required: 'Slå på tofaktor for å bruke adminverktøyene.',
       }[reason],
     )
     this.name = 'AccessDeniedError'
@@ -21,5 +23,13 @@ export class DomainError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'DomainError'
+  }
+}
+
+/** Ressursen finnes ikke, eller den som spør skal ikke vite at den finnes. */
+export class NotFoundError extends DomainError {
+  constructor(message = 'Fant ikke det du lette etter.') {
+    super(message)
+    this.name = 'NotFoundError'
   }
 }

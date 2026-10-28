@@ -5,6 +5,7 @@ export * as schema from './schema.ts'
 export type {
   AccessRequestStatus,
   CohortRelation,
+  CompanyStatus,
   MemberRole,
   MembershipStatus,
   PersonSource,

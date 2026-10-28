@@ -86,15 +86,23 @@ function ExperienceList({ items }: { items: Experience[] }) {
     <ol className="mt-4 space-y-5">
       {items.map((e) => (
         <li key={e.id} className="flex gap-3.5">
-          <CompanyMark name={e.company} />
+          <Link
+            to="/selskaper/$slug"
+            params={{ slug: e.companySlug }}
+            tabIndex={-1}
+            aria-hidden
+            className="shrink-0"
+          >
+            <CompanyMark name={e.company} />
+          </Link>
           <div className="min-w-0 flex-1">
             <p className="font-medium text-stone-950">
               {e.title ?? (e.founder ? 'Gründer' : e.company)}
             </p>
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-stone-600">
               <Link
-                to="/selskaper"
-                search={{ q: e.company, vis: 'alle' }}
+                to="/selskaper/$slug"
+                params={{ slug: e.companySlug }}
                 className="hover:text-brand-600"
               >
                 {e.company}
@@ -301,11 +309,11 @@ function ProfilePage() {
                   <span className="font-normal text-stone-500">({esPeriod(c.graduationYear)})</span>
                 </Fact>
               ))}
-              {p.esCompany && (
+              {p.esCompany && p.esCompanySlug && (
                 <Fact icon={Rocket} label="Selskap på ES">
                   <Link
-                    to="/selskaper"
-                    search={{ q: p.esCompany }}
+                    to="/selskaper/$slug"
+                    params={{ slug: p.esCompanySlug }}
                     className="hover:text-brand-600"
                   >
                     {p.esCompany}

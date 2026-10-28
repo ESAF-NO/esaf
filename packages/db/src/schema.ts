@@ -154,8 +154,8 @@ export const person = pgTable(
     city: text(),
     /** Studieretning før Entreprenørskolen. */
     studyBackground: text(),
-    /** Selskapet personen startet eller jobbet med på Entreprenørskolen. */
-    esCompany: text(),
+    /** Selskapet personen startet eller jobbet med på Entreprenørskolen (ES-teamet). */
+    esCompanyId: uuid().references(() => company.id, { onDelete: 'restrict' }),
     bio: text(),
     /** Emner personen kan hjelpe andre med. */
     expertise: text()
@@ -179,7 +179,57 @@ export const person = pgTable(
     onboardedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
-  (t) => [uniqueIndex().on(t.userId)],
+  (t) => [uniqueIndex().on(t.userId), index().on(t.esCompanyId)],
+)
+
+export const companyStatus = pgEnum('company_status', ['active', 'acquired', 'closed'])
+
+/**
+ * Et selskap ES-alumni har startet, jobber i eller har jobbet i. Erfaring og
+ * ES-selskap peker hit, så samme selskap samles uansett skrivemåte, og info om
+ * selskapet skrives én gang. Nye navn blir nye selskaper; et navn med samme slug
+ * som et eksisterende selskap kobles til det.
+ */
+export const company = pgTable(
+  'company',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** `companySlug(name)` fra @esaf/core, brukt i URL-en. Følger navnet ved navnebytte. */
+    slug: text().notNull().unique(),
+    name: text().notNull(),
+    /**
+     * Tidligere slugger (fra før et navnebytte) og sluggene til duplikater som er
+     * slått sammen hit. Gamle lenker og gamle skrivemåter finner fram hit.
+     */
+    aliasSlugs: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** Én linje om hva selskapet gjør. */
+    tagline: text(),
+    /** «Om selskapet». */
+    description: text(),
+    website: text(),
+    foundedYear: integer(),
+    location: text(),
+    industries: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    status: companyStatus().notNull().default('active'),
+    /**
+     * Sist noen redigerte selskapsinfoen. Null betyr at selskapet bare er opprettet
+     * fra et navn; da ryddes det bort når ingen lenger er knyttet til det.
+     */
+    editedAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    check(
+      'company_founded_year_range',
+      sql`${t.foundedYear} is null or ${t.foundedYear} between 1800 and 2100`,
+    ),
+  ],
 )
 
 /**
@@ -193,7 +243,9 @@ export const experience = pgTable(
     personId: uuid()
       .notNull()
       .references(() => person.id, { onDelete: 'cascade' }),
-    company: text().notNull(),
+    companyId: uuid()
+      .notNull()
+      .references(() => company.id, { onDelete: 'restrict' }),
     title: text(),
     startYear: integer(),
     /** Null betyr at personen fortsatt er der. */
@@ -206,6 +258,7 @@ export const experience = pgTable(
   },
   (t) => [
     index().on(t.personId),
+    index().on(t.companyId),
     check(
       'experience_years',
       sql`(${t.startYear} is null or ${t.startYear} between 1950 and 2100) and (${t.endYear} is null or ${t.endYear} between 1950 and 2100) and (${t.startYear} is null or ${t.endYear} is null or ${t.endYear} >= ${t.startYear})`,
@@ -330,6 +383,7 @@ export type MemberRole = (typeof memberRole.enumValues)[number]
 export type CohortRelation = (typeof cohortRelation.enumValues)[number]
 export type PersonSource = (typeof personSource.enumValues)[number]
 export type AccessRequestStatus = (typeof accessRequestStatus.enumValues)[number]
+export type CompanyStatus = (typeof companyStatus.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)

@@ -1,11 +1,14 @@
 import { schema, type Db } from '@esaf/db'
-import { asc, inArray } from 'drizzle-orm'
+import { asc, eq, inArray } from 'drizzle-orm'
 
-const { experience } = schema
+const { company, experience } = schema
 
 export type Experience = {
   id: string
+  companyId: string
+  /** Navnet på selskapet, slik det står på selskapssiden. */
   company: string
+  companySlug: string
   title: string | null
   startYear: number | null
   /** Null betyr at personen fortsatt er der. */
@@ -49,13 +52,16 @@ export async function loadExperience(
     .select({
       personId: experience.personId,
       id: experience.id,
-      company: experience.company,
+      companyId: experience.companyId,
+      company: company.name,
+      companySlug: company.slug,
       title: experience.title,
       startYear: experience.startYear,
       endYear: experience.endYear,
       founder: experience.founder,
     })
     .from(experience)
+    .innerJoin(company, eq(company.id, experience.companyId))
     .where(inArray(experience.personId, ids))
     .orderBy(asc(experience.position))
   for (const { personId, ...row } of rows) {

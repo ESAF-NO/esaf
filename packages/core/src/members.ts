@@ -8,6 +8,7 @@ const {
   accessRequest,
   auditEvent,
   cohort,
+  company,
   experience,
   membership,
   person,
@@ -109,7 +110,7 @@ export async function listActiveMembers(db: Db, viewer: Viewer): Promise<MemberL
       userId: person.userId,
       city: person.city,
       studyBackground: person.studyBackground,
-      esCompany: person.esCompany,
+      esCompany: company.name,
       expertise: person.expertise,
       industries: person.industries,
       graduationYear: cohort.graduationYear,
@@ -117,6 +118,7 @@ export async function listActiveMembers(db: Db, viewer: Viewer): Promise<MemberL
     })
     .from(membership)
     .innerJoin(person, eq(person.id, membership.personId))
+    .leftJoin(company, eq(company.id, person.esCompanyId))
     .leftJoin(personCohort, eq(personCohort.personId, person.id))
     .leftJoin(cohort, eq(cohort.id, personCohort.cohortId))
     .where(eq(membership.status, 'active'))
@@ -325,8 +327,9 @@ export async function searchPeople(
   assertMember(viewer)
   const words = query.trim().split(/\s+/).filter(Boolean).slice(0, 5)
   if (!words.length) return []
-  const roles = sql`(select string_agg(concat_ws(' ', ${experience.company}, ${experience.title}), ' ') from ${experience} where ${experience.personId} = ${sql.raw('"person"."id"')})`
-  const haystack = sql`concat_ws(' ', ${person.fullName}, ${person.city}, ${person.studyBackground}, ${person.esCompany}, array_to_string(${person.expertise}, ' '), array_to_string(${person.industries}, ' '), ${roles})`
+  const roles = sql`(select string_agg(concat_ws(' ', ${company.name}, ${experience.title}), ' ') from ${experience} inner join ${company} on ${company.id} = ${experience.companyId} where ${experience.personId} = ${sql.raw('"person"."id"')})`
+  const esCompany = sql`(select ${company.name} from ${company} where ${company.id} = ${person.esCompanyId})`
+  const haystack = sql`concat_ws(' ', ${person.fullName}, ${person.city}, ${person.studyBackground}, ${esCompany}, array_to_string(${person.expertise}, ' '), array_to_string(${person.industries}, ' '), ${roles})`
   const rows = await db
     .select({
       personId: person.id,

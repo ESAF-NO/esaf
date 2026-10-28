@@ -138,7 +138,12 @@ export function Avatar({
   )
 }
 
-const markSizes = { sm: 'size-9 rounded-lg text-sm', md: 'size-11 rounded-xl text-base' }
+const markSizes = {
+  sm: 'size-9 rounded-lg text-sm',
+  md: 'size-11 rounded-xl text-base',
+  lg: 'size-12 rounded-xl text-lg',
+  xl: 'size-16 rounded-2xl text-2xl sm:size-20 sm:text-3xl',
+}
 
 /** Initial på en farge avledet av navnet, til selskaper får logo. */
 export function CompanyMark({

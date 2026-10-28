@@ -1,6 +1,6 @@
 import type { Author, PostSummary } from '@esaf/core'
 import { Link } from '@tanstack/react-router'
-import { ArrowBigUp, ExternalLink, MessageCircle } from 'lucide-react'
+import { ArrowBigUp, ExternalLink, MessageCircle, Pin } from 'lucide-react'
 import { useState } from 'react'
 import { vote } from '#/lib/feed.functions.ts'
 import { fullDate, timeAgo } from '#/lib/format.ts'
@@ -57,14 +57,26 @@ export function VoteButton({
   )
 }
 
+/** Diskret merke på innlegg en moderator har festet øverst. */
+export function PinnedLabel() {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-stone-500">
+      <Pin className="size-3" aria-hidden /> Festet
+    </span>
+  )
+}
+
 export function AuthorLine({
   author,
   date,
+  editedAt,
   size = 'xs',
   avatar = true,
 }: {
   author: Author
   date: Date
+  /** Når forfatteren sist redigerte teksten. */
+  editedAt?: Date | null
   size?: 'xs' | 'sm'
   /** Skjul avataren der den allerede vises ved siden av, som i kommentarer. */
   avatar?: boolean
@@ -95,6 +107,21 @@ export function AuthorLine({
       >
         {timeAgo(date)}
       </time>
+      {editedAt && (
+        <>
+          <span className="text-stone-300" aria-hidden>
+            ·
+          </span>
+          {/* På smale skjermer bare «redigert»; tidspunktet står i title. */}
+          <time
+            dateTime={new Date(editedAt).toISOString()}
+            title={`Redigert ${fullDate(editedAt)}`}
+            className="shrink-0 text-stone-400"
+          >
+            redigert<span className="hidden sm:inline"> {timeAgo(editedAt)}</span>
+          </time>
+        </>
+      )}
     </div>
   )
 }
@@ -106,6 +133,7 @@ export function PostCard({ post }: { post: PostSummary }) {
       <div className="min-w-0 flex-1">
         <div className="mb-1.5 flex flex-wrap items-center gap-2">
           <ChannelBadge channel={post.channel} />
+          {post.pinned && <PinnedLabel />}
           {post.url && (
             <a
               href={post.url}

@@ -1,5 +1,6 @@
 import { schema, type Db } from '@esaf/db'
-import { and, asc, eq, ilike, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { assertCan, assertMember, type Viewer } from './access.ts'
 import { DomainError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
@@ -96,12 +97,35 @@ export type MemberListItem = {
 }
 
 /**
+ * Subspørring med alle personer i et kull, uansett tilknytning (student, ansatt,
+ * mentor). Tabellene har egne navn, så de ikke blandes med tabellene rundt.
+ */
+export function personIdsInCohort(db: Db, graduationYear: number) {
+  const inCohort = alias(personCohort, 'in_cohort')
+  const ofYear = alias(cohort, 'of_year')
+  return db
+    .select({ personId: inCohort.personId })
+    .from(inCohort)
+    .innerJoin(ofYear, eq(ofYear.id, inCohort.cohortId))
+    .where(eq(ofYear.graduationYear, graduationYear))
+}
+
+/**
  * Medlemskatalogen: alle med aktivt medlemskap, både verifiserte brukere og
  * profiler fra kullisten som ikke er tatt i bruk ennå. Kun for aktive
- * medlemmer, og viser bevisst ikke kontaktinfo ennå.
+ * medlemmer, og viser bevisst ikke kontaktinfo ennå. Med `cohortYear` bare
+ * personene i det kullet (med alle kullene deres).
  */
-export async function listActiveMembers(db: Db, viewer: Viewer): Promise<MemberListItem[]> {
+export async function listActiveMembers(
+  db: Db,
+  viewer: Viewer,
+  options: { cohortYear?: number } = {},
+): Promise<MemberListItem[]> {
   assertMember(viewer)
+  const inCohort =
+    options.cohortYear === undefined
+      ? undefined
+      : inArray(person.id, personIdsInCohort(db, options.cohortYear))
   const rows = await db
     .select({
       personId: person.id,
@@ -119,7 +143,7 @@ export async function listActiveMembers(db: Db, viewer: Viewer): Promise<MemberL
     .innerJoin(person, eq(person.id, membership.personId))
     .leftJoin(personCohort, eq(personCohort.personId, person.id))
     .leftJoin(cohort, eq(cohort.id, personCohort.cohortId))
-    .where(eq(membership.status, 'active'))
+    .where(and(eq(membership.status, 'active'), inCohort))
     .orderBy(asc(person.fullName), asc(cohort.graduationYear))
   const experiences = await loadExperience(
     db,

@@ -1,9 +1,11 @@
 import { schema, type Db, type PostChannel } from '@esaf/db'
 import { and, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
-import { assertMember, can, type Viewer } from './access.ts'
+import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience } from './experience.ts'
+import { markdownToPlainText } from './markdown.ts'
+import { personIdsInCohort } from './members.ts'
 
 const { auditEvent, cohort, comment, person, personCohort, post, postVote } = schema
 
@@ -19,6 +21,7 @@ const httpUrl = z
     message: 'Lenken må starte med https://',
   })
 
+/** Tittelen er ren tekst. Teksten er Markdown, se `markdown.ts`. */
 export const postInput = z.object({
   channel: z.enum(postChannels),
   title: z
@@ -49,6 +52,7 @@ export type PostSummary = {
   channel: PostChannel
   title: string
   url: string | null
+  /** Starten av teksten som ren tekst, uten Markdown. */
   excerpt: string
   createdAt: Date
   author: Author
@@ -56,22 +60,35 @@ export type PostSummary = {
   comments: number
   viewerVoted: boolean
   isOwn: boolean
+  /** Festet av en moderator. Står øverst i «Hjem» og i kanalen sin. */
+  pinned: boolean
 }
 
 export type CommentView = {
   id: string
+  /** Markdown. */
   body: string
   createdAt: Date
+  editedAt: Date | null
   author: Author
+  canEdit: boolean
   canDelete: boolean
 }
 
 export type PostView = PostSummary & {
+  /** Markdown. */
   body: string
   editedAt: Date | null
+  /** Bare forfatteren kan redigere. Moderatorer kan fjerne, ikke skrive om. */
+  canEdit: boolean
   canDelete: boolean
+  /** Kan feste og løsne innlegget. */
+  canPin: boolean
   commentList: CommentView[]
 }
+
+/** Det forfatteren trenger for å redigere et innlegg. */
+export type EditablePost = Pick<PostView, 'id' | 'channel' | 'title' | 'body' | 'url'>
 
 async function loadAuthors(db: Db, personIds: string[]): Promise<Map<string, Author>> {
   if (!personIds.length) return new Map()
@@ -116,7 +133,7 @@ const voted = (personId: string) =>
 const hotness = sql`(${voteCount} + ${commentCount} * 0.5 + 1) / power(extract(epoch from (now() - ${sql.raw('"post"."created_at"')})) / 3600 + 2, 1.5)`
 
 const excerptOf = (body: string) => {
-  const flat = body.replace(/\s+/g, ' ').trim()
+  const flat = markdownToPlainText(body)
   return flat.length > 280 ? `${flat.slice(0, 277)}…` : flat
 }
 
@@ -125,6 +142,8 @@ export type ListPostsOptions = {
   sort?: 'new' | 'top'
   q?: string
   authorPersonId?: string
+  /** Bare innlegg skrevet av personer i kullet med dette uteksamineringsåret. */
+  cohortYear?: number
   limit?: number
   offset?: number
 }
@@ -139,11 +158,17 @@ export async function listPosts(
   const conditions: SQL[] = [isNull(post.deletedAt)]
   if (options.channel) conditions.push(eq(post.channel, options.channel))
   if (options.authorPersonId) conditions.push(eq(post.authorPersonId, options.authorPersonId))
+  if (options.cohortYear !== undefined) {
+    conditions.push(inArray(post.authorPersonId, personIdsInCohort(db, options.cohortYear)))
+  }
   const q = options.q?.trim()
   if (q) {
     const pattern = `%${q.replace(/[%_\\]/g, '\\$&')}%`
     conditions.push(or(ilike(post.title, pattern), ilike(post.body, pattern))!)
   }
+  // Festede innlegg står øverst i feeden og kanalen sin, sist festet først. Ikke i søk,
+  // på profiler eller på kullsider, der det er bestemte personers innlegg som vises.
+  const pinnedFirst = !q && !options.authorPersonId && options.cohortYear === undefined
 
   const rows = await db
     .select({
@@ -153,6 +178,7 @@ export async function listPosts(
       body: post.body,
       url: post.url,
       createdAt: post.createdAt,
+      pinnedAt: post.pinnedAt,
       authorPersonId: post.authorPersonId,
       votes: voteCount,
       comments: commentCount,
@@ -160,7 +186,10 @@ export async function listPosts(
     })
     .from(post)
     .where(and(...conditions))
-    .orderBy(options.sort === 'top' ? desc(hotness) : desc(post.createdAt))
+    .orderBy(
+      ...(pinnedFirst ? [sql`${post.pinnedAt} is null`, desc(post.pinnedAt)] : []),
+      options.sort === 'top' ? desc(hotness) : desc(post.createdAt),
+    )
     .limit(Math.min(options.limit ?? 30, 100))
     .offset(options.offset ?? 0)
 
@@ -180,6 +209,7 @@ export async function listPosts(
     comments: r.comments,
     viewerVoted: r.viewerVoted,
     isOwn: r.authorPersonId === viewer.personId,
+    pinned: r.pinnedAt !== null,
   }))
 }
 
@@ -194,6 +224,7 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
       url: post.url,
       createdAt: post.createdAt,
       editedAt: post.editedAt,
+      pinnedAt: post.pinnedAt,
       authorPersonId: post.authorPersonId,
       votes: voteCount,
       comments: commentCount,
@@ -229,15 +260,55 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
     comments: row.comments,
     viewerVoted: row.viewerVoted,
     isOwn,
+    pinned: row.pinnedAt !== null,
+    canEdit: isOwn,
     canDelete: isOwn || moderator,
-    commentList: comments.map((c) => ({
-      id: c.id,
-      body: c.body,
-      createdAt: c.createdAt,
-      author: authors.get(c.authorPersonId)!,
-      canDelete: c.authorPersonId === viewer.personId || moderator,
-    })),
+    canPin: moderator,
+    commentList: comments.map((c) => {
+      const own = c.authorPersonId === viewer.personId
+      return {
+        id: c.id,
+        body: c.body,
+        createdAt: c.createdAt,
+        editedAt: c.editedAt,
+        author: authors.get(c.authorPersonId)!,
+        canEdit: own,
+        canDelete: own || moderator,
+      }
+    }),
   }
+}
+
+/**
+ * Bare forfatteren kan endre det de har skrevet. Moderatorer kan fjerne andres
+ * innhold, men aldri skrive det om, så det som står i noens navn er deres egne ord.
+ */
+function assertAuthor(viewer: { personId: string }, authorPersonId: string) {
+  if (authorPersonId !== viewer.personId) throw new AccessDeniedError('forbidden')
+}
+
+/** Innlegget slik det ble skrevet, til forfatterens redigeringsskjema. */
+export async function getEditablePost(
+  db: Db,
+  viewer: Viewer,
+  postId: string,
+): Promise<EditablePost> {
+  assertMember(viewer)
+  const [row] = await db
+    .select({
+      id: post.id,
+      channel: post.channel,
+      title: post.title,
+      body: post.body,
+      url: post.url,
+      authorPersonId: post.authorPersonId,
+    })
+    .from(post)
+    .where(and(eq(post.id, postId), isNull(post.deletedAt)))
+  if (!row) throw new NotFoundError('Fant ikke innlegget.')
+  assertAuthor(viewer, row.authorPersonId)
+  const { authorPersonId: _author, ...editable } = row
+  return editable
 }
 
 function parse<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
@@ -254,6 +325,38 @@ export async function createPost(db: Db, viewer: Viewer, input: PostInput): Prom
     .values({ ...data, authorPersonId: viewer.personId })
     .returning({ id: post.id })
   return created!.id
+}
+
+/**
+ * Forfatteren endrer kanal, tittel, tekst eller lenke. «Redigert» settes bare når
+ * noe faktisk er endret, så et lagre-klikk uten endringer ikke merker innlegget.
+ */
+export async function updatePost(
+  db: Db,
+  viewer: Viewer,
+  postId: string,
+  input: PostInput,
+): Promise<void> {
+  assertMember(viewer)
+  const [row] = await db
+    .select({
+      authorPersonId: post.authorPersonId,
+      channel: post.channel,
+      title: post.title,
+      body: post.body,
+      url: post.url,
+    })
+    .from(post)
+    .where(and(eq(post.id, postId), isNull(post.deletedAt)))
+  if (!row) throw new NotFoundError('Fant ikke innlegget.')
+  assertAuthor(viewer, row.authorPersonId)
+  const data = parse(postInput, input)
+  const fields = Object.keys(data) as (keyof typeof data)[]
+  if (fields.every((key) => data[key] === row[key])) return
+  await db
+    .update(post)
+    .set({ ...data, editedAt: new Date() })
+    .where(and(eq(post.id, postId), isNull(post.deletedAt)))
 }
 
 /** Forfatteren eller en admin kan slette. Innlegget skjules, kommentarene beholdes i databasen. */
@@ -319,6 +422,62 @@ export async function deleteComment(db: Db, viewer: Viewer, commentId: string): 
         details: { postId: row.postId, commentId, excerpt: row.body.slice(0, 120) },
       })
     }
+  })
+}
+
+/** Forfatteren endrer teksten i kommentaren sin. */
+export async function updateComment(
+  db: Db,
+  viewer: Viewer,
+  commentId: string,
+  input: z.input<typeof commentInput>,
+): Promise<void> {
+  assertMember(viewer)
+  const [row] = await db
+    .select({ authorPersonId: comment.authorPersonId, body: comment.body })
+    .from(comment)
+    .innerJoin(post, eq(post.id, comment.postId))
+    .where(and(eq(comment.id, commentId), isNull(comment.deletedAt), isNull(post.deletedAt)))
+  if (!row) throw new NotFoundError('Fant ikke kommentaren.')
+  assertAuthor(viewer, row.authorPersonId)
+  const data = parse(commentInput, input)
+  if (data.body === row.body) return
+  await db
+    .update(comment)
+    .set({ body: data.body, editedAt: new Date() })
+    .where(and(eq(comment.id, commentId), isNull(comment.deletedAt)))
+}
+
+/**
+ * Fester eller løsner et innlegg. Festede innlegg står øverst i «Hjem» og i
+ * kanalen sin. Bare for moderatorer og oppover, og hver endring logges.
+ */
+export async function setPostPinned(
+  db: Db,
+  viewer: Viewer,
+  postId: string,
+  pinned: boolean,
+): Promise<void> {
+  assertCan(viewer, 'content.moderate')
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ authorPersonId: post.authorPersonId, title: post.title, pinnedAt: post.pinnedAt })
+      .from(post)
+      .where(and(eq(post.id, postId), isNull(post.deletedAt)))
+      .for('update')
+    if (!row) throw new NotFoundError('Fant ikke innlegget.')
+    // Allerede slik (f.eks. etter et dobbeltklikk): ingen endring, ingenting å logge.
+    if ((row.pinnedAt !== null) === pinned) return
+    await tx
+      .update(post)
+      .set({ pinnedAt: pinned ? new Date() : null })
+      .where(eq(post.id, postId))
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: pinned ? 'content.pin_post' : 'content.unpin_post',
+      subjectPersonId: row.authorPersonId,
+      details: { postId, title: row.title },
+    })
   })
 }
 

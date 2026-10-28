@@ -1,6 +1,10 @@
 import { schema, type Db } from '@esaf/db'
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { assertMember, type Viewer } from './access.ts'
+import { companySlug } from './companies.ts'
+import { NotFoundError } from './errors.ts'
+import { listPosts, type PostSummary } from './feed.ts'
+import { listActiveMembers, type MemberListItem } from './members.ts'
 
 const { cohort, membership, person, personCohort } = schema
 
@@ -87,4 +91,109 @@ export async function communityOverview(db: Db, viewer: Viewer): Promise<Communi
     cohorts,
     ownYears: own.map((o) => o.year).sort(),
   }
+}
+
+export type CohortCompany = {
+  /** Samme nøkkel som i selskapskatalogen. */
+  slug: string
+  name: string
+  /** Noen i kullet hadde det som selskapet sitt på Entreprenørskolen. */
+  esCompany: boolean
+  /** Gründerne og ES-teamet fra kullet, gründerne først. */
+  people: (CohortPerson & { role: 'founder' | 'es' })[]
+}
+
+export type CohortPage = {
+  graduationYear: number
+  /** Kallenavnet kullet selv bruker, hvis det har et. */
+  name: string | null
+  members: number
+  claimed: number
+  /** Den innloggede går selv i kullet. */
+  isOwn: boolean
+  /** Alle i kullet med aktivt medlemskap, i samme form som katalogen. */
+  people: MemberListItem[]
+  /** Selskaper folk i kullet har grunnlagt eller hadde på Entreprenørskolen. */
+  companies: CohortCompany[]
+  /** De nyeste innleggene fra folk i kullet. */
+  posts: PostSummary[]
+}
+
+const RECENT_POSTS = 5
+
+/** Siden for ett kull: folkene, selskapene de har startet, og hva de har skrevet. */
+export async function getCohortPage(
+  db: Db,
+  viewer: Viewer,
+  graduationYear: number,
+): Promise<CohortPage> {
+  assertMember(viewer)
+  if (!Number.isInteger(graduationYear)) throw new NotFoundError('Fant ikke kullet.')
+  const [row] = await db
+    .select({ name: cohort.name })
+    .from(cohort)
+    .where(eq(cohort.graduationYear, graduationYear))
+  if (!row) throw new NotFoundError('Fant ikke kullet.')
+
+  const [people, posts] = await Promise.all([
+    listActiveMembers(db, viewer, { cohortYear: graduationYear }),
+    listPosts(db, viewer, { cohortYear: graduationYear, sort: 'new', limit: RECENT_POSTS }),
+  ])
+  return {
+    graduationYear,
+    name: row.name,
+    members: people.length,
+    claimed: people.filter((p) => p.claimed).length,
+    isOwn: people.some((p) => p.personId === viewer.personId),
+    people,
+    companies: companiesStartedBy(people),
+    posts,
+  }
+}
+
+/**
+ * Selskaper fra profilenes «ES-selskap» og erfaring der personen er gründer.
+ * Samme selskap samles uavhengig av skrivemåte, som i selskapskatalogen.
+ */
+function companiesStartedBy(people: MemberListItem[]): CohortCompany[] {
+  type Draft = CohortCompany & { names: Map<string, number> }
+  const bySlug = new Map<string, Draft>()
+  const add = (rawName: string, p: MemberListItem, role: 'founder' | 'es') => {
+    const slug = companySlug(rawName)
+    if (!slug) return
+    const name = rawName.trim()
+    const company: Draft = bySlug.get(slug) ?? {
+      slug,
+      name,
+      esCompany: false,
+      people: [],
+      names: new Map(),
+    }
+    company.names.set(name, (company.names.get(name) ?? 0) + 1)
+    company.esCompany ||= role === 'es'
+    const existing = company.people.find((x) => x.personId === p.personId)
+    if (!existing) {
+      company.people.push({ personId: p.personId, fullName: p.fullName, claimed: p.claimed, role })
+    } else if (role === 'founder') {
+      existing.role = 'founder'
+    }
+    bySlug.set(slug, company)
+  }
+  for (const p of people) {
+    if (p.esCompany) add(p.esCompany, p, 'es')
+    for (const e of p.experience) if (e.founder) add(e.company, p, 'founder')
+  }
+
+  return [...bySlug.values()]
+    .map(({ names, ...company }) => ({
+      ...company,
+      // Den vanligste skrivemåten vinner.
+      name: [...names.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? company.name,
+      people: company.people.sort(
+        (a, b) =>
+          Number(b.role === 'founder') - Number(a.role === 'founder') ||
+          a.fullName.localeCompare(b.fullName, 'nb'),
+      ),
+    }))
+    .sort((a, b) => b.people.length - a.people.length || a.name.localeCompare(b.name, 'nb'))
 }

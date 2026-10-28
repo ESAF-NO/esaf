@@ -1,26 +1,112 @@
-export { accessLevel, assertAdmin, assertMember, type AccessLevel, type Viewer } from './access.ts'
-export { AccessDeniedError, DomainError, type AccessDeniedReason } from './errors.ts'
+export {
+  accessLevel,
+  activeRole,
+  assertCan,
+  assertMember,
+  can,
+  permissions,
+  roleAtLeast,
+  roles,
+  twoFactorRequired,
+  type AccessLevel,
+  type Permission,
+  type Viewer,
+} from './access.ts'
+export {
+  changeRole,
+  listAccounts,
+  listAuditEvents,
+  setMemberAccess,
+  type AccountView,
+  type AuditEntry,
+} from './admin.ts'
+export { AccessDeniedError, DomainError, NotFoundError, type AccessDeniedReason } from './errors.ts'
 export {
   decideMembership,
-  grantAdminAsOperator,
   listActiveMembers,
   linkAccountToProfile,
-  listPendingMemberships,
   loadViewer,
+  searchPeople,
   searchUnclaimedProfiles,
+  viewerCard,
   normalizeEmail,
   type MemberListItem,
-  type PendingMembership,
+  type PersonHit,
   type UnclaimedProfile,
 } from './members.ts'
 export {
+  accessRequestInput,
+  decideAccessRequest,
+  finishOnboarding,
+  getAccessState,
+  grantRoleAsOperator,
+  listAccessRequests,
+  submitAccessRequest,
+  type AccessRequestInput,
+  type AccessRequestView,
+  type AccessState,
+  type CandidateProfile,
+  type ProfileRef,
+} from './access-requests.ts'
+export {
   applyProfileImport,
+  normalizePhone,
   parseProfileSheet,
+  parseProfileWorkbook,
   planProfileImport,
   profileStatsByCohort,
   type ColumnKey,
   type ImportResult,
   type ParsedSheet,
   type PlannedRow,
+  type ProfileFieldKey,
+  type ProfileRow,
+  type SheetSummary,
   type YearKind,
 } from './profile-import.ts'
+export {
+  experienceInput,
+  getEditableProfile,
+  getProfile,
+  normalizeLinkedinUrl,
+  ownPersonId,
+  profileInput,
+  updateProfile,
+  type EditableProfile,
+  type ExperienceInput,
+  type Profile,
+  type ProfileInput,
+} from './profiles.ts'
+export { currentRole, sortExperience, type Experience } from './experience.ts'
+export {
+  communityOverview,
+  listCohorts,
+  type CohortPerson,
+  type CohortSummary,
+  type CommunityOverview,
+} from './cohorts.ts'
+export {
+  addComment,
+  commentInput,
+  createPost,
+  deleteComment,
+  deletePost,
+  getPost,
+  listPosts,
+  postChannels,
+  postInput,
+  toggleVote,
+  type Author,
+  type CommentView,
+  type ListPostsOptions,
+  type PostInput,
+  type PostSummary,
+  type PostView,
+} from './feed.ts'
+export {
+  companySlug,
+  listCompanies,
+  type Company,
+  type CompanyPerson,
+  type CompanyRole,
+} from './companies.ts'

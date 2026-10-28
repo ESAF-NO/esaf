@@ -6,15 +6,19 @@ import {
   AccessDeniedError,
   DomainError,
   applyProfileImport,
+  decideAccessRequest,
   decideMembership,
-  grantAdminAsOperator,
+  getAccessState,
+  grantRoleAsOperator,
   linkAccountToProfile,
+  listAccessRequests,
   listActiveMembers,
-  listPendingMemberships,
   loadViewer,
   parseProfileSheet,
   planProfileImport,
   searchUnclaimedProfiles,
+  submitAccessRequest,
+  type AccessRequestInput,
 } from '../src/index.ts'
 
 loadRootEnv()
@@ -33,8 +37,17 @@ describe.skipIf(!url)('tilgangsgrensen mot Postgres', () => {
   afterAll(() => db?.close())
   beforeEach(async () => {
     await db.execute(
-      sql`truncate ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
+      sql`truncate ${schema.accessRequest}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
     )
+  })
+
+  const request = (overrides: Partial<AccessRequestInput> = {}): AccessRequestInput => ({
+    profilePersonId: null,
+    fullName: 'Ny Person',
+    graduationYear: null,
+    linkedinUrl: '',
+    note: '',
+    ...overrides,
   })
 
   async function createAccount(name: string, emailVerified = true) {
@@ -58,9 +71,19 @@ describe.skipIf(!url)('tilgangsgrensen mot Postgres', () => {
     }
   }
 
+  async function personByEmail(email: string) {
+    const [row] = await db
+      .select({ id: schema.person.id, userId: schema.person.userId })
+      .from(schema.personEmail)
+      .innerJoin(schema.person, eq(schema.person.id, schema.personEmail.personId))
+      .where(eq(schema.personEmail.email, email))
+    return row
+  }
+
   async function setupAdmin() {
     const id = await createAccount('Admin')
-    await grantAdminAsOperator(db, { email: 'admin@example.test', reason: 'test' })
+    await grantRoleAsOperator(db, { email: 'admin@example.test', reason: 'test', role: 'admin' })
+    await db.update(schema.user).set({ twoFactorEnabled: true }).where(eq(schema.user.id, id))
     return loadViewer(db, id)
   }
 
@@ -91,10 +114,9 @@ describe.skipIf(!url)('tilgangsgrensen mot Postgres', () => {
       decideMembership(db, viewer, { personId: pending!.personId!, decision: 'approve' })
     expect(await denial(approvePending(null))).toBe('unauthenticated')
     expect(await denial(approvePending(pending))).toBe('not_member')
-    expect(await denial(approvePending(member))).toBe('not_admin')
-    expect(await denial(listPendingMemberships(db, member))).toBe('not_admin')
-
-    expect((await listPendingMemberships(db, admin)).map((p) => p.fullName)).toEqual(['Ventende'])
+    expect(await denial(approvePending(member))).toBe('forbidden')
+    expect(await denial(listAccessRequests(db, member))).toBe('forbidden')
+    expect(await denial(listAccessRequests(db, pending))).toBe('not_member')
     await approvePending(admin)
     expect((await listActiveMembers(db, member)).map((m) => m.fullName).sort()).toEqual([
       'Admin',
@@ -106,7 +128,7 @@ describe.skipIf(!url)('tilgangsgrensen mot Postgres', () => {
     expect(audit.map((e) => e.action).sort()).toEqual([
       'membership.approve',
       'membership.approve',
-      'operator.grant_admin',
+      'operator.grant_role',
     ])
   })
 
@@ -125,12 +147,12 @@ describe.skipIf(!url)('tilgangsgrensen mot Postgres', () => {
   it('operatør kan ikke gi admin til konto med ubekreftet e-post', async () => {
     await createAccount('Angriper', false)
     await expect(
-      grantAdminAsOperator(db, { email: 'angriper@example.test', reason: 'test' }),
+      grantRoleAsOperator(db, { email: 'angriper@example.test', reason: 'test' }),
     ).rejects.toThrow('bekreftet')
   })
 
   async function importSheet(csv: string, membershipStatus: 'active' | 'pending' = 'active') {
-    const sheet = parseProfileSheet(csv, { yearKind: 'start' })
+    const sheet = parseProfileSheet(csv, { yearKind: 'graduation' })
     const plan = await planProfileImport(db, sheet.rows)
     return {
       plan,
@@ -174,42 +196,139 @@ describe.skipIf(!url)('tilgangsgrensen mot Postgres', () => {
     ])
   })
 
-  it('bekreftet konto gjør krav på profilen med samme e-post og arver medlemskapet', async () => {
+  it('e-post fra kullisten gir ikke tilgang alene, men en godkjent forespørsel kobler kontoen til profilen', async () => {
     await importSheet(sheet)
-    const [profile] = await db
-      .select()
-      .from(schema.person)
-      .where(eq(schema.person.email, 'kulliste@example.test'))
+    const admin = await setupAdmin()
+    const profile = await personByEmail('kulliste@example.test')
     const id = await createAccount('Kulliste')
     const viewer = await loadViewer(db, id)
 
-    expect(viewer?.personId).toBe(profile!.id)
-    expect(viewer?.membership).toEqual({ status: 'active', role: 'member' })
-    const [claimed] = await db.select().from(schema.person).where(eq(schema.person.userId, id))
-    expect(claimed?.fullName).toBe('Fra Kulliste')
-    expect(claimed?.claimedAt).toBeInstanceOf(Date)
+    // Bekreftet adresse fra lista: fortsatt ventende, og profilen er urørt.
+    expect(viewer?.membership).toEqual({ status: 'pending', role: 'member' })
+    expect(viewer?.personId).not.toBe(profile!.id)
+    expect((await personByEmail('kulliste@example.test'))?.userId).toBeNull()
+    expect(await denial(listActiveMembers(db, viewer))).toBe('not_member')
+
+    // Søkeren ser bare profilen med sin egen adresse, og kan velge den.
+    const state = await getAccessState(db, viewer)
+    expect(state.match).toMatchObject({ personId: profile!.id, fullName: 'Fra Kulliste' })
+    await submitAccessRequest(
+      db,
+      viewer,
+      request({ profilePersonId: profile!.id, fullName: 'Fra Kulliste' }),
+    )
+
+    const [open] = await listAccessRequests(db, admin)
+    expect(open).toMatchObject({
+      email: 'kulliste@example.test',
+      emailOnProfile: true,
+      profile: { personId: profile!.id, years: [2015] },
+    })
+    await decideAccessRequest(db, admin, { requestId: open!.id, decision: 'approve' })
+
+    const after = await loadViewer(db, id)
+    expect(after?.personId).toBe(profile!.id)
+    expect(after?.membership?.status).toBe('active')
+    expect(await listAccessRequests(db, admin)).toEqual([])
     const audit = await db
-      .select()
+      .select({ action: schema.auditEvent.action })
       .from(schema.auditEvent)
-      .where(eq(schema.auditEvent.action, 'profile.claim'))
-    expect(audit).toHaveLength(1)
+      .where(eq(schema.auditEvent.subjectPersonId, profile!.id))
+    expect(audit.map((a) => a.action)).toContain('access.approve')
+  })
+
+  it('søkere kan ikke velge en profil som ikke har deres egen e-postadresse', async () => {
+    await importSheet(sheet)
+    const other = await personByEmail('annen@example.test')
+    const viewer = await loadViewer(db, await createAccount('Inntrenger'))
+    expect((await getAccessState(db, viewer)).match).toBeNull()
+    await expect(
+      submitAccessRequest(db, viewer, request({ profilePersonId: other!.id })),
+    ).rejects.toThrow('e-postadressen din')
+  })
+
+  it('admin ser forslag og kan godkjenne som ny person eller koble til en profil', async () => {
+    await importSheet(sheet)
+    const admin = await setupAdmin()
+    const ny = await loadViewer(db, await createAccount('Ny'))
+    await submitAccessRequest(db, ny, request({ fullName: 'Helt Ny', graduationYear: 2019 }))
+    const gammel = await loadViewer(db, await createAccount('Gammel'))
+    await submitAccessRequest(db, gammel, request({ fullName: 'Uten Epost', graduationYear: 2015 }))
+
+    const open = await listAccessRequests(db, admin)
+    const forNy = open.find((r) => r.fullName === 'Helt Ny')!
+    const forGammel = open.find((r) => r.fullName === 'Uten Epost')!
+    expect(forNy).toMatchObject({ profile: null, emailOnProfile: false, suggestions: [] })
+    expect(forGammel.suggestions).toMatchObject([{ fullName: 'Uten Epost', years: [2015] }])
+
+    await decideAccessRequest(db, admin, { requestId: forNy.id, decision: 'approve' })
+    await decideAccessRequest(db, admin, {
+      requestId: forGammel.id,
+      decision: 'approve',
+      profilePersonId: forGammel.suggestions[0]!.personId,
+    })
+    const members = await listActiveMembers(db, admin)
+    expect(members.find((m) => m.fullName === 'Helt Ny')?.cohorts).toEqual([
+      { graduationYear: 2019, relation: 'student' },
+    ])
+    expect(members.find((m) => m.fullName === 'Uten Epost')?.claimed).toBe(true)
+  })
+
+  it('avslag gir ingen tilgang, og forespørselen kan ikke sendes på nytt', async () => {
+    const admin = await setupAdmin()
+    const id = await createAccount('Avvist')
+    const viewer = await loadViewer(db, id)
+    await submitAccessRequest(db, viewer, request())
+    const [open] = await listAccessRequests(db, admin)
+    expect(
+      await denial(decideAccessRequest(db, viewer, { requestId: open!.id, decision: 'approve' })),
+    ).toBe('not_member')
+    await decideAccessRequest(db, admin, { requestId: open!.id, decision: 'reject' })
+
+    const after = await loadViewer(db, id)
+    expect(after?.membership?.status).toBe('inactive')
+    expect(await denial(listActiveMembers(db, after))).toBe('not_member')
+    await expect(submitAccessRequest(db, after, request())).rejects.toThrow('avslått')
+  })
+
+  it('operatøren godkjenner en åpen forespørsel og gir adminrolle', async () => {
+    await importSheet(sheet)
+    const profile = await personByEmail('kulliste@example.test')
+    const id = await createAccount('Kulliste')
+    const viewer = await loadViewer(db, id)
+    await submitAccessRequest(
+      db,
+      viewer,
+      request({ profilePersonId: profile!.id, fullName: 'Fra Kulliste' }),
+    )
+    const granted = await grantRoleAsOperator(db, {
+      email: 'kulliste@example.test',
+      reason: 'test',
+    })
+    // Standard er hovedadmin: operatøren bruker dette til å komme i gang.
+    expect(granted).toEqual({ personId: profile!.id, fullName: 'Fra Kulliste', role: 'owner' })
+    expect((await loadViewer(db, id))?.membership).toEqual({ status: 'active', role: 'owner' })
   })
 
   it('ubekreftet konto kan ikke gjøre krav på en profil', async () => {
     await importSheet(sheet)
     await loadViewer(db, await createAccount('Kulliste', false))
-    const [profile] = await db
-      .select()
-      .from(schema.person)
-      .where(eq(schema.person.email, 'kulliste@example.test'))
+    const profile = await personByEmail('kulliste@example.test')
     expect(profile?.userId).toBeNull()
   })
 
-  it('profil importert som ventende gir ikke tilgang ved krav', async () => {
+  it('en profil importert som ventende blir aktiv først når admin godkjenner', async () => {
     await importSheet(sheet, 'pending')
+    const admin = await setupAdmin()
+    const profile = await personByEmail('kulliste@example.test')
     const viewer = await loadViewer(db, await createAccount('Kulliste'))
-    expect(viewer?.membership?.status).toBe('pending')
+    await submitAccessRequest(db, viewer, request({ profilePersonId: profile!.id }))
     expect(await denial(listActiveMembers(db, viewer))).toBe('not_member')
+
+    const [open] = await listAccessRequests(db, admin)
+    await decideAccessRequest(db, admin, { requestId: open!.id, decision: 'approve' })
+    const members = await listActiveMembers(db, admin)
+    expect(members.find((m) => m.personId === profile!.id)?.claimed).toBe(true)
   })
 
   it('admin kan koble en ventende konto til riktig profil', async () => {

@@ -183,8 +183,8 @@ function ProfilePage() {
               {p.cohorts.map((c) => (
                 <Link
                   key={c.graduationYear}
-                  to="/medlemmer"
-                  search={{ kull: c.graduationYear }}
+                  to="/kull/$year"
+                  params={{ year: c.graduationYear }}
                   className="inline-flex items-center gap-1.5 font-medium text-stone-700 hover:text-brand-600"
                 >
                   <GraduationCap className="size-4" aria-hidden /> ES {c.graduationYear}
@@ -297,7 +297,13 @@ function ProfilePage() {
             <dl className="space-y-4">
               {p.cohorts.map((c) => (
                 <Fact key={c.graduationYear} icon={GraduationCap} label="Entreprenørskolen">
-                  ES {c.graduationYear}{' '}
+                  <Link
+                    to="/kull/$year"
+                    params={{ year: c.graduationYear }}
+                    className="hover:text-brand-600"
+                  >
+                    ES {c.graduationYear}
+                  </Link>{' '}
                   <span className="font-normal text-stone-500">({esPeriod(c.graduationYear)})</span>
                 </Fact>
               ))}

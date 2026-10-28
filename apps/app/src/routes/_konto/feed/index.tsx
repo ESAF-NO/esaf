@@ -17,7 +17,7 @@ import { PostCard } from '#/components/PostCard.tsx'
 import { Avatar, buttonClass, Card, cx, EmptyState } from '#/components/ui.tsx'
 import { channelKeys, channelOrder, channels } from '#/lib/channels.ts'
 import { fetchCommunity, fetchPosts } from '#/lib/feed.functions.ts'
-import { plural } from '#/lib/format.ts'
+import { esPeriod, plural } from '#/lib/format.ts'
 
 export const Route = createFileRoute('/_konto/feed/')({
   validateSearch: z.object({
@@ -124,7 +124,7 @@ function Welcome({
           icon={GraduationCap}
           link={
             own ? (
-              <Link to="/medlemmer" search={{ kull: own }} className={cover}>
+              <Link to="/kull/$year" params={{ year: own }} className={cover}>
                 Se ES {own}
               </Link>
             ) : (
@@ -158,19 +158,21 @@ function OwnCohort({ cohort: c }: { cohort: CohortSummary }) {
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold tracking-wider text-stone-400 uppercase">
-            Ditt kull
-          </p>
-          <p className="mt-0.5 text-lg font-semibold tracking-tight text-stone-950">
+          <Link
+            to="/kull/$year"
+            params={{ year: c.graduationYear }}
+            className="text-lg font-semibold tracking-tight text-stone-950 hover:text-brand-600"
+          >
             ES {c.graduationYear}
-          </p>
+          </Link>
+          <p className="text-xs text-stone-500">Ditt kull · {esPeriod(c.graduationYear)}</p>
         </div>
         <Link
-          to="/medlemmer"
-          search={{ kull: c.graduationYear }}
+          to="/kull/$year"
+          params={{ year: c.graduationYear }}
           className="text-sm font-medium text-brand-600 hover:underline"
         >
-          Se alle
+          Se kullet
         </Link>
       </div>
       <div className="mt-3 flex -space-x-1.5">

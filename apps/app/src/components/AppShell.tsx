@@ -109,7 +109,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             to="/kull"
             icon={GraduationCap}
             label="Kull"
-            active={path === '/kull'}
+            active={path === '/kull' || path.startsWith('/kull/')}
             onNavigate={onNavigate}
           />
           <NavItem

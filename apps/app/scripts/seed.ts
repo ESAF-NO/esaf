@@ -491,7 +491,7 @@ async function seedDemo() {
     {
       channel: 'arrangement',
       title: 'ESAF-helg i Trondheim: hvem kommer?',
-      body: 'Vi planlegger workshops med dagens kull fredag og lørdag, og middag lørdag kveld. Skriv i kommentarfeltet om du vil holde en workshop.',
+      body: 'Vi planlegger helgen sammen med dagens kull:\n\n- **Fredag:** workshops med studentene\n- **Lørdag:** flere workshops, og middag om kvelden\n\nSkriv i kommentarfeltet om du vil holde en workshop.',
     },
     {
       channel: 'sporsmal',
@@ -501,7 +501,7 @@ async function seedDemo() {
     {
       channel: 'generelt',
       title: 'Tips til gode bøker om å bygge salgsteam?',
-      body: 'Har lest Founding Sales og The Sales Acceleration Formula. Hva mer bør jeg lese?',
+      body: 'Har lest disse:\n\n1. _Founding Sales_\n2. _The Sales Acceleration Formula_\n\nHva mer bør jeg lese?',
     },
     {
       channel: 'lansering',
@@ -522,7 +522,7 @@ async function seedDemo() {
     {
       channel: 'sporsmal',
       title: 'Aksjonæravtale: hva bør vi tenke på før første emisjon?',
-      body: 'Tre gründere, ingen investorer ennå. Vi får tilbud fra en engel. Hvilke klausuler angrer dere på at dere ikke hadde?',
+      body: 'Tre gründere, ingen investorer ennå. Vi får tilbud fra en engel.\n\n> Hvilke klausuler angrer dere på at dere **ikke** hadde?',
     },
     {
       channel: 'generelt',
@@ -568,6 +568,8 @@ async function seedDemo() {
       .values({
         ...p,
         url: 'url' in p ? p.url : null,
+        // ESAF-helgen er festet øverst, som en kunngjøring fra styret.
+        pinnedAt: index === 4 ? created : null,
         authorPersonId: author.id,
         createdAt: created,
         updatedAt: created,

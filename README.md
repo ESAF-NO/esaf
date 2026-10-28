@@ -74,7 +74,8 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 | `person_email`                               | Alle kjente e-postadresser for en person (registrering, kulliste, NTNU-mail, senere andre kilder). Brukes til å koble en konto til riktig profil. Vises aldri for andre medlemmer.                            |
 | `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`admin`).                                                                                                          |
 | `access_request`                             | Forespørsel om tilgang fra en konto med bekreftet e-post: navn, kull, valgfri LinkedIn og melding, og eventuelt profilen fra kullisten personen sier er dem. Status `open`, `approved` eller `rejected`.      |
-| `audit_event`                                | Revisjonslogg for forespørsler, godkjenninger, admintildelinger og importer.                                                                                                                                  |
+| `audit_event`                                | Revisjonslogg for forespørsler, godkjenninger, admintildelinger, importer og moderering (fjerning og festing av innlegg).                                                                                     |
+| `post`, `comment`, `post_vote`               | Feeden. Tekst i Markdown. `edited_at` settes når forfatteren endrer innholdet, `pinned_at` når en moderator fester et innlegg, og `deleted_at` skjuler innhold uten å slette det.                             |
 
 **Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (årstall, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
 
@@ -88,15 +89,18 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 
 Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lucide-ikoner. Komponentene ligger i `apps/app/src/components/ui.tsx`. Appen har ingen egen forside, siden den offentlige siden er esaf.no (`apps/site`). `/` sender folk til innlogging, til steget de står på, eller til feeden.
 
-- **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatter eller admin kan slette.
+- **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatteren kan slette, og moderatorer kan fjerne andres innhold (logges).
+- **Redigering:** Forfatteren kan redigere innlegget sitt (`/feed/:id/rediger`: kanal, tittel, tekst og lenke) og kommentarene sine. Da vises «redigert» med tidspunkt. Ingen andre kan redigere, heller ikke moderatorer og admins. De kan bare fjerne. Lagres uten endringer, merkes ingenting som redigert.
+- **Markdown** i innlegg og kommentarer: avsnitt og linjeskift, **fet**, _kursiv_, lenker (også nakne adresser), lister, kode, kodeblokker og sitater. Skrivefeltene har «Skriv» og «Forhåndsvis» og en linje med formateringshjelp. Teksten vises med `react-markdown` og `remark-gfm` som React-elementer, aldri som HTML-streng: rå HTML vises som tekst, bare `http(s)`- og `mailto`-lenker beholdes (med `rel="noopener noreferrer nofollow ugc"`), og bilder blir lenker, så eksterne bilder aldri lastes. Utdragene i feeden lages som ren tekst i `@esaf/core` (`markdownToPlainText`). Omtaler skrevet som `@[Navn](personId)` vises som lenke til profilen; `Markdown` tar `renderMention` for å vise dem annerledes.
+- **Festede innlegg:** Moderatorer og oppover (admins med tofaktor) kan feste og løsne innlegg. Festede innlegg står øverst i «Hjem» og i kanalen sin, sist festet først, merket «Festet». I søk, på profiler og på kullsider vises innleggene i vanlig rekkefølge. Festing og løsning logges (`content.pin_post`, `content.unpin_post`).
 - **Personer** (`/medlemmer`) er en katalog med søk, kullfilter, filter for verifiserte og de mest brukte emnene og bransjene som snarveier. Søket treffer også tidligere selskaper og stillinger.
-- **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden.
+- **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden. Hvert kull har en egen side (`/kull/2024` for ES 2024, som gikk 2022–2024) med personene, selskapene folk i kullet har grunnlagt eller hadde på ES, og de nyeste innleggene deres. Mentorer og ansatte vises for seg. Kullet på profiler og «Ditt kull» på forsiden lenker hit, og «Søk i kullet» går til katalogen filtrert på kullet. Ukjente årstall gir 404.
 - **Selskaper** (`/selskaper`) viser selskaper startet av alumni, både ES-selskaper (fra «Selskap på Entreprenørskolen») og selskaper noen har grunnlagt (fra erfaring). «Alle selskaper» viser også arbeidsgivere, med hvem som jobber der nå og hvem som har jobbet der.
 - **Søk** med ⌘K (eller `/`) finner personer, selskaper og innlegg fra hvor som helst i appen.
 - **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom.
 - **Profiler, redigering og admin**, se under.
 
-Ikke bygget ennå: direktemeldinger, varsler, profilbilder, redigering av innlegg, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
+Ikke bygget ennå: direktemeldinger, varsler, profilbilder, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
 
 ## Profiler og katalog
 

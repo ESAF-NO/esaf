@@ -5,7 +5,7 @@ import { AvatarStack, EmptyState, PageHeader } from '#/components/ui.tsx'
 import { fetchCommunity } from '#/lib/feed.functions.ts'
 import { esPeriod, plural } from '#/lib/format.ts'
 
-export const Route = createFileRoute('/_konto/kull')({
+export const Route = createFileRoute('/_konto/kull/')({
   loader: () => fetchCommunity(),
   head: () => ({ meta: [{ title: 'Kull – ESAF' }] }),
   component: Cohorts,
@@ -47,8 +47,8 @@ function CohortCard({ cohort: c, own }: { cohort: CohortSummary; own: boolean })
   const share = c.members ? Math.round((c.claimed / c.members) * 100) : 0
   return (
     <Link
-      to="/medlemmer"
-      search={{ kull: c.graduationYear }}
+      to="/kull/$year"
+      params={{ year: c.graduationYear }}
       className="group flex h-full flex-col rounded-2xl bg-white p-5 shadow-card ring-1 ring-stone-200/70 transition hover:-translate-y-px hover:shadow-lift hover:ring-stone-300"
     >
       <div className="flex items-start justify-between gap-3">

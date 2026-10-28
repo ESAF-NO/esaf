@@ -1,19 +1,9 @@
-import type { MemberListItem } from '@esaf/core'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { MapPin, Search, SearchX, X } from 'lucide-react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Search, SearchX, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
-import {
-  Avatar,
-  Button,
-  cx,
-  EmptyState,
-  Input,
-  PageHeader,
-  Select,
-  Tag,
-  Verified,
-} from '#/components/ui.tsx'
+import { comparePeople, PersonCard } from '#/components/PersonCard.tsx'
+import { Button, cx, EmptyState, Input, PageHeader, Select, Verified } from '#/components/ui.tsx'
 import { filterMembers } from '#/lib/member-search.ts'
 import { getMembers } from '#/lib/members.functions.ts'
 
@@ -64,13 +54,7 @@ function People() {
     () =>
       filterMembers(members, search)
         .filter((m) => !search.verifisert || m.claimed)
-        // Verifiserte og utfylte profiler først.
-        .sort(
-          (a, b) =>
-            Number(b.claimed) - Number(a.claimed) ||
-            Number(b.experience.length > 0) - Number(a.experience.length > 0) ||
-            a.fullName.localeCompare(b.fullName, 'nb'),
-        ),
+        .sort(comparePeople),
     [members, search],
   )
   const claimed = members.filter((m) => m.claimed).length
@@ -180,53 +164,5 @@ function People() {
         </>
       )}
     </>
-  )
-}
-
-function PersonCard({ member: m }: { member: MemberListItem }) {
-  const headline = [m.jobTitle, m.currentCompany].filter(Boolean).join(' · ')
-  const earlier = [...new Set(m.experience.filter((e) => e.endYear !== null).map((e) => e.company))]
-  const tags = [...new Set([...m.expertise, ...m.industries])]
-  return (
-    <Link
-      to="/medlemmer/$personId"
-      params={{ personId: m.personId }}
-      className="group flex h-full gap-3.5 rounded-2xl bg-white p-4 shadow-card ring-1 ring-stone-200/70 transition hover:-translate-y-px hover:shadow-lift hover:ring-stone-300"
-    >
-      <Avatar name={m.fullName} size="lg" muted={!m.claimed} />
-      <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1 font-semibold text-stone-950">
-          <span className="truncate">{m.fullName}</span>
-          <Verified claimed={m.claimed} />
-        </p>
-        <p className="truncate text-sm text-stone-600">{headline || m.studyBackground || ' '}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
-          {m.cohorts.length > 0 && (
-            <span className="font-medium text-stone-700">
-              ES {m.cohorts.map((c) => c.graduationYear).join(', ')}
-            </span>
-          )}
-          {m.city && (
-            <span className="inline-flex items-center gap-1">
-              <MapPin className="size-3" aria-hidden />
-              {m.city}
-            </span>
-          )}
-        </div>
-        {earlier.length > 0 && (
-          <p className="mt-1.5 truncate text-xs text-stone-500">
-            Tidligere: {earlier.slice(0, 3).join(', ')}
-          </p>
-        )}
-        {tags.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap gap-1">
-            {tags.slice(0, 3).map((t) => (
-              <Tag key={t}>{t}</Tag>
-            ))}
-            {tags.length > 3 && <Tag className="bg-transparent">+{tags.length - 3}</Tag>}
-          </div>
-        )}
-      </div>
-    </Link>
   )
 }

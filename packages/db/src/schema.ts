@@ -358,6 +358,11 @@ export const post = pgTable(
     url: text(),
     /** Satt når forfatteren har redigert innlegget. */
     editedAt: timestamp({ withTimezone: true }),
+    /**
+     * Satt når en moderator har festet innlegget. Festede innlegg står øverst i
+     * «Hjem» og i kanalen sin. Hvem som festet, står i revisjonsloggen.
+     */
+    pinnedAt: timestamp({ withTimezone: true }),
     /** Myk sletting: innholdet skjules, men kommentarene består. */
     deletedAt: timestamp({ withTimezone: true }),
     ...timestamps,
@@ -376,6 +381,8 @@ export const comment = pgTable(
       .notNull()
       .references(() => person.id, { onDelete: 'cascade' }),
     body: text().notNull(),
+    /** Satt når forfatteren har redigert kommentaren. */
+    editedAt: timestamp({ withTimezone: true }),
     deletedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },

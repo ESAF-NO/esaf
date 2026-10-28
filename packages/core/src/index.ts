@@ -80,7 +80,10 @@ export {
 export { currentRole, sortExperience, type Experience } from './experience.ts'
 export {
   communityOverview,
+  getCohortPage,
   listCohorts,
+  type CohortCompany,
+  type CohortPage,
   type CohortPerson,
   type CohortSummary,
   type CommunityOverview,
@@ -91,18 +94,24 @@ export {
   createPost,
   deleteComment,
   deletePost,
+  getEditablePost,
   getPost,
   listPosts,
   postChannels,
   postInput,
+  setPostPinned,
   toggleVote,
+  updateComment,
+  updatePost,
   type Author,
   type CommentView,
+  type EditablePost,
   type ListPostsOptions,
   type PostInput,
   type PostSummary,
   type PostView,
 } from './feed.ts'
+export { markdownToPlainText } from './markdown.ts'
 export {
   companySlug,
   listCompanies,

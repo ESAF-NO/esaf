@@ -22,6 +22,7 @@ import { parseArgs } from 'node:util'
 import {
   addComment,
   applyProfileImport,
+  companySlug,
   formatMention,
   getAccessState,
   grantRoleAsOperator,
@@ -180,18 +181,81 @@ const expertise = [
   'Juss for startups',
   'Supply chain',
 ] as const
-const companies = [
-  { name: 'Syrlig', jobs: ['Daglig leder', 'CTO'] },
-  { name: 'Havkraft Labs', jobs: ['Grunnlegger', 'COO'] },
-  { name: 'Byggbit', jobs: ['Daglig leder', 'Produktsjef'] },
-  { name: 'Nordlys Health', jobs: ['CEO', 'Medgrunnlegger'] },
-  { name: 'Fjordflow', jobs: ['CTO', 'Daglig leder'] },
-  { name: 'Kvartz Energy', jobs: ['Grunnlegger'] },
-  { name: 'Pitchly', jobs: ['Daglig leder'] },
-  { name: 'Torv', jobs: ['Partner'] },
-  { name: 'Sanntid AI', jobs: ['CEO', 'Head of Engineering'] },
-  { name: 'Løypa', jobs: ['Grunnlegger'] },
-] as const
+// Oppdiktede ES-selskaper. Noen har lite info, så tomme selskapssider også kan sees.
+type DemoCompany = {
+  name: string
+  jobs: string[]
+  tagline?: string
+  description?: string
+  location?: string
+  industries?: string[]
+  website?: string
+  status?: 'active' | 'acquired' | 'closed'
+}
+const companies: DemoCompany[] = [
+  {
+    name: 'Syrlig',
+    jobs: ['Daglig leder', 'CTO'],
+    tagline: 'Syretester for nye forretningsidéer',
+    description:
+      'Syrlig hjelper gründere å teste om noen vil betale før de bygger noe. Vi setter opp landingssider, intervjuer og forhåndssalg på en uke.\n\nStartet som ES-prosjekt, og brukes nå av inkubatorer i fire byer.',
+    location: 'Trondheim',
+    industries: ['IT og programvare'],
+    website: 'https://syrlig.test',
+  },
+  {
+    name: 'Havkraft Labs',
+    jobs: ['Grunnlegger', 'COO'],
+    tagline: 'Bølgekraft for oppdrettsanlegg',
+    location: 'Bergen',
+    industries: ['Fornybar energi', 'Havbruk'],
+  },
+  {
+    name: 'Byggbit',
+    jobs: ['Daglig leder', 'Produktsjef'],
+    tagline: 'Prosjektstyring for små byggefirmaer',
+    description:
+      'Byggbit samler tilbud, timer og avvik i én app, laget for byggefirmaer med under 50 ansatte.',
+    location: 'Oslo',
+    industries: ['Bygg og eiendom', 'IT og programvare'],
+    website: 'https://byggbit.test',
+  },
+  {
+    name: 'Nordlys Health',
+    jobs: ['CEO', 'Medgrunnlegger'],
+    tagline: 'Digital oppfølging av hjertepasienter',
+    location: 'Oslo',
+    industries: ['Helse og medtech'],
+    website: 'https://nordlys-health.test',
+  },
+  {
+    name: 'Fjordflow',
+    jobs: ['CTO', 'Daglig leder'],
+    tagline: 'Sanntids vannkvalitet for oppdrettere',
+    description:
+      'Sensorer og varsling som gir oppdrettere beskjed før vannkvaliteten blir et problem. Første kommersielle versjon kom etter to år med piloter.',
+    location: 'Trondheim',
+    industries: ['Havbruk'],
+  },
+  {
+    name: 'Kvartz Energy',
+    jobs: ['Grunnlegger'],
+    tagline: 'Batterilagring for industrien',
+    description: 'Bygde batteriparker for kraftkrevende industri. Avviklet i 2023.',
+    industries: ['Energi'],
+    status: 'closed',
+  },
+  { name: 'Pitchly', jobs: ['Daglig leder'], status: 'acquired' },
+  { name: 'Torv', jobs: ['Partner'], industries: ['Venture capital'] },
+  {
+    name: 'Sanntid AI',
+    jobs: ['CEO', 'Head of Engineering'],
+    tagline: 'Prediktivt vedlikehold for industri',
+    location: 'Trondheim',
+    industries: ['Industri', 'IT og programvare'],
+  },
+  { name: 'Løypa', jobs: ['Grunnlegger'], tagline: 'Turstier i hele Norden, i én app' },
+]
 const employers = [
   'Equinor',
   'Schibsted',
@@ -256,7 +320,7 @@ const {
 } = schema
 
 await db.execute(
-  sql`truncate ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
+  sql`truncate ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
 )
 
 /** En innloggingskonto med bekreftet e-post og passord, som om personen hadde registrert seg. */
@@ -337,6 +401,23 @@ async function seedDemo() {
   const companySeats = companies.flatMap((c) => c.jobs.map((job) => ({ company: c.name, job })))
   const companyYear = new Map(companies.map((c, i) => [c.name, 2009 + ((i * 7) % 16)]))
 
+  // Selskapene finnes før erfaringen som peker på dem. ES-selskapene ble startet
+  // året før kullet ble uteksaminert; de ekte arbeidsgiverne får ingen info.
+  const companyRows = await db
+    .insert(schema.company)
+    .values([
+      ...companies.map(({ jobs: _jobs, industries, ...c }) => ({
+        ...c,
+        slug: companySlug(c.name),
+        industries: industries ?? [],
+        foundedYear: companyYear.get(c.name)! - 1,
+        editedAt: new Date(),
+      })),
+      ...[...employers, 'ESAF'].map((name) => ({ name, slug: companySlug(name) })),
+    ])
+    .returning({ id: schema.company.id, name: schema.company.name })
+  const companyId = new Map(companyRows.map((c) => [c.name, c.id]))
+
   for (let i = 0; i < 90; i++) {
     let name: string
     do name = `${pick(firstNames)} ${pick(lastNames)}`
@@ -373,7 +454,7 @@ async function seedDemo() {
         source: claimed ? 'signup' : 'import',
         studyBackground: pick(studies),
         city: filled ? pick(cities) : null,
-        esCompany: founder?.company ?? null,
+        esCompanyId: founder ? companyId.get(founder.company)! : null,
         bio:
           claimed && rand() < 0.7
             ? pick([
@@ -395,7 +476,7 @@ async function seedDemo() {
     const at = (company: string, title: string, from: number, to: number | null, founded = false) =>
       history.push({
         personId: p!.id,
-        company,
+        companyId: companyId.get(company)!,
         title,
         startYear: from,
         endYear: to,

@@ -19,6 +19,7 @@ import {
   loadViewer,
   NotFoundError,
   type Viewer,
+  resolveCompanies,
 } from '../src/index.ts'
 
 loadRootEnv()
@@ -59,7 +60,7 @@ describe.skipIf(!url)('kullsiden', () => {
 
   beforeEach(async () => {
     await db.execute(
-      sql`truncate ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.experience}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
+      sql`truncate ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.experience}, ${schema.company}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
     )
     const rows = await db
       .insert(schema.cohort)
@@ -91,18 +92,26 @@ describe.skipIf(!url)('kullsiden', () => {
     pending = await loadViewer(db, pendingId)
     await joinCohort(pending!.personId!, 2016)
 
+    // To skrivemåter av samme ES-selskap havner på samme selskap, som i appen.
+    const [syrlig, syrlig2, fjordflow, equinor, havkraft] = await resolveCompanies(db, [
+      { name: 'Syrlig AS' },
+      { name: ' syrlig as ' },
+      { name: 'Fjordflow' },
+      { name: 'Equinor' },
+      { name: 'Havkraft' },
+    ])
     await db
       .update(schema.person)
-      .set({ esCompany: 'Syrlig AS' })
+      .set({ esCompanyId: syrlig })
       .where(eq(schema.person.id, ola!.personId!))
     await db
       .update(schema.person)
-      .set({ esCompany: ' syrlig as ' })
+      .set({ esCompanyId: syrlig2 })
       .where(eq(schema.person.id, kari!.personId!))
     await db.insert(schema.experience).values([
-      { personId: ola!.personId!, company: 'Fjordflow', startYear: 2017, founder: true },
-      { personId: kari!.personId!, company: 'Equinor', title: 'Analytiker', startYear: 2018 },
-      { personId: nils!.personId!, company: 'Havkraft', startYear: 2018, founder: true },
+      { personId: ola!.personId!, companyId: fjordflow!, startYear: 2017, founder: true },
+      { personId: kari!.personId!, companyId: equinor!, title: 'Analytiker', startYear: 2018 },
+      { personId: nils!.personId!, companyId: havkraft!, startYear: 2018, founder: true },
     ])
   })
 

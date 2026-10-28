@@ -4,10 +4,15 @@ import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { AuthCard } from '#/components/AuthLayout.tsx'
 import { PhotoUpload } from '#/components/PhotoUpload.tsx'
+import { CompanyInput, type CompanyValue } from '#/components/CompanyInput.tsx'
 import { TagInput } from '#/components/TagInput.tsx'
 import { Button, cx, ErrorText, Field, Input, Switch } from '#/components/ui.tsx'
 import { completeOnboarding } from '#/lib/access.functions.ts'
-import { fetchEditableProfile, saveProfile } from '#/lib/profiles.functions.ts'
+import {
+  fetchEditableProfile,
+  saveProfile,
+  type ProfileFormValues,
+} from '#/lib/profiles.functions.ts'
 
 export const Route = createFileRoute('/_konto/kom-i-gang')({
   validateSearch: z.object({ til: z.string().optional().catch(undefined) }),
@@ -54,7 +59,10 @@ function GetStarted() {
   const current = profile.experience.find((e) => e.endYear === null)
 
   const [step, setStep] = useState(0)
-  const [company, setCompany] = useState(current?.company ?? '')
+  const [company, setCompany] = useState<CompanyValue>({
+    name: current?.company ?? '',
+    companyId: current?.companyId ?? null,
+  })
   const [title, setTitle] = useState(current?.title ?? '')
   const [founder, setFounder] = useState(current?.founder ?? false)
   const [city, setCity] = useState(profile.city ?? '')
@@ -79,17 +87,19 @@ function GetStarted() {
     setSaving(true)
     setError(null)
     try {
-      const experience = profile.experience.map((e) => ({
+      const experience: ProfileFormValues['experience'] = profile.experience.map((e) => ({
+        companyId: e.companyId,
         company: e.company,
         title: e.title ?? '',
         startYear: e.startYear,
         endYear: e.endYear,
         founder: e.founder,
       }))
-      if (company.trim()) {
+      if (company.name.trim()) {
         const index = experience.findIndex((e) => e.endYear === null)
         const role = {
-          company,
+          companyId: company.companyId,
+          company: company.name,
           title,
           startYear: index >= 0 ? experience[index]!.startYear : null,
           endYear: null,
@@ -106,6 +116,7 @@ function GetStarted() {
             city,
             studyBackground: profile.studyBackground ?? '',
             esCompany: profile.esCompany ?? '',
+            esCompanyId: profile.esCompanyId,
             bio: profile.bio ?? '',
             expertise,
             industries,
@@ -138,15 +149,13 @@ function GetStarted() {
       body: (
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Selskap">
-              <Input
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                maxLength={120}
-                placeholder="Hvor jobber du?"
-                autoFocus
-              />
-            </Field>
+            <CompanyInput
+              label="Selskap"
+              value={company}
+              onChange={setCompany}
+              placeholder="Hvor jobber du?"
+              autoFocus
+            />
             <Field label="Stilling">
               <Input
                 value={title}

@@ -11,12 +11,14 @@ const profileFields = z.object({
   city: z.string(),
   studyBackground: z.string(),
   esCompany: z.string(),
+  esCompanyId: z.uuid().nullable(),
   bio: z.string(),
   expertise: z.array(z.string()),
   industries: z.array(z.string()),
   experience: z
     .array(
       z.object({
+        companyId: z.uuid().nullable(),
         company: z.string(),
         title: z.string(),
         startYear: z.number().nullable(),

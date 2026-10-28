@@ -1,16 +1,20 @@
 {
   // Cloudflare Workers Static Assets: kun statiske filer, ingen Worker-kode.
-  // Bygg først med `pnpm --filter @esaf/site build`. Se README for deploy.
-  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // CI deployer automatisk ved push til main. Se README for oppsett og manuell deploy.
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "esaf-site",
   "compatibility_date": "2026-10-28",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "404-page",
   },
-  // Legg til når esaf.no skal peke hit (krever eksplisitt beslutning):
-  // "routes": [
-  //   { "pattern": "esaf.no", "custom_domain": true },
-  //   { "pattern": "www.esaf.no", "custom_domain": true }
-  // ]
+  // Egne domener: Cloudflare lager DNS-oppføringene og sertifikatene ved deploy.
+  // www.esaf.no sendes videre til esaf.no av en Redirect Rule i Cloudflare (se README).
+  "routes": [
+    { "pattern": "esaf.no", "custom_domain": true },
+    { "pattern": "www.esaf.no", "custom_domain": true },
+  ],
+  // Siden skal bare ligge på esaf.no, ikke også på workers.dev eller forhåndsvisnings-URL-er.
+  "workers_dev": false,
+  "preview_urls": false,
 }

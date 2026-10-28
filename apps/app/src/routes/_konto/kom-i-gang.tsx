@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { AuthCard } from '#/components/AuthLayout.tsx'
+import { PhotoUpload } from '#/components/PhotoUpload.tsx'
 import { TagInput } from '#/components/TagInput.tsx'
 import { Button, cx, ErrorText, Field, Input, Switch } from '#/components/ui.tsx'
 import { completeOnboarding } from '#/lib/access.functions.ts'
@@ -39,12 +40,12 @@ const industrySuggestions = [
   'Offentlig sektor',
 ]
 
-const STEPS = 3
+const STEPS = 4
 
 /**
- * Tre korte steg første gang et nytt medlem kommer inn: hva de jobber med, hva
- * de kan hjelpe med, og om kontaktinfo fra telefonlista skal vises. Alt kan
- * hoppes over og endres senere på profilen.
+ * Fire korte steg første gang et nytt medlem kommer inn: hva de jobber med, hva
+ * de kan hjelpe med, om kontaktinfo fra telefonlista skal vises, og et bilde.
+ * Alt kan hoppes over og endres senere på profilen.
  */
 function GetStarted() {
   const profile = Route.useLoaderData()
@@ -237,13 +238,26 @@ function GetStarted() {
         </div>
       ),
     },
+    {
+      title: 'Legg til et bilde',
+      subtitle:
+        'Da kjenner andre ES-ere deg igjen i katalogen og feeden. Bare godkjente medlemmer ser det.',
+      body: (
+        <PhotoUpload
+          personId={profile.personId}
+          fullName={profile.fullName}
+          photo={profile.photo}
+          isOwn
+        />
+      ),
+    },
   ]
   const page = pages[step]!
   const last = step === STEPS - 1
 
   return (
     <>
-      <div className="mb-6 grid grid-cols-3 gap-2" aria-hidden>
+      <div className="mb-6 grid grid-cols-4 gap-2" aria-hidden>
         {pages.map((p, i) => (
           <div
             key={p.title}
@@ -268,18 +282,22 @@ function GetStarted() {
               <ArrowLeft className="size-4" aria-hidden /> Tilbake
             </Button>
           )}
-          <button
-            type="button"
-            onClick={skip}
-            disabled={saving}
-            className="ml-auto px-2 text-sm text-stone-500 hover:text-stone-900"
-          >
-            Hopp over
-          </button>
+          {/* På siste steg ville «Hopp over» forkastet det som er fylt ut før. «Ferdig» går fint uten bilde. */}
+          {!last && (
+            <button
+              type="button"
+              onClick={skip}
+              disabled={saving}
+              className="ml-auto px-2 text-sm text-stone-500 hover:text-stone-900"
+            >
+              Hopp over
+            </button>
+          )}
           <Button
             variant="brand"
             onClick={last ? finish : () => setStep(step + 1)}
             disabled={saving}
+            className={cx(last && 'ml-auto')}
           >
             {saving ? 'Lagrer …' : last ? 'Ferdig' : 'Neste'}
             {!saving && !last && <ArrowRight className="size-4" aria-hidden />}

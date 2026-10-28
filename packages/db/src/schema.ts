@@ -168,6 +168,12 @@ export const person = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     linkedinUrl: text(),
+    /**
+     * Profilbildet: en tilfeldig nøkkel til bildefilene i lagringen (se
+     * `photos.ts` i @esaf/core). Hvert nytt bilde får ny nøkkel, så adressene
+     * aldri endrer innhold og kan caches lenge. Null betyr initialer.
+     */
+    photoKey: text(),
 
     // Kontakt. Vises bare når personen selv har slått det på, og aldri for
     // profiler ingen har tatt i bruk.
@@ -179,7 +185,8 @@ export const person = pgTable(
     onboardedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
-  (t) => [uniqueIndex().on(t.userId)],
+  // Bilderuten slår opp personen på nøkkelen ved hver forespørsel.
+  (t) => [uniqueIndex().on(t.userId), uniqueIndex().on(t.photoKey)],
 )
 
 /**

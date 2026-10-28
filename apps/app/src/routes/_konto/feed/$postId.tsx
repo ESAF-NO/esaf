@@ -110,7 +110,12 @@ function PostPage() {
 
         <form onSubmit={onComment} className="mb-6 flex gap-3">
           {viewer.fullName && (
-            <Avatar name={viewer.fullName} size="md" className="mt-0.5 hidden sm:inline-grid" />
+            <Avatar
+              name={viewer.fullName}
+              photo={viewer.photo}
+              size="md"
+              className="mt-0.5 hidden sm:inline-grid"
+            />
           )}
           <div className="flex-1 space-y-2">
             <Textarea
@@ -142,7 +147,12 @@ function PostPage() {
                 params={{ personId: c.author.personId }}
                 className="mt-0.5"
               >
-                <Avatar name={c.author.fullName} size="md" muted={!c.author.claimed} />
+                <Avatar
+                  name={c.author.fullName}
+                  photo={c.author.photo}
+                  size="md"
+                  muted={!c.author.claimed}
+                />
               </Link>
               <div className="min-w-0 flex-1 rounded-2xl rounded-tl-md bg-white px-4 py-3 shadow-card ring-1 ring-stone-200/70">
                 <div className="flex items-start justify-between gap-2">

@@ -2,9 +2,9 @@ import type { Experience } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, BriefcaseBusiness, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { PhotoUpload } from '#/components/PhotoUpload.tsx'
 import { TagInput } from '#/components/TagInput.tsx'
 import {
-  Avatar,
   Button,
   Card,
   CompanyMark,
@@ -328,14 +328,11 @@ function EditProfile() {
       >
         <ArrowLeft className="size-4" aria-hidden /> Tilbake til profilen
       </Link>
-      <div className="mb-6 flex items-center gap-4">
-        <Avatar name={profile.fullName} size="lg" />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-stone-950">
-            {profile.isOwn ? 'Rediger profilen din' : `Rediger ${profile.fullName}`}
-          </h1>
-          <p className="text-sm text-stone-500">Synlig for godkjente ESAF-medlemmer.</p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight text-stone-950">
+          {profile.isOwn ? 'Rediger profilen din' : `Rediger ${profile.fullName}`}
+        </h1>
+        <p className="text-sm text-stone-500">Synlig for godkjente ESAF-medlemmer.</p>
       </div>
 
       {!profile.isOwn && (
@@ -347,6 +344,18 @@ function EditProfile() {
           </p>
         </div>
       )}
+
+      {/* Utenfor skjemaet: bildet lagres med en gang, ikke med «Lagre endringer». */}
+      <div className="mb-4">
+        <Section title="Profilbilde" description="Endringer i bildet lagres med en gang.">
+          <PhotoUpload
+            personId={profile.personId}
+            fullName={profile.fullName}
+            photo={profile.photo}
+            isOwn={profile.isOwn}
+          />
+        </Section>
+      </div>
 
       <form onSubmit={onSubmit} className="space-y-4">
         <Section title="Om deg" description="Det andre ser først i katalogen og på profilen din.">

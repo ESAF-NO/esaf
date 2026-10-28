@@ -1,10 +1,16 @@
 import { schema, type Db } from '@esaf/db'
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { assertMember, type Viewer } from './access.ts'
+import { photoUrls, type ProfilePhoto } from './photos.ts'
 
 const { cohort, membership, person, personCohort } = schema
 
-export type CohortPerson = { personId: string; fullName: string; claimed: boolean }
+export type CohortPerson = {
+  personId: string
+  fullName: string
+  photo: ProfilePhoto | null
+  claimed: boolean
+}
 
 export type CohortSummary = {
   graduationYear: number
@@ -24,6 +30,7 @@ export async function listCohorts(db: Db, viewer: Viewer): Promise<CohortSummary
       year: cohort.graduationYear,
       personId: person.id,
       fullName: person.fullName,
+      photoKey: person.photoKey,
       userId: person.userId,
     })
     .from(cohort)
@@ -46,6 +53,7 @@ export async function listCohorts(db: Db, viewer: Viewer): Promise<CohortSummary
       summary.preview.push({
         personId: row.personId,
         fullName: row.fullName,
+        photo: photoUrls(row.photoKey),
         claimed: row.userId !== null,
       })
     }

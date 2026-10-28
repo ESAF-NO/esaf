@@ -64,7 +64,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       ),
       render: () => (
         <>
-          <Avatar name={p.fullName} size="sm" muted={!p.claimed} />
+          <Avatar name={p.fullName} photo={p.photo} size="sm" muted={!p.claimed} />
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1 font-medium text-stone-900">
               {p.fullName} <Verified claimed={p.claimed} />

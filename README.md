@@ -96,7 +96,7 @@ Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lu
 - **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom.
 - **Profiler, redigering og admin**, se under.
 
-Ikke bygget ennå: direktemeldinger, varsler, profilbilder, redigering av innlegg, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
+Ikke bygget ennå: direktemeldinger, varsler, redigering av innlegg, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
 
 ## Profiler og katalog
 
@@ -107,7 +107,24 @@ Hver person har en profilside (`/medlemmer/:id`) med erfaring (nåværende og ti
 - **Kontaktinfo:** LinkedIn vises når den er fylt ut. E-post og telefon vises bare når personen selv har krysset av for det, og aldri på profiler ingen har tatt i bruk. Admin kan verken se eller endre andres skjulte kontaktinfo. Skjult kontaktinfo filtreres bort på serveren og sendes aldri til nettleseren.
 - **Stikkord** (emner og bransjer) med bare små bokstaver får stor forbokstav, så «strategi» og «Strategi» blir samme emne.
 - **Validering** ligger i `profileInput` i `@esaf/core`, så MCP senere kan bruke den samme.
-- **Profilbilder** er ikke på plass ennå. Initialer vises i stedet. Opplasting krever lagring, for eksempel Cloudflare R2.
+- **Profilbilder:** se under. Uten bilde vises initialer.
+
+## Profilbilder
+
+Medlemmer laster opp, bytter og fjerner sitt eget bilde under «Rediger profil» (og i siste velkomststeg). Admins med `profiles.edit` kan gjøre det samme for aktive medlemmer og profiler fra kullisten, og fjerne hvem som helst sitt bilde. Det logges som `profile.admin_photo_upload` og `profile.admin_photo_remove`. Reglene ligger i `packages/core/src/photos.ts`.
+
+- **Behandling:** JPEG, PNG og WebP opptil 10 MB. Filtypen avgjøres av innholdet, ikke filnavn eller MIME-type, og bildebiblioteket (sharp) har bare dekoderne for disse tre slått på. Bildet roteres etter EXIF, all metadata fjernes (EXIF med GPS, XMP, IPTC og fargeprofil), det beskjæres til kvadrat fra midten og lagres som WebP i 512 og 192 piksler. Bilder under 128 piksler eller over 100 megapiksler avvises.
+- **Nøkler:** Hvert bilde får en ny tilfeldig nøkkel (`person.photo_key`), og de gamle filene slettes når bildet byttes eller fjernes. Feiler slettingen, logges det, og fila serveres uansett ikke lenger.
+- **Visning:** `GET /api/bilder/<nøkkel>-<størrelse>.webp` krever aktivt medlemskap (401 uten innlogging, 404 for ukjente eller utgåtte nøkler) og svarer med `Cache-Control: private, max-age=31536000, immutable`. Bøtta skal aldri være offentlig.
+- **Opplasting:** `PUT` og `DELETE` på `/api/medlemmer/<personId>/bilde`, med bildet som body. Størrelse og tilgang sjekkes før fila leses inn, og forespørsler fra andre nettsteder avvises.
+
+| Variabel                                                               | Hva                                                                                                                                  |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | S3-kompatibel lagring, f.eks. Cloudflare R2 (`https://<konto-id>.r2.cloudflarestorage.com`). Alle eller ingen. Påkrevd i produksjon. |
+| `S3_REGION`                                                            | Valgfri, standard `auto` (R2).                                                                                                       |
+| `UPLOAD_DIR`                                                           | Bare utvikling: mappe for bildene når S3 ikke er satt. Standard `.data/uploads` i roten av repoet (gitignorert).                     |
+
+Produksjonsserveren starter ikke uten S3-variablene; det er ingen stille overgang til disk. For R2: lag en privat bøtte og et API-token med «Object Read & Write» for bare den bøtta.
 
 ## Profiler og import av kullisten
 
@@ -225,8 +242,11 @@ For å koble til `esaf.no`: fjern kommentaren rundt `routes` i `wrangler.jsonc` 
 pnpm db:migrate                      # med produksjonens DATABASE_URL, før oppstart
 NODE_ENV=production PORT=3000 \
 DATABASE_URL=postgres://… BETTER_AUTH_SECRET=… BETTER_AUTH_URL=https://app.esaf.no \
+S3_ENDPOINT=https://<konto-id>.r2.cloudflarestorage.com S3_BUCKET=… S3_ACCESS_KEY_ID=… S3_SECRET_ACCESS_KEY=… \
 node apps/app/.output/server/index.mjs
 ```
+
+Bildebehandlingen (sharp) har native binærfiler for plattformen den installeres på. Bygg derfor `.output/` på samme operativsystem og arkitektur som serveren (f.eks. i CI eller i Docker-bildet), ikke på en Mac for en Linux-server.
 
 Bare `.output/` trengs på serveren. Den kan kopieres til en VPS eller pakkes i et container-image (`node:24-slim`, `COPY .output`, `CMD node .output/server/index.mjs`). Det finnes ingen Dockerfile ennå. Den bør lages og testes når vertsplattformen er valgt. Helsesjekk: `GET /api/health` gir 200 når databasen svarer og 503 ellers.
 
@@ -235,7 +255,7 @@ Bare `.output/` trengs på serveren. Den kan kopieres til en VPS eller pakkes i 
 Dette gjenstår før appen kan brukes av medlemmer:
 
 1. **E-postleverandør.** Velg leverandør (f.eks. Resend, Postmark eller SES) og implementer `sendVerificationEmail` i `apps/app/src/server/auth.server.ts`. Legg nøkkelen i miljøet og i env-skjemaet. Legg samtidig til tilbakestilling av passord, som også trenger e-post. Sett opp SPF/DKIM for avsenderdomenet.
-2. **Hosting og database.** Velg vert for appen og en administrert eller selvdriftet Postgres. Velg dem samlet, ut fra driftsansvar og kostnad.
+2. **Hosting og database.** Velg vert for appen og en administrert eller selvdriftet Postgres. Velg dem samlet, ut fra driftsansvar og kostnad. Opprett en privat R2-bøtte for profilbilder (se «Profilbilder»).
 3. **Backup.** Automatisk, kryptert backup av Postgres med testet gjenoppretting og avklart lagringstid.
 4. **Deploy.** Deploy-jobb for appen, med migrering som eget steg. Bestem `app.esaf.no` og DNS i Cloudflare.
 5. **Overvåking.** Oppetidssjekk mot `/api/health`, innsamling av feillogger og varsling til en navngitt person.

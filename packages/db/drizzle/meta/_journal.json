@@ -85,6 +85,13 @@
       "when": 1793228667528,
       "tag": "0011_posts_edited_pinned",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793228764454,
+      "tag": "0012_profile_photos",
+      "breakpoints": true
     }
   ]
 }

@@ -184,7 +184,7 @@ function OwnCohort({ cohort: c }: { cohort: CohortSummary }) {
             title={p.fullName}
             className="inline-flex rounded-full ring-2 ring-white transition hover:z-10 hover:-translate-y-0.5"
           >
-            <Avatar name={p.fullName} size="sm" muted={!p.claimed} />
+            <Avatar name={p.fullName} photo={p.photo} size="sm" muted={!p.claimed} />
           </Link>
         ))}
       </div>

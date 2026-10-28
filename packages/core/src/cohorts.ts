@@ -5,10 +5,16 @@ import { companySlug } from './companies.ts'
 import { NotFoundError } from './errors.ts'
 import { listPosts, type PostSummary } from './feed.ts'
 import { listActiveMembers, type MemberListItem } from './members.ts'
+import { photoUrls, type ProfilePhoto } from './photos.ts'
 
 const { cohort, membership, person, personCohort } = schema
 
-export type CohortPerson = { personId: string; fullName: string; claimed: boolean }
+export type CohortPerson = {
+  personId: string
+  fullName: string
+  photo: ProfilePhoto | null
+  claimed: boolean
+}
 
 export type CohortSummary = {
   graduationYear: number
@@ -28,6 +34,7 @@ export async function listCohorts(db: Db, viewer: Viewer): Promise<CohortSummary
       year: cohort.graduationYear,
       personId: person.id,
       fullName: person.fullName,
+      photoKey: person.photoKey,
       userId: person.userId,
     })
     .from(cohort)
@@ -50,6 +57,7 @@ export async function listCohorts(db: Db, viewer: Viewer): Promise<CohortSummary
       summary.preview.push({
         personId: row.personId,
         fullName: row.fullName,
+        photo: photoUrls(row.photoKey),
         claimed: row.userId !== null,
       })
     }
@@ -173,7 +181,13 @@ function companiesStartedBy(people: MemberListItem[]): CohortCompany[] {
     company.esCompany ||= role === 'es'
     const existing = company.people.find((x) => x.personId === p.personId)
     if (!existing) {
-      company.people.push({ personId: p.personId, fullName: p.fullName, claimed: p.claimed, role })
+      company.people.push({
+        personId: p.personId,
+        fullName: p.fullName,
+        photo: p.photo,
+        claimed: p.claimed,
+        role,
+      })
     } else if (role === 'founder') {
       existing.role = 'founder'
     }

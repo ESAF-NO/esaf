@@ -23,7 +23,7 @@ export function PersonCard({ member: m }: { member: MemberListItem }) {
       params={{ personId: m.personId }}
       className="group flex h-full gap-3.5 rounded-2xl bg-white p-4 shadow-card ring-1 ring-stone-200/70 transition hover:-translate-y-px hover:shadow-lift hover:ring-stone-300"
     >
-      <Avatar name={m.fullName} size="lg" muted={!m.claimed} />
+      <Avatar name={m.fullName} photo={m.photo} size="lg" muted={!m.claimed} />
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1 font-semibold text-stone-950">
           <span className="truncate">{m.fullName}</span>

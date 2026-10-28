@@ -141,7 +141,13 @@ function ProfilePage() {
         />
         <div className="px-5 pb-6 sm:px-8">
           <div className="-mt-12 flex flex-wrap items-end justify-between gap-4 sm:-mt-14">
-            <Avatar name={p.fullName} size="xl" muted={!p.claimed} className="ring-4 ring-white" />
+            <Avatar
+              name={p.fullName}
+              photo={p.photo}
+              size="xl"
+              muted={!p.claimed}
+              className="ring-4 ring-white"
+            />
             <div className="flex flex-wrap gap-2 pb-1">
               {p.linkedinUrl && (
                 <a

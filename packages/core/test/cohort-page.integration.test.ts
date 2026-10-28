@@ -161,15 +161,17 @@ describe.skipIf(!url)('kullsiden', () => {
         name: expect.stringMatching(/^(Syrlig AS|syrlig as)$/),
         esCompany: true,
         people: [
-          { personId: kari!.personId, fullName: 'Kari', claimed: true, role: 'es' },
-          { personId: ola!.personId, fullName: 'Ola', claimed: true, role: 'es' },
+          { personId: kari!.personId, fullName: 'Kari', photo: null, claimed: true, role: 'es' },
+          { personId: ola!.personId, fullName: 'Ola', photo: null, claimed: true, role: 'es' },
         ],
       },
       {
         slug: 'fjordflow',
         name: 'Fjordflow',
         esCompany: false,
-        people: [{ personId: ola!.personId, fullName: 'Ola', claimed: true, role: 'founder' }],
+        people: [
+          { personId: ola!.personId, fullName: 'Ola', photo: null, claimed: true, role: 'founder' },
+        ],
       },
     ])
     // Arbeidsgivere og selskaper fra andre kull er ikke med.

@@ -3,7 +3,7 @@ import { parse } from 'csv-parse/sync'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import ExcelJS from 'exceljs'
 import { deleteOrphanCompanies, isCompanyName, resolveCompanies } from './companies.ts'
-import { normalizeEmail } from './members.ts'
+import { normalizeEmail, type Tx } from './members.ts'
 import { normalizeLinkedinUrl } from './profiles.ts'
 import { tidyTag } from './validation.ts'
 
@@ -522,7 +522,7 @@ export type PlannedRow = ProfileRow &
       }
   )
 
-export async function planProfileImport(db: Db, rows: ProfileRow[]): Promise<PlannedRow[]> {
+export async function planProfileImport(db: Db | Tx, rows: ProfileRow[]): Promise<PlannedRow[]> {
   const emails = rows.flatMap((r) => r.emails)
   const byEmail = new Map(
     (emails.length

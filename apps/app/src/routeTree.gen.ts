@@ -48,6 +48,8 @@ import { Route as ApiBilderKeyRouteImport } from './routes/api/bilder/$key'
 import { Route as ApiImportDeltakelseRouteImport } from './routes/api/import/deltakelse'
 import { Route as ApiImportKullrepresentanterRouteImport } from './routes/api/import/kullrepresentanter'
 import { Route as ApiLogoerKeyRouteImport } from './routes/api/logoer/$key'
+import { Route as ApiVedleggIndexRouteImport } from './routes/api/vedlegg/index'
+import { Route as ApiVedleggNameRouteImport } from './routes/api/vedlegg/$name'
 import { Route as KontoAdminArrangementerImportRouteImport } from './routes/_konto/admin/arrangementer_.import'
 import { Route as KontoAdminKullrepresentanterImportRouteImport } from './routes/_konto/admin/kullrepresentanter_.import'
 import { Route as KontoArrangementerTypeSlugIndexRouteImport } from './routes/_konto/arrangementer/$typeSlug/index'
@@ -258,6 +260,16 @@ const ApiLogoerKeyRoute = ApiLogoerKeyRouteImport.update({
   path: '/api/logoer/$key',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVedleggIndexRoute = ApiVedleggIndexRouteImport.update({
+  id: '/api/vedlegg/',
+  path: '/api/vedlegg/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiVedleggNameRoute = ApiVedleggNameRouteImport.update({
+  id: '/api/vedlegg/$name',
+  path: '/api/vedlegg/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KontoAdminArrangementerImportRoute =
   KontoAdminArrangementerImportRouteImport.update({
     id: '/arrangementer_/import',
@@ -361,6 +373,7 @@ export interface FileRoutesByFullPath {
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
   '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin/': typeof KontoAdminIndexRoute
   '/arrangementer/': typeof KontoArrangementerIndexRoute
   '/esaf-helgen/': typeof KontoEsafHelgenIndexRoute
@@ -368,6 +381,7 @@ export interface FileRoutesByFullPath {
   '/kull/': typeof KontoKullIndexRoute
   '/medlemmer/': typeof KontoMedlemmerIndexRoute
   '/selskaper/': typeof KontoSelskaperIndexRoute
+  '/api/vedlegg/': typeof ApiVedleggIndexRoute
   '/admin/arrangementer/import': typeof KontoAdminArrangementerImportRoute
   '/admin/kullrepresentanter/import': typeof KontoAdminKullrepresentanterImportRoute
   '/arrangementer/$typeSlug/$eventId': typeof KontoArrangementerTypeSlugEventIdRoute
@@ -412,6 +426,7 @@ export interface FileRoutesByTo {
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
   '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin': typeof KontoAdminIndexRoute
   '/arrangementer': typeof KontoArrangementerIndexRoute
   '/esaf-helgen': typeof KontoEsafHelgenIndexRoute
@@ -419,6 +434,7 @@ export interface FileRoutesByTo {
   '/kull': typeof KontoKullIndexRoute
   '/medlemmer': typeof KontoMedlemmerIndexRoute
   '/selskaper': typeof KontoSelskaperIndexRoute
+  '/api/vedlegg': typeof ApiVedleggIndexRoute
   '/admin/arrangementer/import': typeof KontoAdminArrangementerImportRoute
   '/admin/kullrepresentanter/import': typeof KontoAdminKullrepresentanterImportRoute
   '/arrangementer/$typeSlug/$eventId': typeof KontoArrangementerTypeSlugEventIdRoute
@@ -466,6 +482,7 @@ export interface FileRoutesById {
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
   '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/_konto/admin/': typeof KontoAdminIndexRoute
   '/_konto/arrangementer/': typeof KontoArrangementerIndexRoute
   '/_konto/esaf-helgen/': typeof KontoEsafHelgenIndexRoute
@@ -473,6 +490,7 @@ export interface FileRoutesById {
   '/_konto/kull/': typeof KontoKullIndexRoute
   '/_konto/medlemmer/': typeof KontoMedlemmerIndexRoute
   '/_konto/selskaper/': typeof KontoSelskaperIndexRoute
+  '/api/vedlegg/': typeof ApiVedleggIndexRoute
   '/_konto/admin/arrangementer_/import': typeof KontoAdminArrangementerImportRoute
   '/_konto/admin/kullrepresentanter_/import': typeof KontoAdminKullrepresentanterImportRoute
   '/_konto/arrangementer/$typeSlug/$eventId': typeof KontoArrangementerTypeSlugEventIdRoute
@@ -520,6 +538,7 @@ export interface FileRouteTypes {
     | '/api/import/deltakelse'
     | '/api/import/kullrepresentanter'
     | '/api/logoer/$key'
+    | '/api/vedlegg/$name'
     | '/admin/'
     | '/arrangementer/'
     | '/esaf-helgen/'
@@ -527,6 +546,7 @@ export interface FileRouteTypes {
     | '/kull/'
     | '/medlemmer/'
     | '/selskaper/'
+    | '/api/vedlegg/'
     | '/admin/arrangementer/import'
     | '/admin/kullrepresentanter/import'
     | '/arrangementer/$typeSlug/$eventId'
@@ -571,6 +591,7 @@ export interface FileRouteTypes {
     | '/api/import/deltakelse'
     | '/api/import/kullrepresentanter'
     | '/api/logoer/$key'
+    | '/api/vedlegg/$name'
     | '/admin'
     | '/arrangementer'
     | '/esaf-helgen'
@@ -578,6 +599,7 @@ export interface FileRouteTypes {
     | '/kull'
     | '/medlemmer'
     | '/selskaper'
+    | '/api/vedlegg'
     | '/admin/arrangementer/import'
     | '/admin/kullrepresentanter/import'
     | '/arrangementer/$typeSlug/$eventId'
@@ -624,6 +646,7 @@ export interface FileRouteTypes {
     | '/api/import/deltakelse'
     | '/api/import/kullrepresentanter'
     | '/api/logoer/$key'
+    | '/api/vedlegg/$name'
     | '/_konto/admin/'
     | '/_konto/arrangementer/'
     | '/_konto/esaf-helgen/'
@@ -631,6 +654,7 @@ export interface FileRouteTypes {
     | '/_konto/kull/'
     | '/_konto/medlemmer/'
     | '/_konto/selskaper/'
+    | '/api/vedlegg/'
     | '/_konto/admin/arrangementer_/import'
     | '/_konto/admin/kullrepresentanter_/import'
     | '/_konto/arrangementer/$typeSlug/$eventId'
@@ -658,6 +682,8 @@ export interface RootRouteChildren {
   ApiImportDeltakelseRoute: typeof ApiImportDeltakelseRoute
   ApiImportKullrepresentanterRoute: typeof ApiImportKullrepresentanterRoute
   ApiLogoerKeyRoute: typeof ApiLogoerKeyRoute
+  ApiVedleggNameRoute: typeof ApiVedleggNameRoute
+  ApiVedleggIndexRoute: typeof ApiVedleggIndexRoute
   ApiMedlemmerPersonIdBildeRoute: typeof ApiMedlemmerPersonIdBildeRoute
   ApiSelskaperCompanyIdLogoRoute: typeof ApiSelskaperCompanyIdLogoRoute
 }
@@ -937,6 +963,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiLogoerKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/vedlegg/': {
+      id: '/api/vedlegg/'
+      path: '/api/vedlegg'
+      fullPath: '/api/vedlegg/'
+      preLoaderRoute: typeof ApiVedleggIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/vedlegg/$name': {
+      id: '/api/vedlegg/$name'
+      path: '/api/vedlegg/$name'
+      fullPath: '/api/vedlegg/$name'
+      preLoaderRoute: typeof ApiVedleggNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_konto/admin/arrangementer_/import': {
       id: '/_konto/admin/arrangementer_/import'
       path: '/arrangementer/import'
@@ -1131,6 +1171,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiImportDeltakelseRoute: ApiImportDeltakelseRoute,
   ApiImportKullrepresentanterRoute: ApiImportKullrepresentanterRoute,
   ApiLogoerKeyRoute: ApiLogoerKeyRoute,
+  ApiVedleggNameRoute: ApiVedleggNameRoute,
+  ApiVedleggIndexRoute: ApiVedleggIndexRoute,
   ApiMedlemmerPersonIdBildeRoute: ApiMedlemmerPersonIdBildeRoute,
   ApiSelskaperCompanyIdLogoRoute: ApiSelskaperCompanyIdLogoRoute,
 }

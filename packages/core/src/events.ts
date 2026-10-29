@@ -9,11 +9,20 @@ import {
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import {
+  assetViews,
+  deleteAssetsOf,
+  loadAssets,
+  purgeAssets,
+  type AssetView,
+  type PurgeTarget,
+} from './assets.ts'
 import { companySlug } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 import { loadMatchPeople, matchAttendeeLines, MAX_LINES, type MatchLine } from './person-match.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
+import type { ObjectStorage } from './storage.ts'
 import { optionalText } from './validation.ts'
 
 const {
@@ -392,6 +401,14 @@ export type EventDetails = {
   /** Etter kull, nyeste kull først. `graduationYear` er null for dem uten kull. */
   groups: { graduationYear: number | null; people: EventParticipant[] }[]
   canManage: boolean
+  /** «Bilder»: albumet, eldste først. */
+  photos: AssetView[]
+  /** «Dokumenter»: program, referat og lignende. */
+  documents: AssetView[]
+  /** De som var der, og admins, når arrangementet har startet. */
+  canUploadPhotos: boolean
+  /** Arrangørene og admins. */
+  canUploadDocuments: boolean
 }
 
 /** Ett arrangement med deltakerne gruppert etter kull, arrangører og andre roller først. */
@@ -455,6 +472,15 @@ export async function getEvent(db: Db, viewer: Viewer, eventId: string): Promise
   }
   const own = rows.find((r) => r.personId === viewer.personId)
   const e = row.event
+  const moderator = can(viewer, 'content.moderate')
+  const organizer = normalizeRole(own?.role) === 'organizer'
+  const files = await loadAssets(
+    db,
+    viewer,
+    { eventId: e.id },
+    (a) => moderator || (a.purpose === 'event_document' && (organizer || canManage)),
+  )
+  const upcoming = e.startDate > osloToday()
   return {
     id: e.id,
     name: e.name,
@@ -464,7 +490,7 @@ export async function getEvent(db: Db, viewer: Viewer, eventId: string): Promise
     location: e.location,
     description: e.description,
     type: row.type,
-    upcoming: e.startDate > osloToday(),
+    upcoming,
     participants: visible.length,
     roles,
     participated: Boolean(own),
@@ -480,6 +506,10 @@ export async function getEvent(db: Db, viewer: Viewer, eventId: string): Promise
         ),
       })),
     canManage,
+    photos: assetViews(files.filter((f) => f.purpose === 'event_photo')),
+    documents: assetViews(files.filter((f) => f.purpose === 'event_document')),
+    canUploadPhotos: !upcoming && (Boolean(own) || canManage),
+    canUploadDocuments: organizer || canManage,
   }
 }
 
@@ -883,27 +913,35 @@ export async function updateEvent(
   })
 }
 
-/** Sletter arrangementet og deltakelsen. Logges med navnet og hvor mange som var der. */
+/**
+ * Sletter arrangementet, deltakelsen og bildene og dokumentene. Logges med
+ * navnet, hvor mange som var der og hvor mange filer som ble slettet. Med
+ * `storage` fjernes filene med en gang, ellers av oppryddingen.
+ */
 export async function deleteEvent(
   db: Db,
   viewer: Viewer,
   eventId: string,
+  storage?: ObjectStorage,
 ): Promise<{ typeSlug: string }> {
   assertCan(viewer, 'profiles.edit')
-  return db.transaction(async (tx) => {
+  const { typeSlug, files } = await db.transaction(async (tx) => {
     const e = await lockEvent(tx, eventId)
     const participants = await tx.$count(
       eventParticipation,
       eq(eventParticipation.eventId, eventId),
     )
+    const removed: PurgeTarget[] = await deleteAssetsOf(tx, { eventId })
     await tx.delete(event).where(eq(event.id, eventId))
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
       action: 'event.delete',
-      details: { ...eventRef(e), startDate: e.startDate, participants },
+      details: { ...eventRef(e), startDate: e.startDate, participants, files: removed.length },
     })
-    return { typeSlug: e.typeSlug }
+    return { typeSlug: e.typeSlug, files: removed }
   })
+  if (storage) await purgeAssets(db, storage, files)
+  return { typeSlug }
 }
 
 // ---------------------------------------------------------------------------

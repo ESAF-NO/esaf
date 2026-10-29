@@ -5,6 +5,7 @@ import {
   DomainError,
   NotFoundError,
   PHOTO_MAX_BYTES,
+  UploadLimitError,
   type ObjectStorage,
 } from '@esaf/core'
 import { env, storageConfig } from './env.server.ts'
@@ -18,7 +19,7 @@ export const storage = (globalForStorage.esafStorage ??=
     : createDiskStorage(storageConfig.dir))
 
 /** En feil med HTTP-status, for det som stoppes før domenet (størrelse, type, opprinnelse). */
-class UploadError extends Error {
+export class UploadError extends Error {
   constructor(
     readonly status: number,
     message: string,
@@ -47,14 +48,27 @@ export function assertSameOrigin(request: Request) {
  * på `content-length` før noe leses, og strømmen avbrytes hvis den er større enn
  * den sa. Om fila faktisk er et bilde, avgjør @esaf/core ut fra innholdet.
  */
-export async function readUpload(request: Request): Promise<Uint8Array> {
+export function readUpload(request: Request): Promise<Uint8Array> {
   const type = request.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? ''
   if (!type.startsWith('image/') && type !== 'application/octet-stream') {
     throw new UploadError(415, 'Last opp bildet som en fil (JPEG, PNG eller WebP).')
   }
-  const tooLarge = () => new UploadError(413, 'Bildet er for stort. Maks 10 MB.')
-  if (Number(request.headers.get('content-length')) > PHOTO_MAX_BYTES) throw tooLarge()
-  if (!request.body) throw new UploadError(400, 'Fant ikke noe bilde i forespørselen.')
+  return readBody(request, PHOTO_MAX_BYTES, 'Bildet er for stort. Maks 10 MB.')
+}
+
+/**
+ * Leser hele bodyen, men aldri mer enn `maxBytes`: for store filer avvises på
+ * `content-length` før noe leses, og strømmen avbrytes hvis den er større enn
+ * den sa. Brukes av bildene og vedleggene.
+ */
+export async function readBody(
+  request: Request,
+  maxBytes: number,
+  tooLargeMessage: string,
+): Promise<Uint8Array> {
+  const tooLarge = () => new UploadError(413, tooLargeMessage)
+  if (Number(request.headers.get('content-length')) > maxBytes) throw tooLarge()
+  if (!request.body) throw new UploadError(400, 'Fant ingen fil i forespørselen.')
 
   const chunks: Uint8Array[] = []
   let size = 0
@@ -63,7 +77,7 @@ export async function readUpload(request: Request): Promise<Uint8Array> {
     const { done, value } = await reader.read()
     if (done) break
     size += value.byteLength
-    if (size > PHOTO_MAX_BYTES) {
+    if (size > maxBytes) {
       await reader.cancel()
       throw tooLarge()
     }
@@ -99,6 +113,7 @@ export function photoErrorResponse(error: unknown): Response {
     return reply(error.reason === 'unauthenticated' ? 401 : 403, error.message)
   }
   if (error instanceof NotFoundError) return reply(404, error.message)
+  if (error instanceof UploadLimitError) return reply(429, error.message)
   if (error instanceof DomainError) return reply(422, error.message)
   console.error('[esaf/app] Feil i bilde-API-et:', error)
   return reply(500, 'Noe gikk galt. Prøv igjen om litt.')

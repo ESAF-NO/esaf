@@ -17,6 +17,7 @@ import type { ObjectStorage } from './storage.ts'
 
 const {
   accessRequest,
+  asset,
   auditEvent,
   cohort,
   boardMember,
@@ -631,6 +632,7 @@ export async function mergePeople(
     // Innhold og stemmer. Profiler uten konto har sjelden noe, men ingenting skal gå tapt.
     await tx.update(post).set({ authorPersonId: into }).where(eq(post.authorPersonId, from))
     await tx.update(comment).set({ authorPersonId: into }).where(eq(comment.authorPersonId, from))
+    await tx.update(asset).set({ ownerPersonId: into }).where(eq(asset.ownerPersonId, from))
     await tx.execute(
       sql`insert into ${postVote} (post_id, person_id, created_at) select post_id, ${into}, created_at from ${postVote} where person_id = ${from} on conflict do nothing`,
     )

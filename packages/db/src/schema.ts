@@ -1181,3 +1181,105 @@ export const notification = pgTable(
 )
 
 export type NotificationType = (typeof notificationType.enumValues)[number]
+
+// ---------------------------------------------------------------------------
+// Vedlegg: bilder og dokumenter på innlegg, kommentarer, arrangementer og selskaper
+// ---------------------------------------------------------------------------
+
+/** Bilder behandles og lagres som WebP i to størrelser; dokumenter lagres som de er. */
+export const assetKind = pgEnum('asset_kind', ['image', 'document'])
+
+/**
+ * Hva fila ble lastet opp til. Bestemmes ved opplasting, så tilgangen kan sjekkes
+ * før fila leses, og avgjør hvilken forelder den kan festes til.
+ */
+export const assetPurpose = pgEnum('asset_purpose', [
+  /** Vedlegg i et innlegg. */
+  'post',
+  /** Vedlegg i en kommentar. */
+  'comment',
+  /** «Bilder» på et arrangement. */
+  'event_photo',
+  /** «Dokumenter» på et arrangement (program, referat). */
+  'event_document',
+  /** «Dokumenter» på et selskap (pitch deck, pressemateriale). */
+  'company_document',
+])
+
+/**
+ * En opplastet fil. Hører til høyst én forelder (innlegg, kommentar, arrangement
+ * eller selskap). Vedlegg til innlegg og kommentarer lastes opp før innlegget
+ * finnes, og står uten forelder til det lagres; de som aldri blir festet, ryddes
+ * bort etter et døgn. Slettes forelderen, blir nøkkelen null, og filene ryddes
+ * bort på samme måte (se `assets.ts` i @esaf/core).
+ *
+ * Sletting er myk: `deleted_at` skjuler fila med en gang, og `purged_at` settes
+ * når filene er fjernet fra lagringen. Raden blir stående, så grensen per døgn
+ * ikke kan omgås ved å slette og laste opp på nytt.
+ */
+export const asset = pgTable(
+  'asset',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** Tilfeldig nøkkel (128 bit) i adressene: `/api/vedlegg/<nøkkel>…`. */
+    fileKey: text().notNull().unique(),
+    /** Den som lastet opp. Null hvis personen er slettet. */
+    ownerPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    purpose: assetPurpose().notNull(),
+    kind: assetKind().notNull(),
+    postId: uuid().references(() => post.id, { onDelete: 'set null' }),
+    commentId: uuid().references(() => comment.id, { onDelete: 'set null' }),
+    eventId: uuid().references(() => event.id, { onDelete: 'set null' }),
+    companyId: uuid().references(() => company.id, { onDelete: 'set null' }),
+    /** Rekkefølgen blant vedleggene til samme forelder. */
+    position: integer().notNull().default(0),
+    /** Filnavnet slik det vises og lastes ned, renset og med riktig filendelse. */
+    originalName: text().notNull(),
+    /** Typen fila serveres med, avgjort ut fra innholdet. */
+    contentType: text().notNull(),
+    /** Størrelsen på fila som ble lastet opp. */
+    byteSize: integer().notNull(),
+    /** Nøklene i lagringen per variant: `400` og `1600` for bilder, `original` for dokumenter. */
+    storageKeys: jsonb().$type<Record<string, string>>().notNull(),
+    /** Den store varianten av bildet, slik det står. Null for dokumenter. */
+    width: integer(),
+    height: integer(),
+    /** SHA-256 av fila som ble lastet opp. */
+    sha256: text().notNull(),
+    /** Når fila ble festet til en forelder. */
+    attachedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    deletedAt: timestamp({ withTimezone: true }),
+    /** Når filene ble slettet fra lagringen. */
+    purgedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    index().on(t.postId),
+    index().on(t.commentId),
+    index().on(t.eventId),
+    index().on(t.companyId),
+    // Grensen per døgn teller det personen har lastet opp.
+    index().on(t.ownerPersonId, t.createdAt),
+    // Oppryddingen ser bare på filer som fortsatt ligger i lagringen.
+    index('asset_unpurged_index')
+      .on(t.createdAt)
+      .where(sql`${t.purgedAt} is null`),
+    check(
+      'asset_one_parent',
+      sql`num_nonnulls(${t.postId}, ${t.commentId}, ${t.eventId}, ${t.companyId}) <= 1`,
+    ),
+    check(
+      'asset_parent_purpose',
+      sql`(${t.postId} is null or ${t.purpose} = 'post') and (${t.commentId} is null or ${t.purpose} = 'comment') and (${t.eventId} is null or ${t.purpose} in ('event_photo', 'event_document')) and (${t.companyId} is null or ${t.purpose} = 'company_document')`,
+    ),
+    check('asset_album_images', sql`${t.purpose} <> 'event_photo' or ${t.kind} = 'image'`),
+    check('asset_byte_size', sql`${t.byteSize} > 0`),
+    check(
+      'asset_image_size',
+      sql`(${t.kind} = 'image') = (${t.width} is not null and ${t.height} is not null)`,
+    ),
+  ],
+)
+
+export type AssetKind = (typeof assetKind.enumValues)[number]
+export type AssetPurpose = (typeof assetPurpose.enumValues)[number]

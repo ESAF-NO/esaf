@@ -9,7 +9,7 @@ export default defineConfig({
   server: { port: 3000 },
   plugins: [
     nitro({
-      plugins: ['./src/server/plugins/validate-env.ts'],
+      plugins: ['./src/server/plugins/validate-env.ts', './src/server/plugins/cleanup-assets.ts'],
       // Bildebehandlingen har native binærfiler som må ligge som egen pakke i
       // .output, ikke bakes inn i bundelen. `*` tar med hele pakken.
       traceDeps: ['sharp*'],

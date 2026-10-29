@@ -11,7 +11,9 @@ export const Route = createFileRoute('/_konto/admin')({
   beforeLoad: ({ context: { viewer } }) => {
     // Uten adminrolle får man samme svar som om siden ikke fantes.
     if (!viewer.adminArea) throw notFound()
-    if (viewer.twoFactorMissing) throw redirect({ to: '/konto', search: { krav: 'tofaktor' } })
+    if (viewer.strongAuthMissing) {
+      throw redirect({ to: '/konto', search: { krav: 'sterk-innlogging' } })
+    }
   },
   component: AdminLayout,
 })

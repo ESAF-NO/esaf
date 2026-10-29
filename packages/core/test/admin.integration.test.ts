@@ -13,6 +13,7 @@ import {
   listAccounts,
   listAuditEvents,
   loadViewer,
+  removePasskeys,
   setMemberAccess,
   type Viewer,
 } from '../src/index.ts'
@@ -93,7 +94,7 @@ describe.skipIf(!url)('roller og medlemsadministrasjon', () => {
       .set({ twoFactorEnabled: false })
       .where(eq(schema.user.id, ids.Eier!))
     const withoutTwoFactor = await loadViewer(db, ids.Eier!)
-    expect(await denial(changeRole(db, withoutTwoFactor, target))).toBe('two_factor_required')
+    expect(await denial(changeRole(db, withoutTwoFactor, target))).toBe('strong_auth_required')
     await db
       .update(schema.user)
       .set({ twoFactorEnabled: true })
@@ -108,6 +109,82 @@ describe.skipIf(!url)('roller og medlemsadministrasjon', () => {
       subject: { personId: member!.personId },
       details: { from: 'member', to: 'moderator', reason: 'Moderator for feeden' },
     })
+  })
+
+  async function addPasskey(userId: string) {
+    await db.insert(schema.passkey).values({
+      id: randomUUID(),
+      userId,
+      name: 'Testnøkkel',
+      publicKey: 'pk',
+      credentialID: randomUUID(),
+      counter: 0,
+      deviceType: 'multiDevice',
+      backedUp: true,
+    })
+  }
+
+  it('en admin med bare passkey må ha logget inn med passkey i denne økten', async () => {
+    await db
+      .update(schema.user)
+      .set({ twoFactorEnabled: false })
+      .where(eq(schema.user.id, ids.Admin!))
+    await addPasskey(ids.Admin!)
+
+    const withPassword = await loadViewer(db, ids.Admin!, { signedInWithPasskey: false })
+    expect(withPassword).toMatchObject({ hasPasskey: true, passkeySession: false })
+    expect(await denial(listAccounts(db, withPassword))).toBe('strong_auth_required')
+    // Uten økt regnes innloggingen som passord.
+    expect(await denial(listAccounts(db, await loadViewer(db, ids.Admin!)))).toBe(
+      'strong_auth_required',
+    )
+
+    const withPasskey = await loadViewer(db, ids.Admin!, { signedInWithPasskey: true })
+    expect(await denial(listAccounts(db, withPasskey))).toBe('allowed')
+    const row = (await listAccounts(db, withPasskey)).find((a) => a.fullName === 'Admin')
+    expect(row).toMatchObject({ twoFactorEnabled: false, passkeys: 1 })
+  })
+
+  it('passkeys kan fjernes for den som har mistet dem, etter reglene for tilgang', async () => {
+    await addPasskey(ids.Moderator!)
+    await addPasskey(ids.Moderator!)
+    await addPasskey(ids.Admin!)
+    await db.insert(schema.session).values({
+      id: randomUUID(),
+      token: randomUUID(),
+      userId: ids.Moderator!,
+      expiresAt: new Date(Date.now() + 864e5),
+      signedInWithPasskey: true,
+    })
+    const input = { personId: moderator!.personId!, reason: 'Mistet telefonen' }
+
+    expect(await denial(removePasskeys(db, moderator, input))).toBe('forbidden')
+    expect(await denial(removePasskeys(db, admin, { ...input, reason: '' }))).toMatch('begrunnelse')
+    expect(
+      await denial(removePasskeys(db, admin, { personId: admin!.personId!, reason: 'test' })),
+    ).toMatch('dine egne')
+    expect(
+      await denial(removePasskeys(db, admin, { personId: owner!.personId!, reason: 'test' })),
+    ).toMatch('Bare en hovedadmin')
+
+    await removePasskeys(db, admin, input)
+    expect((await loadViewer(db, ids.Moderator!))?.hasPasskey).toBe(false)
+    // Logget ut overalt, i tilfelle noen andre har en av dem.
+    expect(
+      await db.select().from(schema.session).where(eq(schema.session.userId, ids.Moderator!)),
+    ).toEqual([])
+    expect(await denial(removePasskeys(db, admin, input))).toMatch('ingen passkeys')
+    const [entry] = await listAuditEvents(db, admin, { limit: 1 })
+    expect(entry).toMatchObject({
+      action: 'security.remove_passkeys',
+      actor: { personId: admin!.personId },
+      subject: { personId: moderator!.personId },
+      details: { reason: 'Mistet telefonen', count: 2 },
+    })
+
+    // Hovedadmins kan fjerne passkeys for admins.
+    await removePasskeys(db, owner, { personId: admin!.personId!, reason: 'Ny telefon' })
+    expect((await loadViewer(db, ids.Admin!))?.hasPasskey).toBe(false)
   })
 
   it('den siste hovedadmin kan verken fjerne seg selv eller miste tilgangen', async () => {

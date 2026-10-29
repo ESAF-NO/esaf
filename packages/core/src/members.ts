@@ -16,6 +16,7 @@ const {
   membership,
   person,
   personCohort,
+  passkey,
   personEmail,
   user,
 } = schema
@@ -64,13 +65,37 @@ export async function ensurePersonForVerifiedUser(
   return created.id
 }
 
-/** Bygger `Viewer` for en innlogget bruker. Kalles på serveren for hver forespørsel. */
-export async function loadViewer(db: Db, userId: string): Promise<Viewer> {
-  const [account] = await db.select().from(user).where(eq(user.id, userId))
+/**
+ * Bygger `Viewer` for en innlogget bruker. Kalles på serveren for hver
+ * forespørsel, med økten fra Better Auth. Uten økt regnes innloggingen som
+ * vanlig (ikke passkey), som er det trygge valget.
+ */
+export async function loadViewer(
+  db: Db,
+  userId: string,
+  session: { signedInWithPasskey?: boolean | null } = {},
+): Promise<Viewer> {
+  const [[account], [anyPasskey]] = await Promise.all([
+    db
+      .select({
+        emailVerified: user.emailVerified,
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        twoFactorEnabled: user.twoFactorEnabled,
+      })
+      .from(user)
+      .where(eq(user.id, userId)),
+    db.select({ id: passkey.id }).from(passkey).where(eq(passkey.userId, userId)).limit(1),
+  ])
   if (!account) return null
-  const twoFactorEnabled = account.twoFactorEnabled
+  const factors = {
+    twoFactorEnabled: account.twoFactorEnabled,
+    passkeySession: session.signedInWithPasskey === true,
+    hasPasskey: anyPasskey !== undefined,
+  }
   if (!account.emailVerified) {
-    return { userId, emailVerified: false, twoFactorEnabled, personId: null, membership: null }
+    return { userId, emailVerified: false, ...factors, personId: null, membership: null }
   }
 
   const personId = await db.transaction((tx) => ensurePersonForVerifiedUser(tx, account))
@@ -78,7 +103,7 @@ export async function loadViewer(db: Db, userId: string): Promise<Viewer> {
     .select({ status: membership.status, role: membership.role })
     .from(membership)
     .where(eq(membership.personId, personId))
-  return { userId, emailVerified: true, twoFactorEnabled, personId, membership: m ?? null }
+  return { userId, emailVerified: true, ...factors, personId, membership: m ?? null }
 }
 
 export type MemberListItem = {

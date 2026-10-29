@@ -66,7 +66,8 @@ Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produks
 
 | Tabell                                       | Innhold                                                                                                                                                                                                                                                                                                                                               |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`, `session`, `account`, `verification` | Better Auth: innloggingsidentitet. Gir ingen tilgang alene.                                                                                                                                                                                                                                                                                           |
+| `user`, `session`, `account`, `verification` | Better Auth: innloggingsidentitet. Gir ingen tilgang alene. `session.signed_in_with_passkey` sier om økten ble startet med passkey (se «Sterk innlogging»).                                                                                                                                                                                           |
+| `two_factor`, `passkey`                      | Tofaktor (TOTP-hemmelighet og reservekoder) og passkeys (bare den offentlige nøkkelen, med navn, dato og om den synkroniseres).                                                                                                                                                                                                                       |
 | `person`                                     | En person ESAF kjenner til. Uten `user_id` er det en _profil_ (f.eks. fra kullisten). Med `user_id` har personen selv tatt den i bruk (`claimed_at`). `source` sier om den kom fra registrering eller import.                                                                                                                                         |
 | `experience`                                 | Hvor personen jobber og har jobbet: selskap (`company_id`), stilling, fra- og til-år og om personen grunnla selskapet. Uten til-år er det nåværende. Den nyeste nåværende vises som stilling under navnet.                                                                                                                                            |
 | `company`                                    | Et selskap: unik `slug` (følger navnet), navn, kort beskrivelse, «om selskapet», nettside, grunnlagt, sted, bransjer og status (`active`/`acquired`/`closed`/`unknown`). `alias_slugs` er tidligere slugger og sammenslåtte duplikater. `last_seen_on_es_site` er sist selskapet sto på ES-siden (fra import). `person.es_company_id` peker også hit. |
@@ -99,7 +100,7 @@ Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lu
 - **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatteren kan slette, og moderatorer kan fjerne andres innhold (logges).
 - **Redigering:** Forfatteren kan redigere innlegget sitt (`/feed/:id/rediger`: kanal, tittel, tekst og lenke) og kommentarene sine. Da vises «redigert» med tidspunkt. Ingen andre kan redigere, heller ikke moderatorer og admins. De kan bare fjerne. Lagres uten endringer, merkes ingenting som redigert.
 - **Markdown** i innlegg og kommentarer: avsnitt og linjeskift, **fet**, _kursiv_, lenker (også nakne adresser), lister, kode, kodeblokker og sitater. Skrivefeltene har «Skriv» og «Forhåndsvis» og en linje med formateringshjelp. Teksten vises med `react-markdown` og `remark-gfm` som React-elementer, aldri som HTML-streng: rå HTML vises som tekst, bare `http(s)`- og `mailto`-lenker beholdes (med `rel="noopener noreferrer nofollow ugc"`), og bilder blir lenker, så eksterne bilder aldri lastes. Utdragene i feeden lages som ren tekst i `@esaf/core` (`markdownToPlainText`). Omtaler skrevet som `@[Navn](personId)` vises som lenke til profilen; `Markdown` tar `renderMention` for å vise dem annerledes.
-- **Festede innlegg:** Moderatorer og oppover (admins med tofaktor) kan feste og løsne innlegg. Festede innlegg står øverst i «Hjem» og i kanalen sin, sist festet først, merket «Festet». I søk, på profiler og på kullsider vises innleggene i vanlig rekkefølge. Festing og løsning logges (`content.pin_post`, `content.unpin_post`).
+- **Festede innlegg:** Moderatorer og oppover (admins sterkt innlogget) kan feste og løsne innlegg. Festede innlegg står øverst i «Hjem» og i kanalen sin, sist festet først, merket «Festet». I søk, på profiler og på kullsider vises innleggene i vanlig rekkefølge. Festing og løsning logges (`content.pin_post`, `content.unpin_post`).
 - **Varsler og omtaler**, se under.
 - **Personer** (`/medlemmer`) er en katalog med søk, kullfilter, filter for verifiserte og de mest brukte emnene og bransjene som snarveier. Søket treffer også tidligere selskaper og stillinger.
 - **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden. Hvert kull har en egen side (`/kull/2024` for ES 2024, som gikk 2022–2024) med personene, selskapene folk i kullet har grunnlagt eller hadde på ES, og de nyeste innleggene deres. Mentorer og ansatte vises for seg. Kullet på profiler og «Ditt kull» på forsiden lenker hit, og «Søk i kullet» går til katalogen filtrert på kullet. Ukjente årstall gir 404.
@@ -107,6 +108,7 @@ Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lu
 - **Søk** med ⌘K (eller `/`) finner personer, selskaper og innlegg fra hvor som helst i appen.
 - **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom. I sidekolonnen står et tilfeldig sitat fra en ES-er (se «Sitater»).
 - **Admin** (`/admin`) med fanene Forespørsler, Medlemmer og Logg, se «Roller og rettigheter».
+- **Konto og sikkerhet** (`/konto`): passkeys (legge til, gi nytt navn, fjerne), tofaktor med autentiseringsapp, bytte passord og logge ut andre enheter. Innlogging (`/logg-inn`) med e-post og passord, eller med passkey: knappen «Logg inn med passkey», eller nettleserens forslag i e-postfeltet.
 - **Profiler og redigering**, se under.
 
 Ikke bygget ennå: direktemeldinger, varsler på e-post, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
@@ -235,24 +237,40 @@ Regelen ligger i én funksjon, `accessLevel` i `packages/core/src/access.ts`. De
 
 Et aktivt medlem har én rolle. En rolle har alt rollene under den har. Hva hver rolle får, står i `permissions` i `packages/core/src/access.ts`, og hver handling sjekker rettigheten på serveren.
 
-| Rettighet          | Hva den gir                                                          | Moderator | Admin | Hovedadmin |
-| ------------------ | -------------------------------------------------------------------- | :-------: | :---: | :--------: |
-| `content.moderate` | Fjerne andres innlegg og kommentarer                                 |     ✓     |   ✓   |     ✓      |
-| `members.review`   | Behandle forespørsler om tilgang og koble kontoer til profiler       |           |   ✓   |     ✓      |
-| `members.manage`   | Deaktivere og gjenopprette medlemmer (se under om admins)            |           |   ✓   |     ✓      |
-| `profiles.edit`    | Rette andres profiler, men aldri kontaktinfo                         |           |   ✓   |     ✓      |
-| `audit.read`       | Lese revisjonsloggen                                                 |           |   ✓   |     ✓      |
-| `roles.manage`     | Gi og fjerne roller, og endre tilgangen til admins og hovedadmins    |           |       |     ✓      |
-| Tofaktor påkrevd   | Uten tofaktor kan rollen ikke brukes; adminsidene sender til oppsett |           |   ✓   |     ✓      |
+| Rettighet          | Hva den gir                                                        | Moderator | Admin | Hovedadmin |
+| ------------------ | ------------------------------------------------------------------ | :-------: | :---: | :--------: |
+| `content.moderate` | Fjerne andres innlegg og kommentarer                               |     ✓     |   ✓   |     ✓      |
+| `members.review`   | Behandle forespørsler om tilgang og koble kontoer til profiler     |           |   ✓   |     ✓      |
+| `members.manage`   | Deaktivere og gjenopprette medlemmer (se under om admins)          |           |   ✓   |     ✓      |
+| `profiles.edit`    | Rette andres profiler, men aldri kontaktinfo                       |           |   ✓   |     ✓      |
+| `audit.read`       | Lese revisjonsloggen                                               |           |   ✓   |     ✓      |
+| `roles.manage`     | Gi og fjerne roller, og endre tilgangen til admins og hovedadmins  |           |       |     ✓      |
+| Sterk innlogging   | Passkey-økt eller tofaktor; ellers sender adminsidene til `/konto` |           |   ✓   |     ✓      |
 
 Vanlige medlemmer (`member`) har ingen av rettighetene. `owner` heter «hovedadmin» i appen.
 
-- **Tofaktor:** Admins og hovedadmins må slå på tofaktor (autentiseringsapp) under «Konto og sikkerhet» før rettighetene virker. Uten det sender `/admin` dit, og serveren svarer `two_factor_required`.
+- **Sterk innlogging:** Admins og hovedadmins kan bare bruke rettighetene sine i en sterk økt, se under. Ellers sender `/admin` til `/konto?krav=sterk-innlogging`, og serveren svarer `strong_auth_required`. Moderatorer har ikke noe slikt krav.
+- **Medlemmer som har mistet passkeyene sine:** Under Admin → Medlemmer kan passkeyene til en person fjernes, med begrunnelse. Samme regler som for deaktivering: admins for medlemmer og moderatorer, hovedadmins også for admins, aldri en selv. Personen logges ut overalt og kan legge til nye etter å ha logget inn med passord. Logges som `security.remove_passkeys`.
 - **Roller gis i appen** av en hovedadmin under Admin → Medlemmer, med valgfri begrunnelse. Ingen kan endre sin egen rolle, og det finnes alltid minst én aktiv hovedadmin. Registrering og godkjenning gir aldri rolle; godkjenning setter bare `status`. Better Auths admin-plugin er ikke i bruk, og `user`-tabellen har ikke noe rollefelt.
 - **Deaktivering** (Admin → Medlemmer) krever begrunnelse. Personen logges ut på alle enheter med en gang (øktene slettes), mister tilgangen og vises ikke lenger i katalogen. Rollen settes tilbake til medlem, så rettigheter må gis på nytt om tilgangen gjenopprettes. Admins kan deaktivere og gjenopprette medlemmer og moderatorer; bare en hovedadmin kan endre tilgangen til admins og hovedadmins. Ingen kan deaktivere seg selv.
 - **Revisjonsloggen** (Admin → Logg) viser hvem som gjorde hva, nyeste først, med begrunnelsen når den finnes. Den dekker forespørsler og godkjenninger (`access.*`, `membership.*`), roller (`role.change`, `operator.grant_role`), import (`operator.import_profiles`), adminredigering og kobling av profiler (`profile.admin_edit`, `profile.link`), adminendringer på selskaper (`company.*`), sitater (`quote.edit`, `quote.remove`) og moderering (`content.remove_post`, `content.remove_comment`). Hendelser uten utfører kommer fra en operatør på kommandolinjen. Loggen kan ikke endres i appen.
 
-Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten rettigheter, selvgodkjenning, at en bekreftet adresse fra kullisten ikke gir tilgang alene, at søkere ikke kan velge andres profil, godkjenning med og uten profil, avslag, operatørens rolletildeling, rolleendringer, tofaktorkravet, deaktivering og revisjonsloggen.
+Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten rettigheter, selvgodkjenning, at en bekreftet adresse fra kullisten ikke gir tilgang alene, at søkere ikke kan velge andres profil, godkjenning med og uten profil, avslag, operatørens rolletildeling, rolleendringer, kravet om sterk innlogging, fjerning av passkeys, deaktivering og revisjonsloggen.
+
+`apps/app/test/passkey.integration.test.ts` kjører Better Auth-oppsettet (`createAuth` i `auth-config.server.ts`) mot testdatabasen med en programvare-autentikator i stedet for nettleseren. Den dekker at passkey-økter merkes og gir sterk innlogging, at passord alene ikke gjør det, at økten ikke kan merkes fra klienten, at passkeyen må bekrefte personen (biometri eller PIN), at svar for en annen opprinnelse avvises, at ubekreftede og deaktiverte kontoer ikke kommer inn, at en passkey-innlogging erstatter passordøkten, registrering, og at en passordøkt ikke kan bytte ut passkeys. Turbo kjører appens tester etter `@esaf/core`, fordi de deler testdatabasen.
+
+### Sterk innlogging
+
+Regelen står i `strongAuth` i `packages/core/src/access.ts`, og `loadViewer` får økten fra Better Auth (`getRequestViewer` i `apps/app/src/server/viewer.server.ts`). En økt er sterk når:
+
+- **den ble startet med passkey.** Feltet `session.signed_in_with_passkey` settes av en databasehook i `auth-config.server.ts`, bare når økten lages av `/passkey/verify-authentication`. Klienten kan ikke sette det, og det endres aldri etterpå. Passkeyen må ha bekreftet personen med ansikt, fingeravtrykk eller PIN, ellers avvises innloggingen. Den er dermed to faktorer i ett.
+- **eller kontoen har tofaktor.** Da krever innlogging med passord alltid koden, så alle øktene regnes som sterke.
+
+En konto med bare passkey som logger inn med passord, får en vanlig økt. Adminverktøyene sender da til `/konto`, som viser «Logg inn med passkey for å bruke adminverktøyene» og en knapp. Innlogging med passkey fra en innlogget økt gir en ny, sterk økt, og den gamle slettes. Uten verken passkey eller tofaktor viser `/konto` begge valgene.
+
+Har kontoen passkey, må økten være sterk for å legge til eller fjerne passkeys og for å slå på tofaktor (`mayChangeSignInMethods`, håndhevet i en Better Auth-hook). Ellers kunne den som bare kan passordet, bytte ut passkeyen med sin egen. Den første passkeyen kan legges til fra en vanlig økt, slik tofaktor alltid har kunnet slås på med passordet. Å legge til en passkey krever i tillegg en fersk økt (Better Auths `freshAge`, ett døgn), som pluginen anbefaler.
+
+Passkeys er bundet til vertsnavnet i `BETTER_AUTH_URL` (WebAuthn `rpID`), og bare svar fra den opprinnelsen godtas: `localhost` på `http://localhost:3000` i utvikling, `app.esaf.no` i produksjon. Flyttes appen til et annet domene, virker ikke passkeyene lenger, og medlemmene må logge inn med passord og legge til nye. Innlogging med passkey avslører aldri om en konto finnes: den starter uten e-post, og en ukjent passkey får samme melding som en som ikke virket. Den har samme rate-grense som innlogging med passord (tre forsøk per ti sekunder), og deaktiverte medlemmer får samme svar som med passord: ingen tilgang.
 
 ### Første hovedadmin
 
@@ -265,7 +283,7 @@ Det finnes ingen standardbruker og ingen automatisk admin basert på e-postdomen
    pnpm admin:grant --email navn@example.com --reason "…" --rolle admin   # eller moderator
    ```
 3. Skriptet viser hvilken database det kobler til og krever at e-postadressen skrives inn på nytt. Det nekter å kjøre uten interaktiv terminal, og nekter kontoer med ubekreftet e-post. Tildelingen havner i revisjonsloggen med begrunnelsen.
-4. Personen slår på tofaktor under «Konto og sikkerhet». Før det virker ikke adminrettighetene.
+4. Personen legger til en passkey under «Konto og sikkerhet» og logger inn med den, eller slår på tofaktor. Før det virker ikke adminrettighetene.
 
 ### Lokal innlogging
 
@@ -346,9 +364,10 @@ Dette gjenstår før appen kan brukes av medlemmer:
 2. **Hosting og database.** Velg vert for appen og en administrert eller selvdriftet Postgres. Velg dem samlet, ut fra driftsansvar og kostnad. Opprett en privat R2-bøtte for profilbilder (se «Profilbilder»).
 3. **Backup.** Automatisk, kryptert backup av Postgres med testet gjenoppretting og avklart lagringstid.
 4. **Deploy.** Deploy-jobb for appen, med migrering som eget steg. Bestem `app.esaf.no` og DNS i Cloudflare.
-5. **Overvåking.** Oppetidssjekk mot `/api/health`, innsamling av feillogger og varsling til en navngitt person.
-6. **Medlemsimport.** Importverktøyet finnes (se over). Det som gjenstår, er å avgjøre hvem som eier og verifiserer kullisten, rydde e-postadressene og kjøre importen mot produksjon.
-7. **Personvern.** Behandlingsgrunnlag, personvernerklæring og rutine for sletting.
+5. **Rate-grenser.** Better Auth holder tellerne i minnet, per prosess. Kjører appen i flere prosesser, må de flyttes til en delt lagring (`rateLimit.storage`).
+6. **Overvåking.** Oppetidssjekk mot `/api/health`, innsamling av feillogger og varsling til en navngitt person.
+7. **Medlemsimport.** Importverktøyet finnes (se over). Det som gjenstår, er å avgjøre hvem som eier og verifiserer kullisten, rydde e-postadressene og kjøre importen mot produksjon.
+8. **Personvern.** Behandlingsgrunnlag, personvernerklæring og rutine for sletting.
 
 ## Før repoet gjøres offentlig
 
@@ -368,7 +387,7 @@ Repoet er privat. CI er laget for å være trygt også som offentlig repo: PR-er
 - **Medlemsstatus for importerte profiler:** `active` (standard) eller `venter`, se sikkerhetsavveiingen over.
 - **Hva medlemmer ser om hverandre:** Alle profilfelt er synlige for aktive medlemmer. E-post og telefon vises bare når personen selv slår det på.
 - **Hosting for appen:** Ikke valgt. Repoet er `ESAF-NO/esaf` og er privat.
-- **Innlogging:** Nå brukes e-post og passord med e-postbekreftelse. Magisk lenke, passkeys eller Google-innlogging kan legges til når e-post er på plass.
+- **Innlogging:** E-post og passord med e-postbekreftelse, passkeys og tofaktor. Magisk lenke eller Google-innlogging kan legges til når e-post er på plass.
 - **MCP:** Ikke implementert. Bygg på `@esaf/core` med den offisielle MCP TypeScript SDK. Better Auths MCP-plugin er i beta og bør testes i en egen integrasjonstest før den velges.
 
 ## Versjoner og begrensninger
@@ -378,4 +397,4 @@ Versjonene er låst i `pnpm-lock.yaml`. Viktige valg per 28. oktober 2026:
 - **TypeScript 6.0**, ikke 7.0. typescript-eslint (`<6.1`) og `@astrojs/check` (`^5 || ^6`) støtter ennå ikke TypeScript 7.
 - **Nitro 3** er fortsatt i beta, men det er det TanStack Starts egen mal bruker for Node-hosting. Versjonen er låst eksakt.
 - **TanStack Start 1.169.** Serverfunksjoner bruker `.validator()`. Rutefilene genererer `src/routeTree.gen.ts`, som committes.
-- **pnpm 12**, **Node 24**, **Postgres 18**, **Astro 7**, **Vite 8**, **Better Auth 1.7**, **Drizzle ORM 0.45**.
+- **pnpm 12**, **Node 24**, **Postgres 18**, **Astro 7**, **Vite 8**, **Better Auth 1.7** (med `@better-auth/passkey` i samme versjon), **Drizzle ORM 0.45**.

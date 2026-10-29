@@ -34,7 +34,10 @@ export const user = pgTable('user', {
   email: text().notNull().unique(),
   emailVerified: boolean().notNull().default(false),
   image: text(),
-  /** Tofaktor med autentiseringsapp (Better Auths two-factor-plugin). Påkrevd for admins. */
+  /**
+   * Tofaktor med autentiseringsapp (Better Auths two-factor-plugin). Da krever
+   * all innlogging med passord også koden, så alle øktene regnes som sterke.
+   */
   twoFactorEnabled: boolean().notNull().default(false),
   ...timestamps,
 })
@@ -50,6 +53,12 @@ export const session = pgTable(
     userId: text()
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    /**
+     * Økten ble startet med passkey. Settes bare av serveren ved innlogging
+     * (se `auth-config.server.ts`) og kan aldri endres etterpå. Sammen med
+     * tofaktor avgjør den om økten er sterk nok til adminrettigheter.
+     */
+    signedInWithPasskey: boolean().notNull().default(false),
     ...timestamps,
   },
   (t) => [index().on(t.userId)],
@@ -93,6 +102,35 @@ export const twoFactor = pgTable(
     lockedUntil: timestamp({ withTimezone: true }),
   },
   (t) => [index().on(t.secret), index().on(t.userId)],
+)
+
+/**
+ * Passkeys (WebAuthn) fra Better Auths passkey-plugin. Bare den offentlige
+ * nøkkelen lagres; den private blir aldri med ut av enheten eller
+ * passordhåndtereren. Feltnavnene må være som pluginen forventer.
+ */
+export const passkey = pgTable(
+  'passkey',
+  {
+    id: text().primaryKey(),
+    /** Navnet personen selv har gitt den, eller passordhåndtereren den ligger i. */
+    name: text(),
+    publicKey: text().notNull(),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    credentialID: text().notNull(),
+    /** Signaturtelleren fra enheten, mot kopierte nøkler. Mange synkroniserte passkeys sender alltid 0. */
+    counter: integer().notNull(),
+    /** `multiDevice` (synkroniseres, f.eks. iCloud-nøkkelring) eller `singleDevice` (f.eks. sikkerhetsnøkkel). */
+    deviceType: text().notNull(),
+    backedUp: boolean().notNull(),
+    transports: text(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow(),
+    /** Hvilken type enhet eller passordhåndterer. Ofte nuller (ukjent). */
+    aaguid: text(),
+  },
+  (t) => [index().on(t.userId), uniqueIndex().on(t.credentialID)],
 )
 
 export const verification = pgTable(

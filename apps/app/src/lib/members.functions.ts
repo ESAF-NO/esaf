@@ -4,10 +4,12 @@ import {
   can,
   countUnreadNotifications,
   listActiveMembers,
+  mayChangeSignInMethods,
   permissions,
   roleAtLeast,
   searchUnclaimedProfiles,
-  twoFactorRequired,
+  strongAuth,
+  strongAuthRequired,
   viewerCard,
   type Permission,
 } from '@esaf/core'
@@ -31,17 +33,23 @@ export const getViewerSummary = createServerFn({ method: 'GET' }).handler(async 
     level === 'member' ? countUnreadNotifications(db, viewer) : 0,
   ])
   const role = activeRole(viewer)
+  const strong = viewer ? strongAuth(viewer) : false
   return {
     level,
     /** Rollen til et aktivt medlem. */
     role,
     /** Rettighetene den innloggede kan bruke nå. Bare for visning; serveren sjekker selv. */
     permissions: (Object.keys(permissions) as Permission[]).filter((p) => can(viewer, p)),
-    /** Har adminrolle (selv om tofaktor kanskje mangler), så adminområdet vises. */
+    /** Har adminrolle (selv om økten kanskje ikke er sterk nok), så adminområdet vises. */
     adminArea: role !== null && roleAtLeast(role, 'admin'),
     twoFactorEnabled: viewer?.twoFactorEnabled ?? false,
-    /** Rollen krever tofaktor, men det er ikke slått på. */
-    twoFactorMissing: role !== null && twoFactorRequired(role) && !viewer?.twoFactorEnabled,
+    hasPasskey: viewer?.hasPasskey ?? false,
+    /** Denne økten er startet med passkey. */
+    passkeySession: viewer?.passkeySession ?? false,
+    /** Rollen krever sterk innlogging, og denne økten er ikke det. */
+    strongAuthMissing: role !== null && strongAuthRequired(role) && !strong,
+    /** Om økten kan legge til og fjerne passkeys og slå på tofaktor. */
+    mayChangeSignInMethods: viewer ? mayChangeSignInMethods(viewer) : false,
     fullName: card?.fullName ?? null,
     photo: card?.photo ?? null,
     email: card?.email ?? null,

@@ -1,8 +1,15 @@
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
-import { useState, type FormEvent } from 'react'
+import { KeyRound } from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { AuthCard, AuthShell } from '#/components/AuthLayout.tsx'
 import { Button, ErrorText, Field, Input } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import {
+  passkeyAutofillSupported,
+  passkeySignInError,
+  signInWithPasskey,
+  usePasskeySupport,
+} from '#/lib/passkey.ts'
 
 export const Route = createFileRoute('/logg-inn')({
   beforeLoad: ({ context }) => {
@@ -17,11 +24,43 @@ function SignIn() {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [step, setStep] = useState<'password' | 'code' | 'backup'>('password')
+  const passkeys = usePasskeySupport() === true
+  // Økes for å starte forslaget i e-postfeltet på nytt etter et forsøk med knappen.
+  const [autofillRound, setAutofillRound] = useState(0)
 
   async function enter() {
     // Rutevaktene sender den som ikke er godkjent ennå, til riktig steg.
     await router.invalidate()
     await router.navigate({ to: '/feed' })
+  }
+
+  // Betinget innlogging: nettleseren foreslår passkeys for ESAF i e-postfeltet.
+  // Venter i bakgrunnen til personen velger en, eller til knappen under tar over.
+  useEffect(() => {
+    let current = true
+    void (async () => {
+      if (!(await passkeyAutofillSupported())) return
+      const error = await signInWithPasskey({ autoFill: true })
+      if (!current) return
+      if (!error) return enter()
+      const text = passkeySignInError(error)
+      if (text) setError(text)
+    })()
+    return () => {
+      current = false
+    }
+    // `enter` er stabil nok; forslaget skal bare startes på nytt når runden økes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autofillRound])
+
+  async function onPasskey() {
+    setPending(true)
+    setError(null)
+    const error = await signInWithPasskey()
+    if (!error) return enter()
+    setPending(false)
+    setError(passkeySignInError(error))
+    setAutofillRound((n) => n + 1)
   }
 
   async function onCode(event: FormEvent<HTMLFormElement>) {
@@ -139,7 +178,8 @@ function SignIn() {
       >
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="E-post">
-            <Input name="email" type="email" autoComplete="email" required autoFocus />
+            {/* `webauthn` lar nettleseren foreslå passkeys her. */}
+            <Input name="email" type="email" autoComplete="email webauthn" required autoFocus />
           </Field>
           <Field label="Passord">
             <Input name="password" type="password" autoComplete="current-password" required />
@@ -149,6 +189,24 @@ function SignIn() {
             {pending ? 'Logger inn …' : 'Logg inn'}
           </Button>
         </form>
+        {passkeys && (
+          <>
+            <div className="my-5 flex items-center gap-3 text-xs text-stone-400">
+              <span className="h-px flex-1 bg-stone-200" />
+              eller
+              <span className="h-px flex-1 bg-stone-200" />
+            </div>
+            <Button
+              variant="secondary"
+              size="lg"
+              className="w-full"
+              onClick={onPasskey}
+              disabled={pending}
+            >
+              <KeyRound className="size-4" aria-hidden /> Logg inn med passkey
+            </Button>
+          </>
+        )}
       </AuthCard>
     </AuthShell>
   )

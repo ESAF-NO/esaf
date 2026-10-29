@@ -22,8 +22,11 @@ export const roleLabel = (role: MemberRole) =>
 export const roleAtLeast = (role: MemberRole, minimum: MemberRole) =>
   roleOrder.indexOf(role) >= roleOrder.indexOf(minimum)
 
-/** Admins og hovedadmins må ha tofaktor for å bruke rettighetene sine. */
-export const needsTwoFactor = (role: MemberRole) => roleAtLeast(role, 'admin')
+/**
+ * Admins og hovedadmins må være sterkt innlogget (passkey eller tofaktor) for å
+ * bruke rettighetene sine. Speiler `strongAuthRequired` i @esaf/core.
+ */
+export const needsStrongAuth = (role: MemberRole) => roleAtLeast(role, 'admin')
 
 /** Hva rollen gir, med fornavnet til den som får den. */
 export function roleConsequence(role: MemberRole, name: string) {

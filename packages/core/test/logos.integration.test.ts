@@ -222,10 +222,10 @@ describe.skipIf(!url)('selskapslogoer', () => {
       expect(await denial(assertCanChangeLogo(db, v, syrlig))).toBe('forbidden')
     }
     expect(await denial(setCompanyLogo(db, storage, adminWithout2fa, syrlig, file))).toBe(
-      'two_factor_required',
+      'strong_auth_required',
     )
     expect(await denial(removeCompanyLogo(db, storage, adminWithout2fa, syrlig))).toBe(
-      'two_factor_required',
+      'strong_auth_required',
     )
     expect(await denial(setCompanyLogo(db, storage, null, syrlig, file))).toBe('unauthenticated')
     expect(await denial(setCompanyLogo(db, storage, pending, syrlig, file))).toBe('not_member')

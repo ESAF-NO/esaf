@@ -60,7 +60,9 @@ try {
   })
   console.log(`${result.fullName} er nå aktivt medlem med rollen ${values.rolle}.`)
   if (role !== 'moderator') {
-    console.log('Rollen kan brukes når personen har slått på tofaktor under «Konto og sikkerhet».')
+    console.log(
+      'Rollen kan brukes når personen logger inn med passkey eller har tofaktor (se «Konto og sikkerhet»).',
+    )
   }
 } catch (error) {
   if (error instanceof DomainError) {

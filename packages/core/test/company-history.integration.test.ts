@@ -280,7 +280,7 @@ describe.skipIf(!url)('historikk, sitater og kilder', () => {
         .set({ twoFactorEnabled: false })
         .where(eq(schema.user.email, 'admin@example.test'))
       const without2fa = await loadViewer(db, admin!.userId)
-      expect(await denial(addCompanyEvent(db, without2fa, id, event))).toBe('two_factor_required')
+      expect(await denial(addCompanyEvent(db, without2fa, id, event))).toBe('strong_auth_required')
     })
 
     it('usikre hendelser vises bare for dem som kan redigere, og blir bekreftet når de lagres', async () => {

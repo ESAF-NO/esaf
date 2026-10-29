@@ -12,6 +12,8 @@
       "dependsOn": ["^typecheck"]
     },
     "test": {
+      // Pakkene deler testdatabasen, så de kjøres etter hverandre: @esaf/core før appen.
+      "dependsOn": ["^test"],
       "passThroughEnv": ["DATABASE_URL", "TEST_DATABASE_URL"]
     },
     "dev": {

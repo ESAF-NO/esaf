@@ -9,6 +9,7 @@ import type {
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
 import { ArrowLeft, Check, CircleCheck, Plus } from 'lucide-react'
 import { useState } from 'react'
+import { EventDateFields } from '#/components/EventForm.tsx'
 import { FilePicker } from '#/components/import/FilePicker.tsx'
 import { layoutLabels, roleChoiceLabels, roleLabel, shortDate } from '#/components/import/labels.ts'
 import {
@@ -18,6 +19,7 @@ import {
 } from '#/components/import/PeopleResolver.tsx'
 import { ExampleSheet, Issues, StepTitle, Totals } from '#/components/import/Summary.tsx'
 import { Button, Card, cx, ErrorText, Field, Input, Select } from '#/components/ui.tsx'
+import { eventWhen } from '#/lib/events.ts'
 import { plural } from '#/lib/format.ts'
 import { postImport } from '#/lib/import-client.ts'
 
@@ -545,7 +547,8 @@ function EventRow({
                     <span className="min-w-0 flex-1">
                       <span className="block font-medium">{c.name}</span>
                       <span className="block text-stone-500">
-                        {shortDate(c.startDate)} · {c.typeName}
+                        {c.datePrecision === 'day' ? shortDate(c.startDate) : eventWhen(c)} ·{' '}
+                        {c.typeName}
                         {c.upcoming && (
                           <span className="font-medium text-red-700">
                             {' '}
@@ -585,31 +588,13 @@ function EventRow({
                   ))}
                 </Select>
               </Field>
-              <Field
-                label="Fra"
-                hint={
-                  e.suggestion.guessed
-                    ? 'Sjekk datoen. Den er gjettet ut fra overskriften.'
-                    : undefined
-                }
-              >
-                <Input
-                  type="date"
-                  required
-                  value={creating.startDate}
-                  onChange={(x) => set({ startDate: x.target.value })}
-                  className="h-9"
+              <div className="sm:col-span-2">
+                <EventDateFields
+                  compact
+                  value={{ ...creating, datePrecision: creating.datePrecision ?? 'day' }}
+                  onChange={set}
                 />
-              </Field>
-              <Field label="Til" hint="Valgfritt">
-                <Input
-                  type="date"
-                  value={creating.endDate ?? ''}
-                  min={creating.startDate || undefined}
-                  onChange={(x) => set({ endDate: x.target.value || null })}
-                  className="h-9"
-                />
-              </Field>
+              </div>
               <Field label="Sted" hint="Valgfritt" className="sm:col-span-2">
                 <Input
                   value={creating.location}
@@ -636,6 +621,7 @@ function EventRow({
                   name: e.suggestion.name,
                   startDate: e.suggestion.startDate,
                   endDate: e.suggestion.endDate,
+                  datePrecision: e.suggestion.datePrecision,
                   location: '',
                 })
               }

@@ -186,7 +186,8 @@ describe.skipIf(!url)('import av deltakelse og kullrepresentanter', () => {
     ])
     expect(preview.events[1]!.suggestion).toMatchObject({
       name: 'ESAF-helgen høst 2019',
-      startDate: '2019-09-01',
+      startDate: '2019-07-01',
+      datePrecision: 'semester',
     })
     expect(preview.people.map((p) => [p.fullName, p.status, p.by])).toEqual([
       ['Kari N.', 'matched', 'email'],

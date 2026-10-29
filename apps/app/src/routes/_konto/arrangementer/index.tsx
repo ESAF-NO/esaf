@@ -1,6 +1,8 @@
 import type { EventTypeSummary } from '@esaf/core'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { CalendarDays, ChevronRight, Settings2, Tent } from 'lucide-react'
+import { EventCreateActions } from '#/components/EventCreate.tsx'
+import { StrongAuthCallout } from '#/components/StrongAuth.tsx'
 import { buttonClass, Card, cx, EmptyState, PageHeader } from '#/components/ui.tsx'
 import { channels } from '#/lib/channels.ts'
 import { typePlural } from '#/lib/events.ts'
@@ -28,15 +30,18 @@ function EventTypes() {
         description="Det ESAF har arrangert, og hvem som var der."
         actions={
           canManage && (
-            <Link
-              to="/admin/arrangementer"
-              className={buttonClass({ variant: 'secondary', size: 'sm' })}
-            >
-              <Settings2 className="size-4" aria-hidden /> Typer og import
-            </Link>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Link to="/admin/arrangementer" className={buttonClass({ variant: 'ghost' })}>
+                <Settings2 className="size-4" aria-hidden /> Typer og import
+              </Link>
+              <EventCreateActions types={types} />
+            </div>
           )
         }
       />
+      <StrongAuthCallout className="mb-6">
+        legge inn arrangementer, historikk og deltakere
+      </StrongAuthCallout>
       <p className="-mt-3 mb-6 max-w-2xl text-sm text-stone-500">
         Invitasjoner og innlegg om det som skjer framover står i feeden under{' '}
         <Link
@@ -51,7 +56,9 @@ function EventTypes() {
 
       {!first ? (
         <EmptyState icon={CalendarDays} title="Ingen arrangementer ennå">
-          De dukker opp her når styret har lagt dem inn.
+          {canManage
+            ? 'Lag en type under «Typer og import» først.'
+            : 'De dukker opp her når styret har lagt dem inn.'}
         </EmptyState>
       ) : (
         <div className="space-y-4">

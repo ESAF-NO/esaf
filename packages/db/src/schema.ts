@@ -734,9 +734,17 @@ export const eventType = pgTable(
 )
 
 /**
+ * Hvor godt datoen til et arrangement er kjent. Gamle arrangementer har ofte
+ * bare et semester («Høst 2018») eller et årstall («2015»).
+ */
+export const eventDatePrecision = pgEnum('event_date_precision', ['day', 'semester', 'year'])
+
+/**
  * Et arrangement, f.eks. «ESAF-helgen høst 2018». `endDate` er null for
- * arrangementer på én dag eller når sluttdatoen ikke er kjent. En type med
- * arrangementer kan ikke slettes.
+ * arrangementer på én dag eller når sluttdatoen ikke er kjent. Med
+ * `datePrecision` `semester` eller `year` er `startDate` første dag i perioden
+ * (1. januar for vår og år, 1. juli for høst) og `endDate` alltid null. En type
+ * med arrangementer kan ikke slettes.
  */
 export const event = pgTable(
   'event',
@@ -748,6 +756,7 @@ export const event = pgTable(
     name: text().notNull(),
     startDate: date({ mode: 'string' }).notNull(),
     endDate: date({ mode: 'string' }),
+    datePrecision: eventDatePrecision().notNull().default('day'),
     location: text(),
     description: text(),
     ...timestamps,
@@ -756,6 +765,10 @@ export const event = pgTable(
     index().on(t.typeId, t.startDate),
     index().on(t.startDate),
     check('event_dates', sql`${t.endDate} is null or ${t.endDate} >= ${t.startDate}`),
+    check(
+      'event_date_precision',
+      sql`${t.datePrecision} = 'day' or (${t.endDate} is null and extract(day from ${t.startDate}) = 1 and (extract(month from ${t.startDate}) = 1 or (${t.datePrecision} = 'semester' and extract(month from ${t.startDate}) = 7)))`,
+    ),
   ],
 )
 
@@ -918,6 +931,7 @@ export type CompanyArticleSource = (typeof companyArticleSource.enumValues)[numb
 export type ImportRecordKind = (typeof importRecordKind.enumValues)[number]
 export type ReviewDismissalKind = (typeof reviewDismissalKind.enumValues)[number]
 export type ParticipationRole = (typeof participationRole.enumValues)[number]
+export type EventDatePrecision = (typeof eventDatePrecision.enumValues)[number]
 export type ParticipationSource = (typeof participationSource.enumValues)[number]
 
 // ---------------------------------------------------------------------------

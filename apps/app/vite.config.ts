@@ -22,6 +22,8 @@ export default defineConfig({
           specifiers: [
             '@esaf/db',
             '@esaf/core',
+            '@esaf/mcp',
+            '@modelcontextprotocol/server',
             'pg',
             'drizzle-orm',
             'better-auth/adapters/drizzle',

@@ -906,6 +906,37 @@ export const invitation = pgTable(
   (t) => [index().on(t.email), index().on(t.createdAt)],
 )
 
+/**
+ * MCP-nøkler: personlige nøkler en admin lager under «Konto og sikkerhet» for å
+ * koble en MCP-klient (f.eks. Claude) til adminverktøyene. Som invitasjoner
+ * lagres bare SHA-256 av nøkkelen; selve nøkkelen vises én gang. En nøkkel gir
+ * aldri mer enn kontoen har akkurat nå: rollen og medlemskapet sjekkes ved hver
+ * forespørsel. Se `api-tokens.ts` i @esaf/core for reglene.
+ */
+export const apiToken = pgTable(
+  'api_token',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Navnet personen ga nøkkelen, f.eks. «Claude Code på laptopen». */
+    name: text().notNull(),
+    /** SHA-256 (hex) av nøkkelen. Nøkkelen selv lagres aldri. */
+    tokenHash: text().notNull().unique(),
+    /** De første tegnene av nøkkelen, så den kan kjennes igjen i oversikten. */
+    prefix: text().notNull(),
+    /** Bare lesing: verktøyene som endrer noe, finnes ikke for denne nøkkelen. */
+    readOnly: boolean().notNull().default(false),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    /** Oppdateres høyst én gang i minuttet. */
+    lastUsedAt: timestamp({ withTimezone: true }),
+    revokedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index().on(t.userId)],
+)
+
 /** Hva i et datasett en rad i `import_record` gjelder. */
 export const importRecordKind = pgEnum('import_record_kind', [
   'company',
@@ -951,6 +982,15 @@ export const auditEvent = pgTable(
     action: text().notNull(),
     subjectPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
     details: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    /**
+     * MCP-nøkkelen handlingen ble gjort med, ellers null (appen eller CLI-en).
+     * Settes av databasen fra `esaf.api_token_id`, som @esaf/core setter i hver
+     * transaksjon for forespørsler med nøkkel (`withApiTokenAudit`). Da kan ingen
+     * hendelse fra MCP havne i loggen uten merket, uansett hvor den skrives.
+     */
+    apiTokenId: uuid()
+      .references(() => apiToken.id, { onDelete: 'set null' })
+      .default(sql`nullif(current_setting('esaf.api_token_id', true), '')::uuid`),
     createdAt: timestamps.createdAt,
   },
   (t) => [index().on(t.subjectPersonId)],

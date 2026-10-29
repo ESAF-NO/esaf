@@ -1,15 +1,26 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { Check, Copy, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Bot, Check, Copy, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import { PasskeySignInButton } from '#/components/StrongAuth.tsx'
 import { QrCode } from '#/components/QrCode.tsx'
-import { Button, buttonClass, Card, ErrorText, Field, Input, PageHeader } from '#/components/ui.tsx'
+import {
+  Button,
+  buttonClass,
+  Card,
+  ErrorText,
+  Field,
+  Input,
+  PageHeader,
+  Select,
+  Switch,
+} from '#/components/ui.tsx'
+import { fetchApiTokens, newApiToken, removeApiToken } from '#/lib/api-tokens.functions.ts'
 import { authClient } from '#/lib/auth-client.ts'
 import { fetchSignInMethods, setFirstPassword } from '#/lib/invitations.functions.ts'
-import { longDay } from '#/lib/format.ts'
+import { longDay, timeAgo } from '#/lib/format.ts'
 import { passkeyManageError, usePasskeySupport } from '#/lib/passkey.ts'
 import { needsStrongAuth, roleNames } from '#/lib/roles.ts'
 
@@ -17,8 +28,15 @@ export const Route = createFileRoute('/_konto/konto')({
   validateSearch: z.object({
     krav: z.enum(['sterk-innlogging']).optional().catch(undefined),
   }),
-  // Kontoer fra en invitasjon kan ha bare passkey, uten passord.
-  loader: () => fetchSignInMethods(),
+  // Kontoer fra en invitasjon kan ha bare passkey, uten passord. MCP-nøklene
+  // hentes bare for admins som kan bruke dem nå (sterkt innlogget).
+  loader: async ({ context: { viewer } }) => {
+    const [methods, mcp] = await Promise.all([
+      fetchSignInMethods(),
+      viewer.permissions.includes('mcp.access') ? fetchApiTokens() : null,
+    ])
+    return { ...methods, mcp }
+  },
   head: () => ({ meta: [{ title: 'Konto og sikkerhet – ESAF' }] }),
   component: Account,
 })
@@ -96,6 +114,7 @@ function Account() {
           <SetPassword mayChange={viewer.mayChangeSignInMethods} />
         )}
         <Sessions />
+        {viewer.adminArea && <McpAccess />}
       </div>
     </div>
   )
@@ -788,5 +807,305 @@ function Sessions() {
         {done && <span className="text-sm text-emerald-700">Ferdig.</span>}
       </div>
     </Section>
+  )
+}
+
+type ApiToken = NonNullable<Awaited<ReturnType<typeof fetchApiTokens>>>['tokens'][number]
+
+const tokenLifetimes = [
+  { days: 30, label: '30 dager' },
+  { days: 90, label: '90 dager' },
+  { days: 365, label: 'Ett år' },
+]
+
+/**
+ * MCP-nøkler for admins: kobler Claude eller en annen MCP-klient til
+ * adminverktøyene på `/api/mcp`. Nøkkelen vises én gang. Reglene står i
+ * `api-tokens.ts` i @esaf/core.
+ */
+function McpAccess() {
+  const { viewer } = Route.useRouteContext()
+  const { mcp } = Route.useLoaderData()
+  const router = useRouter()
+  const create = useServerFn(newApiToken)
+  const [creating, setCreating] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [readOnly, setReadOnly] = useState(false)
+  const [created, setCreated] = useState<{ token: string; name: string; endpoint: string } | null>(
+    null,
+  )
+  const [revoking, setRevoking] = useState<ApiToken | null>(null)
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await create({
+        data: {
+          name: String(form.get('name')),
+          days: Number(form.get('days')),
+          readOnly,
+        },
+      })
+      setCreated({ token: result.token, name: result.view.name, endpoint: result.endpoint })
+      setCreating(false)
+      setReadOnly(false)
+      await router.invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke lage nøkkelen.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const tokens = mcp?.tokens ?? []
+  const active = tokens.filter((t) => t.status === 'active')
+  const old = tokens.filter((t) => t.status !== 'active')
+
+  return (
+    <Section
+      id="mcp"
+      title="MCP-tilgang"
+      description={
+        <>
+          Koble Claude eller en annen MCP-klient til adminverktøyene, så du kan legge inn profiler,
+          selskaper og arrangementer, og rydde i data, ved å skrive hva du vil ha gjort. Nøkkelen
+          gir aldri mer enn du selv har, og alt den gjør, står i loggen merket med navnet på
+          nøkkelen.
+        </>
+      }
+    >
+      {!mcp ? (
+        <p className="text-sm text-stone-600">
+          {viewer.strongAuthMissing
+            ? 'Logg inn med passkey eller slå på tofaktor for å lage og se MCP-nøkler.'
+            : 'Rollen din gir ikke tilgang til MCP-nøkler.'}
+        </p>
+      ) : created ? (
+        <NewToken {...created} onDone={() => setCreated(null)} />
+      ) : (
+        <>
+          {active.length > 0 ? (
+            <ul className="divide-y divide-stone-100 rounded-xl ring-1 ring-stone-200 ring-inset">
+              {active.map((t) => (
+                <TokenRow key={t.id} token={t} onRevoke={() => setRevoking(t)} />
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-stone-600">Du har ingen gyldige MCP-nøkler.</p>
+          )}
+
+          {creating ? (
+            <form
+              onSubmit={onSubmit}
+              className="space-y-3 rounded-xl p-4 ring-1 ring-stone-200 ring-inset"
+            >
+              <Field label="Navn" hint="Så du kjenner den igjen, for eksempel hvor den brukes.">
+                <Input
+                  name="name"
+                  maxLength={80}
+                  placeholder="Claude Code på laptopen"
+                  autoComplete="off"
+                  required
+                  autoFocus
+                />
+              </Field>
+              <Field label="Gyldig i">
+                <Select name="days" defaultValue="90">
+                  {tokenLifetimes.map((l) => (
+                    <option key={l.days} value={l.days}>
+                      {l.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Switch
+                checked={readOnly}
+                onChange={setReadOnly}
+                label="Bare lesing"
+                description="Klienten kan slå opp og søke, men ikke endre noe."
+              />
+              {error && <ErrorText>{error}</ErrorText>}
+              <div className="flex gap-2">
+                <Button type="submit" variant="brand" disabled={busy}>
+                  {busy ? 'Lager …' : 'Lag nøkkel'}
+                </Button>
+                <Button variant="ghost" onClick={() => setCreating(false)} disabled={busy}>
+                  Avbryt
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button
+              variant={active.length ? 'secondary' : 'brand'}
+              onClick={() => setCreating(true)}
+            >
+              <Bot className="size-4" aria-hidden />
+              Ny MCP-nøkkel
+            </Button>
+          )}
+
+          {old.length > 0 && (
+            <details className="text-sm text-stone-600">
+              <summary className="cursor-pointer text-stone-500">
+                Utløpte og tilbaketrukne ({old.length})
+              </summary>
+              <ul className="mt-2 divide-y divide-stone-100 rounded-xl ring-1 ring-stone-200 ring-inset">
+                {old.map((t) => (
+                  <TokenRow key={t.id} token={t} />
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+
+      {revoking && (
+        <RevokeToken
+          token={revoking}
+          onClose={() => setRevoking(null)}
+          onDone={async () => {
+            setRevoking(null)
+            await router.invalidate()
+          }}
+        />
+      )}
+    </Section>
+  )
+}
+
+function TokenRow({ token: t, onRevoke }: { token: ApiToken; onRevoke?: () => void }) {
+  const status =
+    t.status === 'active'
+      ? `Gyldig til ${longDay(t.expiresAt)}`
+      : t.status === 'expired'
+        ? `Utløpt ${longDay(t.expiresAt)}`
+        : `Trukket tilbake ${longDay(t.revokedAt!)}`
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
+      <Bot className="size-4 shrink-0 text-stone-400" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-stone-900">
+          {t.name}
+          {t.readOnly && <span className="ml-2 font-normal text-stone-500">bare lesing</span>}
+        </p>
+        <p className="text-xs text-stone-500">
+          <span className="font-mono">{t.prefix}…</span> · {status} ·{' '}
+          {t.lastUsedAt ? `brukt ${timeAgo(t.lastUsedAt)}` : 'aldri brukt'}
+        </p>
+      </div>
+      {onRevoke && (
+        <Button variant="danger" size="sm" onClick={onRevoke}>
+          Trekk tilbake
+        </Button>
+      )}
+    </li>
+  )
+}
+
+/** Nøkkelen, én gang, med oppsett for Claude Code og andre klienter. */
+function NewToken({
+  token,
+  name,
+  endpoint,
+  onDone,
+}: {
+  token: string
+  name: string
+  endpoint: string
+  onDone: () => void
+}) {
+  const command = `claude mcp add --transport http esaf ${endpoint} --header "Authorization: Bearer ${token}"`
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-stone-600">
+        Nøkkelen «{name}» er laget. Kopier den nå: du får ikke se den igjen. Den er like hemmelig
+        som et passord, så ikke del den eller legg den i kode.
+      </p>
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-stone-800">Nøkkelen</p>
+        <code className="block rounded-xl bg-stone-50 p-3 font-mono text-sm break-all text-stone-900 ring-1 ring-stone-200 ring-inset">
+          {token}
+        </code>
+        <CopyButton value={token} />
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-stone-800">Claude Code</p>
+        <code className="block rounded-xl bg-stone-50 p-3 font-mono text-xs break-all text-stone-900 ring-1 ring-stone-200 ring-inset">
+          {command}
+        </code>
+        <CopyButton value={command} />
+      </div>
+      <p className="text-xs leading-relaxed text-stone-500">
+        Andre klienter: koble til <span className="font-mono">{endpoint}</span> med Streamable HTTP
+        og hodet <span className="font-mono">Authorization: Bearer &lt;nøkkelen&gt;</span>.
+      </p>
+      <Button variant="brand" onClick={onDone}>
+        Jeg har tatt vare på den
+      </Button>
+    </div>
+  )
+}
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={async () => {
+        await navigator.clipboard.writeText(value)
+        setCopied(true)
+      }}
+    >
+      {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+      {copied ? 'Kopiert' : 'Kopier'}
+    </Button>
+  )
+}
+
+function RevokeToken({
+  token,
+  onClose,
+  onDone,
+}: {
+  token: ApiToken
+  onClose: () => void
+  onDone: () => void
+}) {
+  const remove = useServerFn(removeApiToken)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function revoke() {
+    setBusy(true)
+    setError(null)
+    try {
+      await remove({ data: { id: token.id } })
+      onDone()
+    } catch (e) {
+      setBusy(false)
+      setError(e instanceof Error ? e.message : 'Kunne ikke trekke tilbake nøkkelen.')
+    }
+  }
+  return (
+    <Dialog
+      title={`Trekke tilbake «${token.name}»?`}
+      description="Klienter som bruker nøkkelen, mister tilgangen med en gang. Det kan ikke angres."
+      onClose={onClose}
+      busy={busy}
+    >
+      {error && <ErrorText>{error}</ErrorText>}
+      <DialogActions>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
+          Avbryt
+        </Button>
+        <Button variant="destructive" onClick={revoke} disabled={busy} data-autofocus>
+          {busy ? 'Trekker tilbake …' : 'Trekk tilbake'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   )
 }

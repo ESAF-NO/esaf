@@ -1,12 +1,14 @@
 import { schema, type Db, type MemberRole, type MembershipStatus } from '@esaf/db'
-import { and, asc, desc, eq, inArray, lt, max, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, like, lt, max, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { assertCan, roleAtLeast, roles, type Viewer } from './access.ts'
+import { revokeApiTokensForUser } from './api-tokens.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 
 const {
   accessRequest,
+  apiToken,
   auditEvent,
   cohort,
   membership,
@@ -28,6 +30,8 @@ const {
  * - Deaktivering logger personen ut overalt og fjerner rollen. Alt logges.
  * - Har noen mistet passkeyene sine, kan de fjernes etter de samme reglene som
  *   for deaktivering, så personen kan legge til nye.
+ * - Deaktivering, tap av adminrollen og fjernede passkeys trekker tilbake
+ *   MCP-nøklene til kontoen (se `api-tokens.ts`). Antallet står i loggen.
  */
 
 export type AccountView = {
@@ -158,11 +162,20 @@ export async function changeRole(
       .update(membership)
       .set({ role: input.role })
       .where(eq(membership.personId, input.personId))
+    // MCP-nøkler er for admins. Uten rollen virker de ikke uansett, men de skal ikke ligge igjen.
+    const revokedTokens = roleAtLeast(input.role, 'admin')
+      ? 0
+      : await revokeApiTokensForUser(tx, target.userId)
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
       action: 'role.change',
       subjectPersonId: input.personId,
-      details: { from: target.role, to: input.role, reason: input.reason?.trim() || null },
+      details: {
+        from: target.role,
+        to: input.role,
+        reason: input.reason?.trim() || null,
+        ...(revokedTokens ? { revokedTokens } : {}),
+      },
     })
   })
 }
@@ -222,11 +235,16 @@ export async function setMemberAccess(
       // Ut med en gang, ikke først når økten går ut.
       await tx.delete(session).where(eq(session.userId, target.userId))
     }
+    const revokedTokens = input.active ? 0 : await revokeApiTokensForUser(tx, target.userId)
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
       action: input.active ? 'membership.reactivate' : 'membership.deactivate',
       subjectPersonId: input.personId,
-      details: { reason: reason || null, previousRole: target.role },
+      details: {
+        reason: reason || null,
+        previousRole: target.role,
+        ...(revokedTokens ? { revokedTokens } : {}),
+      },
     })
   })
 }
@@ -262,11 +280,13 @@ export async function removePasskeys(
       .returning({ id: passkey.id })
     if (!removed.length) throw new DomainError('Personen har ingen passkeys.')
     await tx.delete(session).where(eq(session.userId, target.userId))
+    // Nøklene ble laget med en av passkeyene; den kan være på avveie.
+    const revokedTokens = await revokeApiTokensForUser(tx, target.userId)
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
       action: 'security.remove_passkeys',
       subjectPersonId: input.personId,
-      details: { reason, count: removed.length },
+      details: { reason, count: removed.length, ...(revokedTokens ? { revokedTokens } : {}) },
     })
   })
 }
@@ -282,13 +302,25 @@ export type AuditEntry = {
   /** Null betyr lokal operatør (CLI). */
   actor: AuditPerson | null
   subject: AuditPerson | null
+  /** Gjort med en MCP-nøkkel: navnet på nøkkelen. Ellers fra appen eller CLI-en. */
+  viaMcp: { tokenName: string } | null
 }
 
-/** Revisjonsloggen, nyeste først. Bla bakover med `before`. */
+/**
+ * Revisjonsloggen, nyeste først. Bla bakover med `before`. Kan avgrenses til én
+ * person (som utfører eller den det gjelder), handlinger som begynner med
+ * `actionPrefix` (f.eks. `company.`), og det som er gjort med MCP-nøkler.
+ */
 export async function listAuditEvents(
   db: Db,
   viewer: Viewer,
-  options: { before?: Date; limit?: number } = {},
+  options: {
+    before?: Date
+    limit?: number
+    personId?: string
+    actionPrefix?: string
+    viaMcp?: boolean
+  } = {},
 ): Promise<AuditEntry[]> {
   assertCan(viewer, 'audit.read')
   const actor = alias(person, 'actor')
@@ -307,13 +339,29 @@ export async function listAuditEvents(
       subjectId: subject.id,
       subjectName: subject.fullName,
       subjectStatus: subjectMembership.status,
+      tokenName: apiToken.name,
     })
     .from(auditEvent)
     .leftJoin(actor, eq(actor.id, auditEvent.actorPersonId))
     .leftJoin(actorMembership, eq(actorMembership.personId, actor.id))
     .leftJoin(subject, eq(subject.id, auditEvent.subjectPersonId))
     .leftJoin(subjectMembership, eq(subjectMembership.personId, subject.id))
-    .where(options.before ? lt(auditEvent.createdAt, options.before) : undefined)
+    .leftJoin(apiToken, eq(apiToken.id, auditEvent.apiTokenId))
+    .where(
+      and(
+        options.before ? lt(auditEvent.createdAt, options.before) : undefined,
+        options.personId
+          ? or(
+              eq(auditEvent.actorPersonId, options.personId),
+              eq(auditEvent.subjectPersonId, options.personId),
+            )
+          : undefined,
+        options.actionPrefix
+          ? like(auditEvent.action, `${options.actionPrefix.replace(/[%_\\]/g, '\\$&')}%`)
+          : undefined,
+        options.viaMcp ? isNotNull(auditEvent.apiTokenId) : undefined,
+      ),
+    )
     .orderBy(desc(auditEvent.createdAt))
     .limit(Math.min(options.limit ?? 50, 200))
   const who = (id: string | null, fullName: string | null, status: MembershipStatus | null) =>
@@ -325,5 +373,6 @@ export async function listAuditEvents(
     details: r.details,
     actor: who(r.actorId, r.actorName, r.actorStatus),
     subject: who(r.subjectId, r.subjectName, r.subjectStatus),
+    viaMcp: r.tokenName !== null ? { tokenName: r.tokenName } : null,
   }))
 }

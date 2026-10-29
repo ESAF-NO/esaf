@@ -20,6 +20,7 @@ import { Route as KontoVarslerRouteImport } from './routes/_konto/varsler'
 import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as InvitasjonTokenRouteImport } from './routes/invitasjon/$token'
 import { Route as NyttPassordTokenRouteImport } from './routes/nytt-passord/$token'
 import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
@@ -111,6 +112,11 @@ const KontoVenterRoute = KontoVenterRouteImport.update({
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvitasjonTokenRoute = InvitasjonTokenRouteImport.update({
@@ -328,6 +334,7 @@ export interface FileRoutesByFullPath {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/invitasjon/$token': typeof InvitasjonTokenRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
@@ -377,6 +384,7 @@ export interface FileRoutesByTo {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/invitasjon/$token': typeof InvitasjonTokenRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
@@ -429,6 +437,7 @@ export interface FileRoutesById {
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/invitasjon/$token': typeof InvitasjonTokenRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/_konto/admin/arrangementer': typeof KontoAdminArrangementerRoute
@@ -481,6 +490,7 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/api/mcp'
     | '/invitasjon/$token'
     | '/nytt-passord/$token'
     | '/admin/arrangementer'
@@ -530,6 +540,7 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/api/mcp'
     | '/invitasjon/$token'
     | '/nytt-passord/$token'
     | '/admin/arrangementer'
@@ -581,6 +592,7 @@ export interface FileRouteTypes {
     | '/_konto/velkommen'
     | '/_konto/venter'
     | '/api/health'
+    | '/api/mcp'
     | '/invitasjon/$token'
     | '/nytt-passord/$token'
     | '/_konto/admin/arrangementer'
@@ -627,6 +639,7 @@ export interface RootRouteChildren {
   LoggInnRoute: typeof LoggInnRoute
   RegistrerRoute: typeof RegistrerRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiMcpRoute: typeof ApiMcpRoute
   InvitasjonTokenRoute: typeof InvitasjonTokenRoute
   NyttPassordTokenRoute: typeof NyttPassordTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -715,6 +728,13 @@ declare module '@tanstack/react-router' {
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invitasjon/$token': {
@@ -1082,6 +1102,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoggInnRoute: LoggInnRoute,
   RegistrerRoute: RegistrerRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiMcpRoute: ApiMcpRoute,
   InvitasjonTokenRoute: InvitasjonTokenRoute,
   NyttPassordTokenRoute: NyttPassordTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

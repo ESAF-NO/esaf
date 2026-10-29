@@ -16,6 +16,12 @@ export type Viewer = {
   hasPasskey: boolean
   personId: string | null
   membership: { status: MembershipStatus; role: MemberRole } | null
+  /**
+   * Forespørselen kom med en MCP-nøkkel, ikke en innloggingsøkt. Nøkkelen ble
+   * laget i en sterk økt og virker bare så lenge kontoen har passkey eller
+   * tofaktor (se `authenticateApiToken`). `readOnly`: bare verktøy som leser.
+   */
+  apiToken?: { id: string; readOnly: boolean }
 } | null
 
 export type AccessLevel = 'anonymous' | 'pending' | 'member'
@@ -61,6 +67,8 @@ export const permissions = {
   'profiles.edit': 'admin',
   /** Lese revisjonsloggen. */
   'audit.read': 'admin',
+  /** Lage MCP-nøkler og bruke adminverktøyene fra en MCP-klient. */
+  'mcp.access': 'admin',
   /** Gi og fjerne roller. */
   'roles.manage': 'owner',
 } as const satisfies Record<string, MemberRole>
@@ -79,10 +87,15 @@ export type SignInFactors = Pick<
 /**
  * Sterk innlogging: økten er startet med passkey, eller kontoen har tofaktor
  * (da krever innlogging med passord alltid koden også). En konto med bare
- * passkey som logger inn med passord, får en vanlig økt.
+ * passkey som logger inn med passord, får en vanlig økt. En MCP-nøkkel er
+ * sterk: den kan bare lages i en sterk økt, og virker bare mens kontoen har
+ * passkey eller tofaktor.
  */
-export const strongAuth = (f: Pick<SignInFactors, 'twoFactorEnabled' | 'passkeySession'>) =>
-  f.twoFactorEnabled || f.passkeySession
+export const strongAuth = (
+  f: Pick<SignInFactors, 'twoFactorEnabled' | 'passkeySession'> & {
+    apiToken?: NonNullable<Viewer>['apiToken']
+  },
+) => f.twoFactorEnabled || f.passkeySession || f.apiToken !== undefined
 
 /**
  * Om økten kan legge til eller fjerne passkeys og slå på tofaktor. Den første

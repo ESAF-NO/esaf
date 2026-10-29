@@ -148,6 +148,13 @@
       "when": 1793292703700,
       "tag": "0020_media_import",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793294186308,
+      "tag": "0021_event_date_precision",
+      "breakpoints": true
     }
   ]
 }

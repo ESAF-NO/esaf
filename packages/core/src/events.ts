@@ -1,6 +1,7 @@
 import {
   schema,
   type Db,
+  type EventDatePrecision,
   type MembershipStatus,
   type ParticipationRole,
   type ParticipationSource,
@@ -69,6 +70,44 @@ export function osloToday(now = new Date()) {
     day: '2-digit',
   }).format(now)
 }
+
+/** Hvor godt datoen er kjent: dag, semester («Høst 2018») eller bare år («2015»). */
+export const eventDatePrecisions = [
+  'day',
+  'semester',
+  'year',
+] as const satisfies readonly EventDatePrecision[]
+
+/** En periode uten kjent dato: hele året, våren eller høsten. */
+export type EventPeriod = 'year' | 'spring' | 'autumn'
+
+const seasonWords = { spring: 'vår', autumn: 'høst' } as const
+
+/**
+ * Startdatoen et arrangement med bare år eller semester lagres med: 1. januar
+ * for året og våren, 1. juli for høsten. Sorteringen og «har startet» bruker den.
+ */
+export const periodStart = (year: number, period: EventPeriod) =>
+  `${String(year).padStart(4, '0')}-${period === 'autumn' ? '07' : '01'}-01`
+
+/** Semesteret en dato hører til: januar–juni er vår, juli–desember høst. */
+export const seasonOf = (date: string): 'spring' | 'autumn' =>
+  Number(date.slice(5, 7)) <= 6 ? 'spring' : 'autumn'
+
+/** Navnet et arrangement får fra typen og perioden: «ESAF-helgen høst 2018», «ESAF-helgen 2015». */
+export const periodEventName = (typeName: string, year: number, period: EventPeriod) =>
+  [typeName, period === 'year' ? null : seasonWords[period], year].filter(Boolean).join(' ')
+
+/** Perioden et arrangement dekker, ut fra datoen og hvor godt den er kjent. */
+export const eventPeriod = (e: { startDate: string; datePrecision: EventDatePrecision }) => ({
+  year: Number(e.startDate.slice(0, 4)),
+  season: e.datePrecision === 'year' ? null : seasonOf(e.startDate),
+})
+
+/** Samme navn, uten forskjell på store og små bokstaver eller ekstra mellomrom. */
+export const sameEventName = (a: string, b: string) =>
+  a.trim().replace(/\s+/g, ' ').toLocaleLowerCase('nb') ===
+  b.trim().replace(/\s+/g, ' ').toLocaleLowerCase('nb')
 
 /**
  * Kullet en person vises under: det laveste kullet personen gikk i som student,
@@ -144,7 +183,12 @@ export type EventTypeSummary = EventTypeInfo & {
   people: number
   participations: number
   /** Det siste som har startet. */
-  latest: { id: string; name: string; startDate: string } | null
+  latest: {
+    id: string
+    name: string
+    startDate: string
+    datePrecision: EventDatePrecision
+  } | null
 }
 
 /** Alle typene med tall, ESAF-helgen først. */
@@ -161,6 +205,7 @@ export async function listEventTypes(
         typeId: event.typeId,
         name: event.name,
         startDate: event.startDate,
+        datePrecision: event.datePrecision,
       })
       .from(event)
       .orderBy(desc(event.startDate), desc(event.createdAt)),
@@ -185,7 +230,14 @@ export async function listEventTypes(
         upcoming: own.filter((e) => e.startDate > today).length,
         people: people.get(t.id)?.size ?? 0,
         participations: participations.get(t.id) ?? 0,
-        latest: latest ? { id: latest.id, name: latest.name, startDate: latest.startDate } : null,
+        latest: latest
+          ? {
+              id: latest.id,
+              name: latest.name,
+              startDate: latest.startDate,
+              datePrecision: latest.datePrecision,
+            }
+          : null,
       }
     }),
     canManage: can(viewer, 'profiles.edit'),
@@ -197,6 +249,7 @@ export type EventSummary = {
   name: string
   startDate: string
   endDate: string | null
+  datePrecision: EventDatePrecision
   location: string | null
   /** Aktive medlemmer som var der. */
   participants: number
@@ -291,6 +344,7 @@ export async function getEventTypeOverview(
       name: e.name,
       startDate: e.startDate,
       endDate: e.endDate,
+      datePrecision: e.datePrecision,
       location: e.location,
       participants: counts.get(e.id) ?? 0,
       roles: roles.get(e.id) ?? noRoles(),
@@ -325,6 +379,7 @@ export type EventDetails = {
   name: string
   startDate: string
   endDate: string | null
+  datePrecision: EventDatePrecision
   location: string | null
   description: string | null
   type: Pick<EventTypeInfo, 'id' | 'slug' | 'name' | 'plural'>
@@ -405,6 +460,7 @@ export async function getEvent(db: Db, viewer: Viewer, eventId: string): Promise
     name: e.name,
     startDate: e.startDate,
     endDate: e.endDate,
+    datePrecision: e.datePrecision,
     location: e.location,
     description: e.description,
     type: row.type,
@@ -433,7 +489,13 @@ export type PersonEventGroup = {
   total: number
   roles: RoleCounts
   /** Nyeste først. */
-  events: { id: string; name: string; startDate: string; role: EventRole | null }[]
+  events: {
+    id: string
+    name: string
+    startDate: string
+    datePrecision: EventDatePrecision
+    role: EventRole | null
+  }[]
 }
 
 /** Arrangementene en person har vært på, per type, til profilen. */
@@ -443,6 +505,7 @@ export async function loadPersonEvents(db: Db, personId: string): Promise<Person
       id: event.id,
       name: event.name,
       startDate: event.startDate,
+      datePrecision: event.datePrecision,
       role: eventParticipation.role,
       typeId: eventType.id,
       slug: eventType.slug,
@@ -464,7 +527,13 @@ export async function loadPersonEvents(db: Db, personId: string): Promise<Person
     const role = normalizeRole(r.role)
     group.total++
     if (role) group.roles[role]++
-    group.events.push({ id: r.id, name: r.name, startDate: r.startDate, role })
+    group.events.push({
+      id: r.id,
+      name: r.name,
+      startDate: r.startDate,
+      datePrecision: r.datePrecision,
+      role,
+    })
     groups.set(r.typeId, group)
   }
   return [...groups.values()]
@@ -479,6 +548,7 @@ async function lockEvent(tx: Tx, eventId: string) {
       name: event.name,
       startDate: event.startDate,
       endDate: event.endDate,
+      datePrecision: event.datePrecision,
       location: event.location,
       description: event.description,
       typeSlug: eventType.slug,
@@ -672,6 +742,11 @@ const isoDate = z
 /** Et arrangement kan vare høyst så mange dager. */
 export const MAX_EVENT_DAYS = 31
 
+/**
+ * Et arrangement. Med `datePrecision` `semester` eller `year` brukes bare året
+ * (og semesteret) i `startDate`; datoen lagres som første dag i perioden, uten
+ * sluttdato. Uten `datePrecision` er datoen kjent.
+ */
 export const eventInput = z
   .object({
     typeId: z.uuid('Velg en type.'),
@@ -681,9 +756,22 @@ export const eventInput = z
       .union([isoDate, z.literal('')])
       .nullable()
       .transform((d) => d || null),
+    datePrecision: z.enum(eventDatePrecisions, 'Ugyldig datopresisjon.').default('day'),
     location: optionalText(120),
     description: optionalText(2000),
   })
+  .transform((e) =>
+    e.datePrecision === 'day'
+      ? e
+      : {
+          ...e,
+          startDate: periodStart(
+            Number(e.startDate.slice(0, 4)),
+            e.datePrecision === 'year' ? 'year' : seasonOf(e.startDate),
+          ),
+          endDate: null,
+        },
+  )
   .refine((e) => e.endDate === null || e.endDate >= e.startDate, {
     message: 'Sluttdatoen kan ikke være før startdatoen.',
   })
@@ -721,6 +809,7 @@ export async function getEditableEvent(db: Db, viewer: Viewer, eventId: string) 
     name: row.name,
     startDate: row.startDate,
     endDate: row.endDate,
+    datePrecision: row.datePrecision,
     location: row.location,
     description: row.description,
   }
@@ -744,6 +833,7 @@ export async function insertEvent(
     details: {
       ...eventRef({ id: row!.id, name: values.name, typeSlug: type.slug, typeName: type.name }),
       startDate: values.startDate,
+      datePrecision: values.datePrecision,
       ...(extra.via ? { via: extra.via } : {}),
     },
   })

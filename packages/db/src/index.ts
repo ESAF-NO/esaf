@@ -13,6 +13,7 @@ export type {
   CompanyStatus,
   ContributionStatus,
   DatePrecision,
+  EventDatePrecision,
   FieldSourceEntity,
   ImportRecordKind,
   MemberRole,

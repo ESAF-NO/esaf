@@ -120,9 +120,40 @@ describe('arrangementer i overskriftene', () => {
     expect(m('Vår 2019').candidates.map((c) => c.id)).toEqual(['b'])
     expect(m('Høst 2020')).toMatchObject({
       status: 'missing',
-      suggestion: { name: 'ESAF-helgen høst 2020', startDate: '2020-09-01', guessed: true },
+      suggestion: {
+        name: 'ESAF-helgen høst 2020',
+        startDate: '2020-07-01',
+        datePrecision: 'semester',
+      },
     })
     expect(m('Julebord 2020').suggestion.name).toBe('Julebord 2020')
+    expect(m('2021')).toMatchObject({
+      status: 'missing',
+      suggestion: { name: 'ESAF-helgen 2021', startDate: '2021-01-01', datePrecision: 'year' },
+    })
+    expect(m('2020-09-18').suggestion).toMatchObject({
+      startDate: '2020-09-18',
+      datePrecision: 'day',
+    })
+  })
+
+  it('et arrangement med bare årstall passer begge semestrene det året', () => {
+    const type = { id: 't1', name: 'ESAF-helgen' }
+    const events = [
+      {
+        id: 'y',
+        name: 'ESAF-helgen 2015',
+        startDate: '2015-01-01',
+        endDate: null,
+        datePrecision: 'year' as const,
+        typeId: 't1',
+        typeName: 'ESAF-helgen',
+      },
+    ]
+    const m = (label: string) => matchEventRef(eventRefOf(label, 'x'), events, type, '2026-10-29')
+    expect(m('Høst 2015')).toMatchObject({ status: 'matched', by: 'year' })
+    expect(m('V15')).toMatchObject({ status: 'matched', by: 'year' })
+    expect(m('Høst 2015').candidates[0]).toMatchObject({ datePrecision: 'year' })
   })
 })
 

@@ -177,10 +177,10 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           className="mt-1 flex h-9 w-full items-center gap-3 rounded-lg px-2.5 text-sm text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
         >
           <KeyRound className="size-4" aria-hidden /> Konto og sikkerhet
-          {viewer.twoFactorMissing && (
+          {viewer.strongAuthMissing && (
             <span
               className="ml-auto size-2 rounded-full bg-amber-500"
-              aria-label="Tofaktor mangler"
+              aria-label="Krever passkey eller tofaktor"
             />
           )}
         </Link>

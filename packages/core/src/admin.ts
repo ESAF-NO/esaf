@@ -5,8 +5,17 @@ import { assertCan, roleAtLeast, roles, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 
-const { accessRequest, auditEvent, cohort, membership, person, personCohort, session, user } =
-  schema
+const {
+  accessRequest,
+  auditEvent,
+  cohort,
+  membership,
+  passkey,
+  person,
+  personCohort,
+  session,
+  user,
+} = schema
 
 /**
  * Medlemsadministrasjon: roller, tilgang og revisjonslogg. Reglene:
@@ -17,6 +26,8 @@ const { accessRequest, auditEvent, cohort, membership, person, personCohort, ses
  *   og hovedadmins kan bare en hovedadmin endre tilgangen til.
  * - Det finnes alltid minst én aktiv hovedadmin.
  * - Deaktivering logger personen ut overalt og fjerner rollen. Alt logges.
+ * - Har noen mistet passkeyene sine, kan de fjernes etter de samme reglene som
+ *   for deaktivering, så personen kan legge til nye.
  */
 
 export type AccountView = {
@@ -25,8 +36,12 @@ export type AccountView = {
   email: string
   role: MemberRole
   status: MembershipStatus
-  /** Påkrevd for admins og hovedadmins før de kan bruke rettighetene sine. */
+  /**
+   * Tofaktor eller passkey: admins og hovedadmins trenger én av dem for å kunne
+   * logge inn sterkt og bruke rettighetene sine.
+   */
   twoFactorEnabled: boolean
+  passkeys: number
   cohortYears: number[]
   /** Når kontoen ble koblet til personen (godkjent). */
   claimedAt: Date | null
@@ -44,6 +59,7 @@ export async function listAccounts(db: Db, viewer: Viewer): Promise<AccountView[
       userId: user.id,
       email: user.email,
       twoFactorEnabled: user.twoFactorEnabled,
+      passkeys: sql<number>`(select count(*)::int from ${passkey} where ${passkey.userId} = ${user.id})`,
       role: membership.role,
       status: membership.status,
       claimedAt: person.claimedAt,
@@ -211,6 +227,46 @@ export async function setMemberAccess(
       action: input.active ? 'membership.reactivate' : 'membership.deactivate',
       subjectPersonId: input.personId,
       details: { reason: reason || null, previousRole: target.role },
+    })
+  })
+}
+
+/**
+ * Fjerner alle passkeys til en person som har mistet dem, så de kan legge til
+ * nye etter å ha logget inn med passord. Samme regler som for deaktivering:
+ * admins for medlemmer og moderatorer, hovedadmins også for admins, aldri en
+ * selv. Personen logges ut overalt, i tilfelle noen andre har en av dem.
+ */
+export async function removePasskeys(
+  db: Db,
+  viewer: Viewer,
+  input: { personId: string; reason: string },
+): Promise<void> {
+  assertCan(viewer, 'members.manage')
+  if (input.personId === viewer.personId) {
+    throw new DomainError('Du kan ikke fjerne dine egne passkeys her. Gjør det under «Konto».')
+  }
+  const reason = input.reason.trim()
+  if (reason.length < 3) {
+    throw new DomainError('Skriv en kort begrunnelse. Den lagres i revisjonsloggen.')
+  }
+  await db.transaction(async (tx) => {
+    const target = await lockTarget(tx, input.personId)
+    if (!target.userId) throw new DomainError('Personen har ingen konto.')
+    if (roleAtLeast(target.role, 'admin') && viewer.membership!.role !== 'owner') {
+      throw new DomainError('Bare en hovedadmin kan fjerne passkeys for en admin.')
+    }
+    const removed = await tx
+      .delete(passkey)
+      .where(eq(passkey.userId, target.userId))
+      .returning({ id: passkey.id })
+    if (!removed.length) throw new DomainError('Personen har ingen passkeys.')
+    await tx.delete(session).where(eq(session.userId, target.userId))
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'security.remove_passkeys',
+      subjectPersonId: input.personId,
+      details: { reason, count: removed.length },
     })
   })
 }

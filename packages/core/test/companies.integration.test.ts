@@ -307,7 +307,7 @@ describe.skipIf(!url)('selskaper', () => {
       .set({ twoFactorEnabled: false })
       .where(eq(schema.user.email, 'admin@example.test'))
     const without2fa = await loadViewer(db, admin!.userId)
-    expect(await denial(updateCompany(db, without2fa, id, info))).toBe('two_factor_required')
+    expect(await denial(updateCompany(db, without2fa, id, info))).toBe('strong_auth_required')
   })
 
   it('selskapsinfo valideres og ryddes', async () => {

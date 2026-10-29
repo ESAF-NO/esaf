@@ -8,8 +8,12 @@ import { AccessDeniedError } from './errors.ts'
 export type Viewer = {
   userId: string
   emailVerified: boolean
-  /** Kontoen har tofaktor; da har også innloggingen gått gjennom tofaktor. */
+  /** Kontoen har tofaktor; da har all innlogging med passord gått gjennom koden. */
   twoFactorEnabled: boolean
+  /** Denne økten ble startet med passkey. */
+  passkeySession: boolean
+  /** Kontoen har minst én passkey. Gir ingen tilgang i seg selv, se `mayChangeSignInMethods`. */
+  hasPasskey: boolean
   personId: string | null
   membership: { status: MembershipStatus; role: MemberRole } | null
 } | null
@@ -60,19 +64,41 @@ export const permissions = {
 
 export type Permission = keyof typeof permissions
 
-/** Admins og hovedadmins må ha tofaktor for å bruke rettighetene sine. */
-export const twoFactorRequired = (role: MemberRole) => roleAtLeast(role, 'admin')
+/** Admins og hovedadmins må være sterkt innlogget for å bruke rettighetene sine. */
+export const strongAuthRequired = (role: MemberRole) => roleAtLeast(role, 'admin')
+
+/** Det serveren vet om hvordan den innloggede er logget inn. */
+export type SignInFactors = Pick<
+  NonNullable<Viewer>,
+  'twoFactorEnabled' | 'passkeySession' | 'hasPasskey'
+>
+
+/**
+ * Sterk innlogging: økten er startet med passkey, eller kontoen har tofaktor
+ * (da krever innlogging med passord alltid koden også). En konto med bare
+ * passkey som logger inn med passord, får en vanlig økt.
+ */
+export const strongAuth = (f: Pick<SignInFactors, 'twoFactorEnabled' | 'passkeySession'>) =>
+  f.twoFactorEnabled || f.passkeySession
+
+/**
+ * Om økten kan legge til eller fjerne passkeys og slå på tofaktor. Den første
+ * metoden kan legges til med en vanlig økt, som tofaktor alltid har kunnet.
+ * Har kontoen allerede passkey, kreves sterk innlogging. Ellers kunne den som
+ * bare kan passordet, bytte ut passkeyen med sin egen og bli sterkt innlogget.
+ */
+export const mayChangeSignInMethods = (f: SignInFactors) => !f.hasPasskey || strongAuth(f)
 
 /** Rollen til et aktivt medlem, ellers `null`. */
 export function activeRole(viewer: Viewer): MemberRole | null {
   return accessLevel(viewer) === 'member' ? viewer!.membership!.role : null
 }
 
-/** Om den innloggede kan bruke en rettighet nå, medregnet tofaktor. */
+/** Om den innloggede kan bruke en rettighet nå, medregnet kravet om sterk innlogging. */
 export function can(viewer: Viewer, permission: Permission): boolean {
   const role = activeRole(viewer)
   if (!role || !roleAtLeast(role, permissions[permission])) return false
-  return !twoFactorRequired(role) || viewer!.twoFactorEnabled
+  return !strongAuthRequired(role) || strongAuth(viewer!)
 }
 
 export function assertMember(viewer: Viewer): asserts viewer is NonNullable<Viewer> & {
@@ -84,8 +110,9 @@ export function assertMember(viewer: Viewer): asserts viewer is NonNullable<View
 }
 
 /**
- * Krever en rettighet. Mangler bare tofaktor, får den som spør vite det, så de
- * kan slå det på. Ellers er svaret det samme som om handlingen ikke fantes.
+ * Krever en rettighet. Mangler bare sterk innlogging, får den som spør vite
+ * det, så de kan logge inn med passkey eller slå på tofaktor. Ellers er svaret
+ * det samme som om handlingen ikke fantes.
  */
 export function assertCan(
   viewer: Viewer,
@@ -94,7 +121,7 @@ export function assertCan(
   assertMember(viewer)
   const role = viewer.membership!.role
   if (!roleAtLeast(role, permissions[permission])) throw new AccessDeniedError('forbidden')
-  if (twoFactorRequired(role) && !viewer.twoFactorEnabled) {
-    throw new AccessDeniedError('two_factor_required')
+  if (strongAuthRequired(role) && !strongAuth(viewer)) {
+    throw new AccessDeniedError('strong_auth_required')
   }
 }

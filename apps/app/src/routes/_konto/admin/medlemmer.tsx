@@ -25,11 +25,11 @@ import {
   Select,
   Textarea,
 } from '#/components/ui.tsx'
-import { fetchAccounts, updateAccess, updateRole } from '#/lib/admin.functions.ts'
+import { fetchAccounts, resetPasskeys, updateAccess, updateRole } from '#/lib/admin.functions.ts'
 import { kull, lastActive, plural } from '#/lib/format.ts'
 import { fold } from '#/lib/member-search.ts'
 import {
-  needsTwoFactor,
+  needsStrongAuth,
   roleAtLeast,
   roleConsequence,
   roleLabel,
@@ -61,6 +61,7 @@ const columns = 'md:grid md:grid-cols-[minmax(0,1fr)_10rem_9rem_8rem] md:items-c
 type Pending =
   | { kind: 'role'; account: AccountView; role: MemberRole }
   | { kind: 'access'; account: AccountView }
+  | { kind: 'passkeys'; account: AccountView }
 
 const firstName = (fullName: string) => fullName.split(/\s+/)[0] || fullName
 
@@ -222,6 +223,7 @@ function Members() {
                   {...controls(a)}
                   onRole={(role) => setPending({ kind: 'role', account: a, role })}
                   onAccess={() => setPending({ kind: 'access', account: a })}
+                  onPasskeys={() => setPending({ kind: 'passkeys', account: a })}
                 />
               ))}
             </ul>
@@ -247,6 +249,9 @@ function Members() {
       {pending?.kind === 'access' && (
         <AccessDialog account={pending.account} onClose={() => setPending(null)} onDone={done} />
       )}
+      {pending?.kind === 'passkeys' && (
+        <PasskeysDialog account={pending.account} onClose={() => setPending(null)} onDone={done} />
+      )}
     </>
   )
 }
@@ -259,6 +264,7 @@ function AccountRow({
   protectedAdmin,
   onRole,
   onAccess,
+  onPasskeys,
 }: {
   account: AccountView
   self: boolean
@@ -267,6 +273,7 @@ function AccountRow({
   protectedAdmin: boolean
   onRole: (role: MemberRole) => void
   onAccess: () => void
+  onPasskeys: () => void
 }) {
   const active = a.status === 'active'
   const cohorts = kull(a.cohortYears)
@@ -317,7 +324,18 @@ function AccountRow({
               {roleLabel(a.role)}
             </p>
           )}
-          {needsTwoFactor(a.role) && <TwoFactorStatus enabled={a.twoFactorEnabled} />}
+          {needsStrongAuth(a.role) && <SignInStatus account={a} />}
+          {/* Samme regler som for tilgang: den som kan endre tilgangen, kan fjerne passkeys. */}
+          {access && a.passkeys > 0 && (
+            <button
+              type="button"
+              onClick={onPasskeys}
+              className="mt-1 text-xs text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline"
+              aria-label={`Fjern passkeys for ${a.fullName}`}
+            >
+              Fjern {plural(a.passkeys, 'passkey', 'passkeys')}
+            </button>
+          )}
         </div>
 
         <div className="min-w-0">
@@ -348,14 +366,21 @@ function AccountRow({
   )
 }
 
-function TwoFactorStatus({ enabled }: { enabled: boolean }) {
-  return enabled ? (
+/** Om en admin kan logge inn sterkt: med tofaktor, passkey eller begge. */
+function SignInStatus({ account: a }: { account: AccountView }) {
+  const methods = [a.twoFactorEnabled && 'Tofaktor', a.passkeys > 0 && 'passkey'].filter(Boolean)
+  if (!methods.length) {
+    return (
+      <p className="mt-1 flex items-center gap-1 text-xs text-amber-700">
+        <ShieldAlert className="size-3.5 shrink-0" aria-hidden /> Mangler tofaktor / passkey
+      </p>
+    )
+  }
+  const label = methods.join(' og ')
+  return (
     <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700">
-      <ShieldCheck className="size-3.5 shrink-0" aria-hidden /> Tofaktor på
-    </p>
-  ) : (
-    <p className="mt-1 flex items-center gap-1 text-xs text-amber-700">
-      <ShieldAlert className="size-3.5 shrink-0" aria-hidden /> Mangler tofaktor
+      <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
+      {label.charAt(0).toLocaleUpperCase('nb') + label.slice(1)}
     </p>
   )
 }
@@ -413,10 +438,10 @@ function RoleDialog({
           <p>
             Fra {roleNames[a.role]} til {roleNames[role]}. {roleConsequence(role, name)}
           </p>
-          {needsTwoFactor(role) && !a.twoFactorEnabled && (
+          {needsStrongAuth(role) && !a.twoFactorEnabled && a.passkeys === 0 && (
             <p className="text-amber-800">
-              {name} har ikke slått på tofaktor, og kan ikke bruke rettighetene før det er gjort
-              under «Konto og sikkerhet».
+              {name} har verken tofaktor eller passkey, og kan ikke bruke rettighetene før en av dem
+              er satt opp under «Konto og sikkerhet».
             </p>
           )}
         </>
@@ -513,6 +538,70 @@ function AccessDialog({
           </Button>
           <Button type="submit" variant={deactivate ? 'destructive' : 'primary'} disabled={busy}>
             {busy ? 'Lagrer …' : deactivate ? 'Deaktiver' : 'Gjenopprett tilgang'}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  )
+}
+
+/** For den som har mistet passkeyene sine: fjerner alle, så nye kan legges til. */
+function PasskeysDialog({
+  account: a,
+  onClose,
+  onDone,
+}: {
+  account: AccountView
+  onClose: () => void
+  onDone: (message: string) => void
+}) {
+  const reset = useServerFn(resetPasskeys)
+  const { busy, error, setError, save } = useSave(onDone)
+  const name = firstName(a.fullName)
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const reason = String(new FormData(event.currentTarget).get('reason') ?? '').trim()
+    // Samme krav som serveren, så svaret kommer før noe sendes.
+    if (reason.length < 3) return setError('Skriv en kort begrunnelse. Den lagres i loggen.')
+    void save(
+      () => reset({ data: { personId: a.personId, reason } }),
+      `Passkeyene til ${a.fullName} er fjernet.`,
+    )
+  }
+
+  return (
+    <Dialog
+      title={`Fjerne passkeyene til ${a.fullName}?`}
+      description={
+        <>
+          <p>
+            Gjør dette bare når {name} har mistet passkeyene sine og har bedt om det. Alle{' '}
+            {plural(a.passkeys, 'passkey', 'passkeys')} fjernes, og {name} blir logget ut på alle
+            enheter.
+          </p>
+          <p>
+            {name} kan logge inn med passordet og legge til nye under «Konto og sikkerhet».
+            {needsStrongAuth(a.role) &&
+              !a.twoFactorEnabled &&
+              ` Til det er gjort, kan ${name} ikke bruke adminverktøyene.`}
+          </p>
+        </>
+      }
+      onClose={onClose}
+      busy={busy}
+    >
+      <form onSubmit={submit} noValidate className="space-y-4">
+        <Field label="Begrunnelse" hint="Påkrevd. Lagres i loggen.">
+          <Textarea name="reason" rows={3} maxLength={500} required data-autofocus />
+        </Field>
+        {error && <ErrorText>{error}</ErrorText>}
+        <DialogActions>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Avbryt
+          </Button>
+          <Button type="submit" variant="destructive" disabled={busy}>
+            {busy ? 'Fjerner …' : 'Fjern passkeys'}
           </Button>
         </DialogActions>
       </form>

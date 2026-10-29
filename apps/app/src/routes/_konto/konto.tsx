@@ -1,29 +1,41 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { Check, Copy, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
+import { Check, Copy, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
+import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import { QrCode } from '#/components/QrCode.tsx'
-import { Button, Card, ErrorText, Field, Input, PageHeader } from '#/components/ui.tsx'
+import { Button, buttonClass, Card, ErrorText, Field, Input, PageHeader } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
-import { roleNames } from '#/lib/roles.ts'
+import { longDay } from '#/lib/format.ts'
+import {
+  passkeyManageError,
+  passkeySignInError,
+  signInWithPasskey,
+  usePasskeySupport,
+} from '#/lib/passkey.ts'
+import { needsStrongAuth, roleNames } from '#/lib/roles.ts'
 
 export const Route = createFileRoute('/_konto/konto')({
-  validateSearch: z.object({ krav: z.enum(['tofaktor']).optional().catch(undefined) }),
+  validateSearch: z.object({
+    krav: z.enum(['sterk-innlogging']).optional().catch(undefined),
+  }),
   head: () => ({ meta: [{ title: 'Konto og sikkerhet – ESAF' }] }),
   component: Account,
 })
 
 function Section({
+  id,
   title,
   description,
   children,
 }: {
+  id?: string
   title: string
   description?: ReactNode
   children: ReactNode
 }) {
   return (
-    <Card className="grid gap-6 p-5 sm:p-6 md:grid-cols-[220px_minmax(0,1fr)]">
+    <Card id={id} className="grid scroll-mt-6 gap-6 p-5 sm:p-6 md:grid-cols-[220px_minmax(0,1fr)]">
       <div>
         <h2 className="text-sm font-semibold text-stone-950">{title}</h2>
         {description && (
@@ -43,6 +55,9 @@ function message(error: { code?: string; message?: string } | null, fallback: st
     return 'Feil kode. Sjekk at klokka på telefonen stemmer, og prøv igjen.'
   }
   if (error.code === 'SESSION_NOT_FRESH') return 'Logg ut og inn igjen før du endrer dette.'
+  if (error.code === 'STRONG_AUTH_REQUIRED') {
+    return 'Logg inn med en av passkeyene dine før du endrer dette.'
+  }
   return fallback
 }
 
@@ -60,17 +75,19 @@ function Account() {
           </>
         }
       />
-      {krav === 'tofaktor' && viewer.twoFactorMissing && (
-        <div className="mb-4 flex gap-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
-          <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p>
-            Som {viewer.role ? roleNames[viewer.role] : 'admin'} må du ha tofaktor for å bruke
-            adminverktøyene. Det tar et minutt å slå på.
-          </p>
-        </div>
+      {krav === 'sterk-innlogging' && viewer.strongAuthMissing && (
+        <StrongAuthNotice role={viewer.role} hasPasskey={viewer.hasPasskey} />
       )}
       <div className="space-y-4">
-        <TwoFactor enabled={viewer.twoFactorEnabled} required={viewer.twoFactorMissing} />
+        <Passkeys
+          mayChange={viewer.mayChangeSignInMethods}
+          strongAuthMissing={viewer.strongAuthMissing}
+        />
+        <TwoFactor
+          enabled={viewer.twoFactorEnabled}
+          required={viewer.strongAuthMissing}
+          mayChange={viewer.mayChangeSignInMethods}
+        />
         <ChangePassword />
         <Sessions />
       </div>
@@ -78,7 +95,335 @@ function Account() {
   )
 }
 
-function TwoFactor({ enabled, required }: { enabled: boolean; required: boolean }) {
+/**
+ * Den gule boksen for admins som kom hit fra adminverktøyene. Har de passkey,
+ * holder det å logge inn med den. Ellers velger de passkey eller tofaktor.
+ */
+function StrongAuthNotice({
+  role,
+  hasPasskey,
+}: {
+  role: keyof typeof roleNames | null
+  hasPasskey: boolean
+}) {
+  const title = role ? roleNames[role] : 'admin'
+  return (
+    <div className="mb-4 flex gap-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
+      <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <div className="min-w-0 space-y-3">
+        {hasPasskey ? (
+          <>
+            <p>
+              Logg inn med passkey for å bruke adminverktøyene. Som {title} holder ikke passordet
+              alene.
+            </p>
+            <PasskeySignInButton then="/admin" />
+          </>
+        ) : (
+          <>
+            <p>
+              Som {title} må du logge inn med passkey eller ha tofaktor for å bruke adminverktøyene.
+              Det tar et minutt å sette opp.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <a href="#passkeys" className={buttonClass({ variant: 'brand', size: 'sm' })}>
+                Legg til passkey
+              </a>
+              <a href="#tofaktor" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+                Slå på tofaktor
+              </a>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Logger inn på nytt med passkey, så økten blir sterk nok til adminverktøyene. */
+function PasskeySignInButton({ then }: { then?: '/admin' }) {
+  const router = useRouter()
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function signIn() {
+    setBusy(true)
+    setError(null)
+    const failure = await signInWithPasskey()
+    if (failure) {
+      setBusy(false)
+      return setError(passkeySignInError(failure))
+    }
+    await router.invalidate()
+    if (then) await navigate({ to: then })
+    setBusy(false)
+  }
+
+  return (
+    <div className="space-y-2">
+      <Button variant="brand" size="sm" onClick={signIn} disabled={busy}>
+        <KeyRound className="size-4" aria-hidden />{' '}
+        {busy ? 'Venter på passkey …' : 'Logg inn med passkey'}
+      </Button>
+      {error && <ErrorText>{error}</ErrorText>}
+    </div>
+  )
+}
+
+type PasskeyItem = {
+  id: string
+  name?: string | null
+  createdAt: Date | string
+  deviceType: string
+}
+
+function Passkeys({
+  mayChange,
+  strongAuthMissing,
+}: {
+  mayChange: boolean
+  strongAuthMissing: boolean
+}) {
+  const router = useRouter()
+  const list = authClient.useListPasskeys()
+  const passkeys = (list.data ?? []) as PasskeyItem[]
+  // Ukjent (null) på serveren; da vises knappen.
+  const supported = usePasskeySupport() !== false
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [added, setAdded] = useState(false)
+  const [removing, setRemoving] = useState<PasskeyItem | null>(null)
+
+  async function add() {
+    setBusy(true)
+    setError(null)
+    setAdded(false)
+    const { error } = await authClient.passkey.addPasskey()
+    setBusy(false)
+    if (error) return setError(passkeyManageError(error, 'Kunne ikke legge til passkeyen.'))
+    setAdded(true)
+    // Oppdaterer kravene (har passkey, kan endre metoder) i resten av appen.
+    await router.invalidate()
+  }
+
+  return (
+    <Section
+      id="passkeys"
+      title="Passkeys"
+      description="En passkey er en nøkkel som ligger trygt på telefonen, datamaskinen eller i passordhåndtereren din, og lar deg logge inn med ansikt, fingeravtrykk eller PIN i stedet for passord. Admins kan bruke den i stedet for tofaktor."
+    >
+      {list.isPending ? (
+        <p className="text-sm text-stone-500">Henter passkeys …</p>
+      ) : list.error ? (
+        <ErrorText>Kunne ikke hente passkeyene dine. Last siden på nytt.</ErrorText>
+      ) : passkeys.length ? (
+        <ul className="divide-y divide-stone-100 rounded-xl ring-1 ring-stone-200 ring-inset">
+          {passkeys.map((p) => (
+            <PasskeyRow
+              key={p.id}
+              passkey={p}
+              mayChange={mayChange}
+              onRemove={() => setRemoving(p)}
+            />
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-stone-600">Du har ingen passkeys ennå.</p>
+      )}
+
+      {added && strongAuthMissing && (
+        <p className="text-sm text-stone-600">
+          Passkeyen er lagt til. Logg inn med den for å bruke adminverktøyene nå.
+        </p>
+      )}
+      {!supported ? (
+        <p className="text-sm text-stone-600">
+          Denne nettleseren støtter ikke passkeys. Prøv en nyere nettleser eller en annen enhet.
+        </p>
+      ) : mayChange ? (
+        <Button variant={passkeys.length ? 'secondary' : 'brand'} onClick={add} disabled={busy}>
+          <KeyRound className="size-4" aria-hidden />
+          {busy ? 'Venter på enheten …' : 'Legg til passkey'}
+        </Button>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-stone-600">
+            Du er logget inn med passord. For å legge til eller fjerne passkeys må du logge inn med
+            en av dem, så ingen som bare kan passordet ditt, kan bytte dem ut.
+          </p>
+          <PasskeySignInButton />
+        </div>
+      )}
+      {error && <ErrorText>{error}</ErrorText>}
+
+      {removing && (
+        <RemovePasskey
+          passkey={removing}
+          last={passkeys.length === 1}
+          onClose={() => setRemoving(null)}
+          onDone={async () => {
+            setRemoving(null)
+            await router.invalidate()
+          }}
+        />
+      )}
+    </Section>
+  )
+}
+
+const passkeyName = (p: PasskeyItem) => p.name?.trim() || 'Passkey'
+
+function PasskeyRow({
+  passkey: p,
+  mayChange,
+  onRemove,
+}: {
+  passkey: PasskeyItem
+  mayChange: boolean
+  onRemove: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function rename(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const name = String(new FormData(e.currentTarget).get('name')).trim()
+    if (!name) return setError('Skriv et navn.')
+    setBusy(true)
+    setError(null)
+    const { error } = await authClient.passkey.updatePasskey({ id: p.id, name })
+    setBusy(false)
+    if (error) return setError(passkeyManageError(error, 'Kunne ikke endre navnet.'))
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <li className="p-3">
+        <form onSubmit={rename} className="space-y-2">
+          <Field label="Navn på passkeyen">
+            <Input
+              name="name"
+              defaultValue={p.name ?? ''}
+              maxLength={60}
+              placeholder="For eksempel «iPhone» eller «Jobb-PC»"
+              autoComplete="off"
+              required
+              autoFocus
+            />
+          </Field>
+          {error && <ErrorText>{error}</ErrorText>}
+          <div className="flex gap-2">
+            <Button type="submit" variant="secondary" size="sm" disabled={busy}>
+              Lagre
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+              Avbryt
+            </Button>
+          </div>
+        </form>
+      </li>
+    )
+  }
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
+      <KeyRound className="size-4 shrink-0 text-stone-400" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-stone-900">{passkeyName(p)}</p>
+        <p className="text-xs text-stone-500">
+          Lagt til {longDay(p.createdAt)} ·{' '}
+          {p.deviceType === 'multiDevice'
+            ? 'synkroniseres mellom enhetene dine'
+            : 'bare på én enhet'}
+        </p>
+      </div>
+      <div className="flex gap-1">
+        <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+          Gi nytt navn
+        </Button>
+        {mayChange && (
+          <Button variant="danger" size="sm" onClick={onRemove}>
+            Fjern
+          </Button>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function RemovePasskey({
+  passkey: p,
+  last,
+  onClose,
+  onDone,
+}: {
+  passkey: PasskeyItem
+  last: boolean
+  onClose: () => void
+  onDone: () => void
+}) {
+  const { viewer } = Route.useRouteContext()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const adminWithoutTotp =
+    viewer.role !== null && needsStrongAuth(viewer.role) && !viewer.twoFactorEnabled
+
+  async function remove() {
+    setBusy(true)
+    setError(null)
+    const { error } = await authClient.passkey.deletePasskey({ id: p.id })
+    if (error) {
+      setBusy(false)
+      return setError(passkeyManageError(error, 'Kunne ikke fjerne passkeyen.'))
+    }
+    onDone()
+  }
+
+  return (
+    <Dialog
+      title={`Fjerne «${passkeyName(p)}»?`}
+      description={
+        <>
+          <p>
+            Du kan ikke lenger logge inn med den. Slett den også fra enheten eller
+            passordhåndtereren, så den ikke blir foreslått.
+          </p>
+          {last && adminWithoutTotp && (
+            <p className="text-amber-800">
+              Det er din eneste passkey, og du har ikke tofaktor. Neste gang du logger inn, kan du
+              ikke bruke adminverktøyene før du har satt opp en av dem igjen.
+            </p>
+          )}
+        </>
+      }
+      onClose={onClose}
+      busy={busy}
+    >
+      {error && <ErrorText>{error}</ErrorText>}
+      <DialogActions>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
+          Avbryt
+        </Button>
+        <Button variant="destructive" onClick={remove} disabled={busy} data-autofocus>
+          {busy ? 'Fjerner …' : 'Fjern passkey'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+function TwoFactor({
+  enabled,
+  required,
+  mayChange,
+}: {
+  enabled: boolean
+  required: boolean
+  mayChange: boolean
+}) {
   const router = useRouter()
   const [step, setStep] = useState<'idle' | 'password' | 'scan' | 'codes' | 'disable' | 'renew'>(
     'idle',
@@ -150,8 +495,9 @@ function TwoFactor({ enabled, required }: { enabled: boolean; required: boolean 
 
   return (
     <Section
+      id="tofaktor"
       title="Tofaktor"
-      description="En kode fra en autentiseringsapp i tillegg til passordet. Påkrevd for admins."
+      description="En kode fra en autentiseringsapp i tillegg til passordet. Admins må ha tofaktor eller logge inn med passkey."
     >
       {step === 'codes' ? (
         <BackupCodes
@@ -255,11 +601,18 @@ function TwoFactor({ enabled, required }: { enabled: boolean; required: boolean 
         <>
           <p className="text-sm text-stone-600">
             Tofaktor er ikke slått på.{' '}
-            {required && 'Rollen din krever det for å bruke adminverktøyene.'}
+            {required &&
+              'Rollen din krever tofaktor eller innlogging med passkey for å bruke adminverktøyene.'}
           </p>
-          <Button variant="brand" onClick={() => setStep('password')}>
-            Slå på tofaktor
-          </Button>
+          {mayChange ? (
+            <Button variant={required ? 'brand' : 'secondary'} onClick={() => setStep('password')}>
+              Slå på tofaktor
+            </Button>
+          ) : (
+            <p className="text-sm text-stone-600">
+              Logg inn med en av passkeyene dine for å slå på tofaktor.
+            </p>
+          )}
         </>
       )}
     </Section>

@@ -1,4 +1,11 @@
-import { changeRole, listAccounts, listAuditEvents, roles, setMemberAccess } from '@esaf/core'
+import {
+  changeRole,
+  listAccounts,
+  listAuditEvents,
+  removePasskeys,
+  roles,
+  setMemberAccess,
+} from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
@@ -19,6 +26,10 @@ export const updateRole = createServerFn({ method: 'POST' })
 export const updateAccess = createServerFn({ method: 'POST' })
   .validator(z.object({ personId: z.uuid(), active: z.boolean(), reason: z.string().max(500) }))
   .handler(({ data }) => run((viewer) => setMemberAccess(db, viewer, data)))
+
+export const resetPasskeys = createServerFn({ method: 'POST' })
+  .validator(z.object({ personId: z.uuid(), reason: z.string().max(500) }))
+  .handler(({ data }) => run((viewer) => removePasskeys(db, viewer, data)))
 
 /** Hendelser per side i loggen. Kortere side enn dette betyr at det ikke finnes flere. */
 export const auditPageSize = 50

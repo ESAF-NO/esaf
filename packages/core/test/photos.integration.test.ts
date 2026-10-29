@@ -155,7 +155,7 @@ describe.skipIf(!url)('profilbilder', () => {
     const file = await jpeg()
     expect(await denial(setProfilePhoto(db, storage, kari, ola!.personId!, file))).toBe('forbidden')
     expect(await denial(setProfilePhoto(db, storage, adminWithout2fa, ola!.personId!, file))).toBe(
-      'two_factor_required',
+      'strong_auth_required',
     )
     expect(await denial(setProfilePhoto(db, storage, null, ola!.personId!, file))).toBe(
       'unauthenticated',
@@ -168,7 +168,7 @@ describe.skipIf(!url)('profilbilder', () => {
     await setProfilePhoto(db, storage, ola, ola!.personId!, file)
     expect(await denial(removeProfilePhoto(db, storage, kari, ola!.personId!))).toBe('forbidden')
     expect(await denial(removeProfilePhoto(db, storage, adminWithout2fa, ola!.personId!))).toBe(
-      'two_factor_required',
+      'strong_auth_required',
     )
     expect(await stored()).toHaveLength(2)
   })

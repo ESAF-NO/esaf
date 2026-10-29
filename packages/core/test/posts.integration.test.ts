@@ -221,7 +221,7 @@ describe.skipIf(!url)('redigering, Markdown og festede innlegg', () => {
       expect(await denial(setPostPinned(db, pending, id, true))).toBe('not_member')
       expect(await denial(setPostPinned(db, ola, id, true))).toBe('forbidden')
       expect(await denial(setPostPinned(db, adminWithoutTwoFactor, id, true))).toBe(
-        'two_factor_required',
+        'strong_auth_required',
       )
       expect((await getPost(db, ola, id)).canPin).toBe(false)
       expect((await getPost(db, adminWithoutTwoFactor, id)).canPin).toBe(false)

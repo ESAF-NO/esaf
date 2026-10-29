@@ -302,6 +302,11 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} gjenopprettet tilgangen til {subject}.
     </>
   ),
+  'security.remove_passkeys': ({ actor, subject, details }) => (
+    <>
+      {actor} fjernet {plural(count(details.count), 'passkey', 'passkeys')} for {subject}.
+    </>
+  ),
   'role.change': ({ actor, subject, details }) => (
     <>
       {actor} endret rollen til {subject} fra {role(details.from)} til {role(details.to)}.

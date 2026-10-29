@@ -7,9 +7,9 @@ export function rethrowForClient(error: unknown): never {
   if (error instanceof AccessDeniedError) {
     if (error.reason === 'unauthenticated') throw redirect({ to: '/logg-inn' })
     if (error.reason === 'not_member') throw redirect({ to: '/venter' })
-    // Rollen er der, men tofaktor mangler: send dit det slås på.
-    if (error.reason === 'two_factor_required') {
-      throw redirect({ to: '/konto', search: { krav: 'tofaktor' } })
+    // Rollen er der, men økten er ikke sterk nok: send dit det ordnes.
+    if (error.reason === 'strong_auth_required') {
+      throw redirect({ to: '/konto', search: { krav: 'sterk-innlogging' } })
     }
     // Ikke røp at adminsider finnes for dem uten rettigheten.
     throw notFound()

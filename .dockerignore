@@ -1,0 +1,16 @@
+# Aldri inn i et bilde: hemmeligheter, lokale data (bilder, kullister) og byggeresultater.
+.env
+.env.*
+!.env.example
+.data
+*.xlsx
+*.xls
+*.csv
+**/node_modules
+**/.output
+**/dist
+**/.turbo
+**/.astro
+**/.wrangler
+.git
+.claude

@@ -60,7 +60,7 @@ Skjemaet ligger i `packages/db/src/schema.ts`. Arbeidsflyt for endringer:
 2. `pnpm db:generate` lager en SQL-fil i `packages/db/drizzle/`. Les den før du committer den.
 3. `pnpm db:migrate` kjører den lokalt.
 
-Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produksjon kjøres `pnpm db:migrate` med produksjonens `DATABASE_URL` som et eget steg før en ny versjon startes. CI feiler hvis skjema og migreringer ikke er i synk.
+Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produksjon kjører containeren migreringene før serveren starter (se «Appen med Coolify»). CI feiler hvis skjema og migreringer ikke er i synk.
 
 ### Datamodell
 
@@ -269,7 +269,7 @@ Lokalt sendes ingen e-post. Bekreftelseslenken skrives ut i terminalen der `pnpm
 
 ## Deploy
 
-Nettsiden ligger på https://esaf.no og deployes automatisk til Cloudflare fra GitHub Actions. Appen er ikke deployet. `esaf.no` ligger i ESAFs Cloudflare-konto, der Email Routing også er slått på for å videresende `styret@esaf.no` til foreningens Gmail.
+Nettsiden ligger på https://esaf.no og deployes automatisk til Cloudflare fra GitHub Actions. Appen deployes med Coolify til en egen server (se under). `esaf.no` ligger i ESAFs Cloudflare-konto, der Email Routing også er slått på for å videresende `styret@esaf.no` til foreningens Gmail.
 
 ### Nettsiden til Cloudflare Workers Static Assets
 
@@ -311,30 +311,34 @@ pnpm exec wrangler deploy --dry-run # valgfritt: viser hva som lastes opp
 pnpm exec wrangler deploy
 ```
 
-### Appen på Node
+### Appen med Coolify
 
-`pnpm --filter @esaf/app build` gir en selvstendig Node-server i `apps/app/.output/` (Nitro). Den kjøres slik:
+Appen og Postgres kjører på en Hetzner-server i Tyskland, styrt av Coolify. Coolify bygger `apps/app/Dockerfile` på serveren ved push til `main`.
 
-```sh
-pnpm db:migrate                      # med produksjonens DATABASE_URL, før oppstart
-NODE_ENV=production PORT=3000 \
-DATABASE_URL=postgres://… BETTER_AUTH_SECRET=… BETTER_AUTH_URL=https://app.esaf.no \
-S3_ENDPOINT=https://<konto-id>.r2.cloudflarestorage.com S3_BUCKET=… S3_ACCESS_KEY_ID=… S3_SECRET_ACCESS_KEY=… \
-node apps/app/.output/server/index.mjs
-```
+**Flyten.** En endring går via PR. CI («Sjekk og bygg») må være grønn før PR-en kan merges, og `main` er beskyttet mot direkte push. Coolify deployer det som havner på `main`. Testene i Actions stopper ikke en deploy alene; det er kravet om grønn CI før merge som gjør det.
 
-Bildebehandlingen (sharp) har native binærfiler for plattformen den installeres på. Bygg derfor `.output/` på samme operativsystem og arkitektur som serveren (f.eks. i CI eller i Docker-bildet), ikke på en Mac for en Linux-server.
+**Ved hver deploy** bygger Coolify bildet og starter en ny container. Containeren kjører migreringene og starter så serveren. Feiler migreringen eller helsesjekken (`GET /api/health`, 200 når databasen svarer), tar ikke den nye containeren over, og den forrige kjører videre. Migreringer rulles ikke tilbake. Lag dem derfor slik at også forrige versjon av appen tåler dem: legg til kolonner og tabeller i én deploy, og fjern gamle i en senere.
 
-Bare `.output/` trengs på serveren. Den kan kopieres til en VPS eller pakkes i et container-image (`node:24-slim`, `COPY .output`, `CMD node .output/server/index.mjs`). Det finnes ingen Dockerfile ennå. Den bør lages og testes når vertsplattformen er valgt. Helsesjekk: `GET /api/health` gir 200 når databasen svarer og 503 ellers.
+**Oppsett i Coolify** (én gang):
+
+1. **Postgres:** ny ressurs, Postgres 18, ikke offentlig tilgjengelig. Databasen nås bare fra appen over Coolifys interne nettverk.
+2. **Appen:** ny ressurs fra GitHub-repoet, gren `main`, byggetype Dockerfile, basemappe `/`, Dockerfile `apps/app/Dockerfile`, port `3000`. Slå på automatisk deploy.
+3. **Miljøvariabler** på appen: `DATABASE_URL` (den interne URL-en fra Postgres-ressursen), `BETTER_AUTH_SECRET` (`openssl rand -base64 32`), `BETTER_AUTH_URL=https://app.esaf.no` og S3-variablene for R2 (se «Profilbilder»). `NODE_ENV` og `PORT` er satt i bildet.
+4. **Domene:** `https://app.esaf.no` på appen, med DNS satt opp på samme måte som de andre domenene på serveren.
+5. **Backup:** planlagt backup av Postgres-ressursen til S3-lagring utenfor serveren (en egen privat R2-bøtte), daglig. Gjenopprett én gang til en ny database for å se at det virker.
+
+**Verktøy i produksjon.** Bildet har hele arbeidsområdet, så kommandoene fra «Kommandoer» kan kjøres i appens terminal i Coolify, for eksempel `pnpm admin:grant --email … --reason "…"` for den første hovedadmin. Kullisten lastes aldri opp til repoet eller bildet. Den kopieres inn i containeren bare for importen, og slettes etterpå.
+
+Lokalt kan bildet bygges og prøves med `docker build -f apps/app/Dockerfile .`. Bildebehandlingen (sharp) har native binærfiler for plattformen den installeres på, og derfor bygges bildet på serveren.
 
 ## Før produksjon
 
 Dette gjenstår før appen kan brukes av medlemmer:
 
 1. **E-postleverandør.** Velg leverandør (f.eks. Resend, Postmark eller SES) og implementer `sendVerificationEmail` i `apps/app/src/server/auth.server.ts`. Legg nøkkelen i miljøet og i env-skjemaet. Legg samtidig til tilbakestilling av passord, som også trenger e-post. Sett opp SPF/DKIM for avsenderdomenet.
-2. **Hosting og database.** Velg vert for appen og en administrert eller selvdriftet Postgres. Velg dem samlet, ut fra driftsansvar og kostnad. Opprett en privat R2-bøtte for profilbilder (se «Profilbilder»).
-3. **Backup.** Automatisk, kryptert backup av Postgres med testet gjenoppretting og avklart lagringstid.
-4. **Deploy.** Deploy-jobb for appen, med migrering som eget steg. Bestem `app.esaf.no` og DNS i Cloudflare.
+2. **Coolify.** Sett opp appen, Postgres, domenet og backup som beskrevet i «Appen med Coolify». Opprett en privat R2-bøtte for profilbilder (se «Profilbilder») og en for backup.
+3. **Backup.** Test én gjenoppretting, og avklar lagringstid.
+4. **Beskytt `main`.** Krev grønn «Sjekk og bygg» før merge, og ingen direkte push.
 5. **Overvåking.** Oppetidssjekk mot `/api/health`, innsamling av feillogger og varsling til en navngitt person.
 6. **Medlemsimport.** Importverktøyet finnes (se over). Det som gjenstår, er å avgjøre hvem som eier og verifiserer kullisten, rydde e-postadressene og kjøre importen mot produksjon.
 7. **Personvern.** Behandlingsgrunnlag, personvernerklæring og rutine for sletting.

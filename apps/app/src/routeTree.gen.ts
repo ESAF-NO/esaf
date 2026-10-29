@@ -32,12 +32,14 @@ import { Route as KontoMedlemmerIndexRouteImport } from './routes/_konto/medlemm
 import { Route as KontoSelskaperIndexRouteImport } from './routes/_konto/selskaper/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBilderKeyRouteImport } from './routes/api/bilder/$key'
+import { Route as ApiLogoerKeyRouteImport } from './routes/api/logoer/$key'
 import { Route as KontoFeedPostIdRedigerRouteImport } from './routes/_konto/feed/$postId_.rediger'
 import { Route as KontoMedlemmerPersonIdIndexRouteImport } from './routes/_konto/medlemmer/$personId/index'
 import { Route as KontoMedlemmerPersonIdRedigerRouteImport } from './routes/_konto/medlemmer/$personId/rediger'
 import { Route as KontoSelskaperSlugIndexRouteImport } from './routes/_konto/selskaper/$slug/index'
 import { Route as KontoSelskaperSlugRedigerRouteImport } from './routes/_konto/selskaper/$slug/rediger'
 import { Route as ApiMedlemmerPersonIdBildeRouteImport } from './routes/api/medlemmer/$personId/bilde'
+import { Route as ApiSelskaperCompanyIdLogoRouteImport } from './routes/api/selskaper/$companyId/logo'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -153,6 +155,11 @@ const ApiBilderKeyRoute = ApiBilderKeyRouteImport.update({
   path: '/api/bilder/$key',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLogoerKeyRoute = ApiLogoerKeyRouteImport.update({
+  id: '/api/logoer/$key',
+  path: '/api/logoer/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KontoFeedPostIdRedigerRoute = KontoFeedPostIdRedigerRouteImport.update({
   id: '/feed/$postId_/rediger',
   path: '/feed/$postId/rediger',
@@ -187,6 +194,12 @@ const ApiMedlemmerPersonIdBildeRoute =
     path: '/api/medlemmer/$personId/bilde',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiSelskaperCompanyIdLogoRoute =
+  ApiSelskaperCompanyIdLogoRouteImport.update({
+    id: '/api/selskaper/$companyId/logo',
+    path: '/api/selskaper/$companyId/logo',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -206,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/kull/$year': typeof KontoKullYearRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bilder/$key': typeof ApiBilderKeyRoute
+  '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/admin/': typeof KontoAdminIndexRoute
   '/feed/': typeof KontoFeedIndexRoute
   '/kull/': typeof KontoKullIndexRoute
@@ -215,6 +229,7 @@ export interface FileRoutesByFullPath {
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
   '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
   '/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
   '/selskaper/$slug/': typeof KontoSelskaperSlugIndexRoute
 }
@@ -235,6 +250,7 @@ export interface FileRoutesByTo {
   '/kull/$year': typeof KontoKullYearRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bilder/$key': typeof ApiBilderKeyRoute
+  '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/admin': typeof KontoAdminIndexRoute
   '/feed': typeof KontoFeedIndexRoute
   '/kull': typeof KontoKullIndexRoute
@@ -244,6 +260,7 @@ export interface FileRoutesByTo {
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
   '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
   '/medlemmer/$personId': typeof KontoMedlemmerPersonIdIndexRoute
   '/selskaper/$slug': typeof KontoSelskaperSlugIndexRoute
 }
@@ -267,6 +284,7 @@ export interface FileRoutesById {
   '/_konto/kull/$year': typeof KontoKullYearRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bilder/$key': typeof ApiBilderKeyRoute
+  '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/_konto/admin/': typeof KontoAdminIndexRoute
   '/_konto/feed/': typeof KontoFeedIndexRoute
   '/_konto/kull/': typeof KontoKullIndexRoute
@@ -276,6 +294,7 @@ export interface FileRoutesById {
   '/_konto/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
   '/_konto/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
   '/_konto/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
   '/_konto/selskaper/$slug/': typeof KontoSelskaperSlugIndexRoute
 }
@@ -299,6 +318,7 @@ export interface FileRouteTypes {
     | '/kull/$year'
     | '/api/auth/$'
     | '/api/bilder/$key'
+    | '/api/logoer/$key'
     | '/admin/'
     | '/feed/'
     | '/kull/'
@@ -308,6 +328,7 @@ export interface FileRouteTypes {
     | '/medlemmer/$personId/rediger'
     | '/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
+    | '/api/selskaper/$companyId/logo'
     | '/medlemmer/$personId/'
     | '/selskaper/$slug/'
   fileRoutesByTo: FileRoutesByTo
@@ -328,6 +349,7 @@ export interface FileRouteTypes {
     | '/kull/$year'
     | '/api/auth/$'
     | '/api/bilder/$key'
+    | '/api/logoer/$key'
     | '/admin'
     | '/feed'
     | '/kull'
@@ -337,6 +359,7 @@ export interface FileRouteTypes {
     | '/medlemmer/$personId/rediger'
     | '/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
+    | '/api/selskaper/$companyId/logo'
     | '/medlemmer/$personId'
     | '/selskaper/$slug'
   id:
@@ -359,6 +382,7 @@ export interface FileRouteTypes {
     | '/_konto/kull/$year'
     | '/api/auth/$'
     | '/api/bilder/$key'
+    | '/api/logoer/$key'
     | '/_konto/admin/'
     | '/_konto/feed/'
     | '/_konto/kull/'
@@ -368,6 +392,7 @@ export interface FileRouteTypes {
     | '/_konto/medlemmer/$personId/rediger'
     | '/_konto/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
+    | '/api/selskaper/$companyId/logo'
     | '/_konto/medlemmer/$personId/'
     | '/_konto/selskaper/$slug/'
   fileRoutesById: FileRoutesById
@@ -380,7 +405,9 @@ export interface RootRouteChildren {
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBilderKeyRoute: typeof ApiBilderKeyRoute
+  ApiLogoerKeyRoute: typeof ApiLogoerKeyRoute
   ApiMedlemmerPersonIdBildeRoute: typeof ApiMedlemmerPersonIdBildeRoute
+  ApiSelskaperCompanyIdLogoRoute: typeof ApiSelskaperCompanyIdLogoRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -546,6 +573,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBilderKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/logoer/$key': {
+      id: '/api/logoer/$key'
+      path: '/api/logoer/$key'
+      fullPath: '/api/logoer/$key'
+      preLoaderRoute: typeof ApiLogoerKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_konto/feed/$postId_/rediger': {
       id: '/_konto/feed/$postId_/rediger'
       path: '/feed/$postId/rediger'
@@ -586,6 +620,13 @@ declare module '@tanstack/react-router' {
       path: '/api/medlemmer/$personId/bilde'
       fullPath: '/api/medlemmer/$personId/bilde'
       preLoaderRoute: typeof ApiMedlemmerPersonIdBildeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/selskaper/$companyId/logo': {
+      id: '/api/selskaper/$companyId/logo'
+      path: '/api/selskaper/$companyId/logo'
+      fullPath: '/api/selskaper/$companyId/logo'
+      preLoaderRoute: typeof ApiSelskaperCompanyIdLogoRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -659,7 +700,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBilderKeyRoute: ApiBilderKeyRoute,
+  ApiLogoerKeyRoute: ApiLogoerKeyRoute,
   ApiMedlemmerPersonIdBildeRoute: ApiMedlemmerPersonIdBildeRoute,
+  ApiSelskaperCompanyIdLogoRoute: ApiSelskaperCompanyIdLogoRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -4,7 +4,7 @@ import { ArrowLeft, Search } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 import { comparePeople, PersonCard } from '#/components/PersonCard.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
-import { buttonClass, Card, CompanyMark } from '#/components/ui.tsx'
+import { buttonClass, Card, CompanyLogo } from '#/components/ui.tsx'
 import { fetchCohort } from '#/lib/cohorts.functions.ts'
 import { esPeriod, plural } from '#/lib/format.ts'
 
@@ -149,7 +149,7 @@ function CohortPage() {
 function CompanyRow({ company: c }: { company: CohortCompany }) {
   return (
     <div className="flex gap-3 py-3.5">
-      <CompanyMark name={c.name} size="sm" />
+      <CompanyLogo name={c.name} logo={c.logo} size="sm" />
       <div className="min-w-0 flex-1">
         <p className="flex items-baseline justify-between gap-2">
           <Link

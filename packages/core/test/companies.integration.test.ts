@@ -23,6 +23,7 @@ import {
   type CompanyDetails,
   type CompanyInput,
   type ExperienceInput,
+  type ObjectStorage,
   type ProfileInput,
   type Viewer,
 } from '../src/index.ts'
@@ -56,6 +57,13 @@ const info: CompanyInput = {
   location: '',
   industries: [],
   status: 'active',
+}
+
+/** Sammenslåing rydder logoer i lagringen; her har ingen av selskapene logo. */
+const storage: ObjectStorage = {
+  put: () => Promise.resolve(),
+  get: () => Promise.resolve(null),
+  delete: () => Promise.resolve(),
 }
 
 const job = (company: string, more: Partial<ExperienceInput> = {}): ExperienceInput => ({
@@ -375,13 +383,15 @@ describe.skipIf(!url)('selskaper', () => {
     })
 
     expect(
-      await denial(mergeCompanies(db, ola, { sourceId: source.id, targetId: target.id })),
+      await denial(mergeCompanies(db, storage, ola, { sourceId: source.id, targetId: target.id })),
     ).toBe('forbidden')
     await expect(
-      mergeCompanies(db, admin, { sourceId: target.id, targetId: target.id }),
+      mergeCompanies(db, storage, admin, { sourceId: target.id, targetId: target.id }),
     ).rejects.toThrow('annet selskap')
 
-    expect(await mergeCompanies(db, admin, { sourceId: source.id, targetId: target.id })).toEqual({
+    expect(
+      await mergeCompanies(db, storage, admin, { sourceId: source.id, targetId: target.id }),
+    ).toEqual({
       slug: 'kahoot',
     })
     expect(await companyBySlug('kahoot-asa')).toBeUndefined()

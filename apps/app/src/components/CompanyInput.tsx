@@ -1,13 +1,21 @@
+import type { CompanyLogoUrls } from '@esaf/core'
 import { Check, Plus } from 'lucide-react'
 import { useEffect, useId, useState, type KeyboardEvent } from 'react'
 import { findCompanies } from '#/lib/companies.functions.ts'
-import { CompanyMark, cx, Input } from './ui.tsx'
+import { CompanyLogo, cx, Input } from './ui.tsx'
 
 type Hit = Awaited<ReturnType<typeof findCompanies>>[number]
 type Option = { kind: 'company'; hit: Hit } | { kind: 'new' }
 
-/** Navnet i feltet, og selskapet det er koblet til hvis det ble valgt i listen. */
-export type CompanyValue = { name: string; companyId: string | null }
+/**
+ * Navnet i feltet, og selskapet det er koblet til hvis det ble valgt i listen.
+ * `logo` følger med et valgt selskap, så den kan vises ved feltet.
+ */
+export type CompanyValue = {
+  name: string
+  companyId: string | null
+  logo?: CompanyLogoUrls | null
+}
 
 /**
  * Selskapsfelt med forslag fra selskapene som finnes, etter WAI-ARIAs
@@ -71,7 +79,7 @@ export function CompanyInput({
 
   function choose(option: Option | undefined) {
     if (option?.kind === 'company') {
-      onChange({ name: option.hit.name, companyId: option.hit.id })
+      onChange({ name: option.hit.name, companyId: option.hit.id, logo: option.hit.logo })
     }
     setOpen(false)
     setActive(-1)
@@ -146,7 +154,7 @@ export function CompanyInput({
               >
                 {option.kind === 'company' ? (
                   <>
-                    <CompanyMark name={option.hit.name} size="sm" />
+                    <CompanyLogo name={option.hit.name} logo={option.hit.logo} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-stone-900">
                         {option.hit.name}

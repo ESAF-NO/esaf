@@ -16,7 +16,7 @@ function preload(photo: ProfilePhoto) {
   return img.decode().catch(() => {})
 }
 
-function Progress({ share }: { share: number }) {
+export function Progress({ share }: { share: number }) {
   const percent = Math.round(share * 100)
   const processing = percent >= 100
   return (

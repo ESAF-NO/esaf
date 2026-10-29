@@ -168,6 +168,7 @@ describe.skipIf(!url)('kullsiden', () => {
       {
         slug: 'syrlig-as',
         name: expect.stringMatching(/^(Syrlig AS|syrlig as)$/),
+        logo: null,
         esCompany: true,
         people: [
           { personId: kari!.personId, fullName: 'Kari', photo: null, claimed: true, role: 'es' },
@@ -177,6 +178,7 @@ describe.skipIf(!url)('kullsiden', () => {
       {
         slug: 'fjordflow',
         name: 'Fjordflow',
+        logo: null,
         esCompany: false,
         people: [
           { personId: ola!.personId, fullName: 'Ola', photo: null, claimed: true, role: 'founder' },

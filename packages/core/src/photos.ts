@@ -1,9 +1,19 @@
-import { randomBytes } from 'node:crypto'
 import { schema, type Db } from '@esaf/db'
 import { eq } from 'drizzle-orm'
-import sharp, { type Metadata } from 'sharp'
+import sharp from 'sharp'
 import { assertCan, assertMember, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
+import {
+  deleteImageFiles,
+  IMAGE_CONTENT_TYPE,
+  IMAGE_FILE_NAME,
+  IMAGE_MAX_BYTES,
+  inspectUpload,
+  newImageKey,
+  putImageFiles,
+  readOptions,
+  unreadable,
+} from './images.ts'
 import type { Tx } from './members.ts'
 import type { ObjectStorage } from './storage.ts'
 
@@ -19,39 +29,24 @@ const { auditEvent, membership, person } = schema
  * - Alt behandles på serveren før det lagres: rotert etter EXIF, ALL metadata
  *   fjernet (også GPS), beskåret til kvadrat fra midten, skalert ned og lagret
  *   som WebP i to størrelser. Det som ikke kan leses som JPEG, PNG eller WebP,
- *   avvises, uansett filnavn eller hva nettleseren sier filtypen er.
+ *   avvises, uansett filnavn eller hva nettleseren sier filtypen er (se
+ *   `images.ts`).
  * - Hvert bilde får en ny tilfeldig nøkkel, og det gamle slettes når det byttes
  *   eller fjernes. Bildene serveres bare til aktive medlemmer, og bare så lenge
  *   nøkkelen står på en person.
  */
 
 /** Største fil som tas imot. Appen sjekker det også før opplastingen leses inn. */
-export const PHOTO_MAX_BYTES = 10 * 1024 * 1024
+export const PHOTO_MAX_BYTES = IMAGE_MAX_BYTES
 /** Bildene lagres i to størrelser: stor til profilsiden, liten til lister. */
 export const PHOTO_SIZES = { small: 192, large: 512 } as const
-export const PHOTO_CONTENT_TYPE = 'image/webp'
+export const PHOTO_CONTENT_TYPE = IMAGE_CONTENT_TYPE
 
 type PhotoSize = keyof typeof PHOTO_SIZES
 const sizes = Object.keys(PHOTO_SIZES) as PhotoSize[]
 
 /** Mindre enn dette blir uskarpt selv som liten avatar. */
 const MIN_SIDE = 128
-/**
- * Vern mot «dekompresjonsbomber» (små filer som utgir seg for å være enorme
- * bilder). Godt over det kameraer lager innenfor 10 MB.
- */
-const MAX_PIXELS = 100_000_000
-
-// Bildebiblioteket brukes bare til profilbilder. Bare dekoderne for JPEG, PNG og
-// WebP er slått på, så formater med større angrepsflate (SVG, PDF, TIFF, HEIF …)
-// aldri blir tolket, selv om en fil skulle slippe forbi sjekken av filtypen.
-// Gjelder hele prosessen.
-sharp.block({ operation: ['VipsForeignLoad'] })
-sharp.unblock({
-  operation: ['VipsForeignLoadJpegBuffer', 'VipsForeignLoadPngBuffer', 'VipsForeignLoadWebpBuffer'],
-})
-// Cachen hjelper bare når samme bilde behandles flere ganger. Her holder den bare på minne.
-sharp.cache(false)
 
 /** Adressene til et profilbilde. Bildene serveres bare til aktive medlemmer. */
 export type ProfilePhoto = {
@@ -63,7 +58,6 @@ export type ProfilePhoto = {
 
 /** Ruten i appen som serverer bildene: apps/app/src/routes/api/bilder/$key.ts. */
 const PHOTO_ROUTE = '/api/bilder/'
-const FILE_NAME = /^([A-Za-z0-9_-]{22})-(\d{1,4})\.webp$/
 
 const fileName = (photoKey: string, size: PhotoSize) => `${photoKey}-${PHOTO_SIZES[size]}.webp`
 const objectKey = (photoKey: string, size: PhotoSize) => `profilbilder/${fileName(photoKey, size)}`
@@ -77,26 +71,6 @@ export function photoUrls(photoKey: string | null): ProfilePhoto | null {
   }
 }
 
-/** 128 tilfeldige bit: kan ikke gjettes, og blir aldri gjenbrukt. */
-const newPhotoKey = () => randomBytes(16).toString('base64url')
-
-type Format = 'jpeg' | 'png' | 'webp'
-
-/**
- * Filtypen ut fra de første bytene i fila. Avgjør hva som slippes videre til
- * bildebiblioteket, så SVG, PDF og andre formater aldri blir tolket.
- */
-function sniffFormat(bytes: Uint8Array): Format | null {
-  const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to))
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg'
-  if (ascii(0, 8) === '\x89PNG\r\n\x1a\n') return 'png'
-  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp'
-  return null
-}
-
-const unreadable = () =>
-  new DomainError('Vi klarte ikke å lese bildet. Prøv et annet bilde i JPEG, PNG eller WebP.')
-
 export type ProcessedPhoto = Record<PhotoSize, Buffer>
 
 /**
@@ -104,28 +78,7 @@ export type ProcessedPhoto = Record<PhotoSize, Buffer>
  * med en melding brukeren kan lese hvis fila ikke kan brukes.
  */
 export async function processProfilePhoto(file: Uint8Array): Promise<ProcessedPhoto> {
-  if (file.byteLength === 0) throw new DomainError('Fila er tom.')
-  if (file.byteLength > PHOTO_MAX_BYTES) throw new DomainError('Bildet er for stort. Maks 10 MB.')
-  const format = sniffFormat(file)
-  if (!format) throw new DomainError('Bildet må være JPEG, PNG eller WebP.')
-
-  const options = {
-    // Avbryt ved alt som ser feil ut i pikseldataene; anbefalt for filer fra brukere.
-    failOn: 'warning',
-    limitInputPixels: MAX_PIXELS,
-    // Roter etter EXIF-orienteringen, så bilder tatt på høykant står riktig.
-    autoOrient: true,
-  } as const
-  let metadata: Metadata
-  try {
-    // Leser bare headeren. Antall piksler sjekkes under, med en tydeligere melding.
-    metadata = await sharp(file, { ...options, limitInputPixels: false }).metadata()
-  } catch {
-    throw unreadable()
-  }
-  if (metadata.format !== format) throw unreadable()
-  const { width, height } = metadata.autoOrient
-  if (width * height > MAX_PIXELS) throw new DomainError('Bildet har for mange piksler.')
+  const { width, height } = await inspectUpload(file)
   const side = Math.min(width, height)
   if (side < MIN_SIDE) {
     throw new DomainError(
@@ -136,7 +89,7 @@ export async function processProfilePhoto(file: Uint8Array): Promise<ProcessedPh
   try {
     // Uten `keepMetadata()` og lignende skriver sharp verken EXIF (med GPS), XMP,
     // IPTC eller fargeprofil, og fargene gjøres om til sRGB. Testene sjekker det.
-    const large = await sharp(file, options)
+    const large = await sharp(file, readOptions)
       .timeout({ seconds: 20 })
       .resize(Math.min(side, PHOTO_SIZES.large), Math.min(side, PHOTO_SIZES.large), {
         fit: 'cover',
@@ -183,14 +136,12 @@ async function uploadTarget(db: Db | Tx, personId: string, isOwn: boolean, lock:
 }
 
 /** Sletter begge størrelsene. En feil her skal ikke stoppe brukeren, men må synes i loggen. */
-async function deletePhotoFiles(storage: ObjectStorage, photoKey: string) {
-  const results = await Promise.allSettled(sizes.map((s) => storage.delete(objectKey(photoKey, s))))
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      console.error(`[esaf/core] Kunne ikke slette profilbildet ${photoKey}:`, result.reason)
-    }
-  }
-}
+const deletePhotoFiles = (storage: ObjectStorage, photoKey: string) =>
+  deleteImageFiles(
+    storage,
+    sizes.map((s) => objectKey(photoKey, s)),
+    `profilbildet ${photoKey}`,
+  )
 
 /** Laster opp eller bytter profilbildet og gir adressene til det nye bildet. */
 export async function setProfilePhoto(
@@ -205,18 +156,13 @@ export async function setProfilePhoto(
   await uploadTarget(db, personId, isOwn, false)
   const images = await processProfilePhoto(file)
 
-  // Filene lagres før databasen peker på dem, så et bilde aldri mangler. Feiler
-  // én, ryddes det opp først når alle er ferdige; ellers kunne en fil som ennå
-  // var under skriving, blitt liggende igjen.
-  const photoKey = newPhotoKey()
-  const saved = await Promise.allSettled(
-    sizes.map((s) => storage.put(objectKey(photoKey, s), images[s], PHOTO_CONTENT_TYPE)),
+  // Filene lagres før databasen peker på dem, så et bilde aldri mangler.
+  const photoKey = newImageKey()
+  await putImageFiles(
+    storage,
+    sizes.map((s) => ({ key: objectKey(photoKey, s), body: images[s] })),
+    `profilbildet ${photoKey}`,
   )
-  const failed = saved.find((r) => r.status === 'rejected')
-  if (failed) {
-    await deletePhotoFiles(storage, photoKey)
-    throw failed.reason
-  }
 
   let previous: string | null
   try {
@@ -282,7 +228,7 @@ export async function readProfilePhoto(
   name: string,
 ): Promise<Uint8Array> {
   assertMember(viewer)
-  const match = FILE_NAME.exec(name)
+  const match = IMAGE_FILE_NAME.exec(name)
   const size = sizes.find((s) => String(PHOTO_SIZES[s]) === match?.[2])
   if (!match || !size) throw new NotFoundError('Fant ikke bildet.')
   const photoKey = match[1]!

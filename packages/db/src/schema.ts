@@ -225,13 +225,20 @@ export const company = pgTable(
       .default(sql`'{}'::text[]`),
     status: companyStatus().notNull().default('active'),
     /**
+     * Logoen: en tilfeldig nøkkel til logofilene i lagringen (se `logos.ts` i
+     * @esaf/core), som `person.photoKey`. Null betyr bokstavflis.
+     */
+    logoKey: text(),
+    /**
      * Sist noen redigerte selskapsinfoen. Null betyr at selskapet bare er opprettet
      * fra et navn; da ryddes det bort når ingen lenger er knyttet til det.
      */
     editedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
+  // Logoruten slår opp selskapet på nøkkelen ved hver forespørsel.
   (t) => [
+    uniqueIndex().on(t.logoKey),
     check(
       'company_founded_year_range',
       sql`${t.foundedYear} is null or ${t.foundedYear} between 1800 and 2100`,

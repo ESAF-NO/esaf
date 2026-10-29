@@ -2,7 +2,7 @@ import type { CompanyDetails } from '@esaf/core'
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { ArrowLeft, ArrowUpRight, CalendarDays, Globe, MapPin, Pencil, Rocket } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Avatar, buttonClass, Card, CompanyMark, cx, Verified } from '#/components/ui.tsx'
+import { Avatar, buttonClass, Card, CompanyLogo, cx, Verified } from '#/components/ui.tsx'
 import { statusLabels } from '#/lib/companies.ts'
 import { fetchCompany } from '#/lib/companies.functions.ts'
 import { yearSpan } from '#/lib/format.ts'
@@ -95,7 +95,7 @@ function CompanyPage() {
 
       <Card className="p-5 sm:p-8">
         <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
-          <CompanyMark name={c.name} size="xl" />
+          <CompanyLogo name={c.name} logo={c.logo} size="xl" />
           <div className="min-w-0 flex-1 basis-60">
             <h1 className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xl font-semibold tracking-tight text-stone-950 sm:text-3xl">
               <span className="break-words">{c.name}</span>

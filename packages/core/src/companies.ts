@@ -6,6 +6,14 @@ import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { loadCompanyEvents, type CompanyEvent } from './company-events.ts'
+import {
+  listMyLinkRequests,
+  loadCompanySuggestions,
+  loadRequestedLinks,
+  viewerCompanyRoles,
+  type LinkRequestView,
+  type SuggestionView,
+} from './contributions.ts'
 import { deleteLogoFiles, logoUrls, type CompanyLogoUrls } from './logos.ts'
 import type { Tx } from './members.ts'
 import { loadQuotes, type Quote } from './quotes.ts'
@@ -27,8 +35,11 @@ const {
   cohort,
   company,
   companyEvent,
+  companyLinkRequest,
+  companySuggestion,
   experience,
   membership,
+  notification,
   person,
   personCohort,
   quote,
@@ -180,6 +191,17 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   /** Den innloggede er gründer, i ES-teamet eller jobber der nå. */
   connected: boolean
   canEdit: boolean
+  /** Hvordan den innloggede selv er knyttet til selskapet, også som tidligere ansatt. */
+  viewerRoles: { founder: boolean; employee: boolean; es: boolean }
+  /**
+   * Åpne forslag: alle for dem som kan redigere, ellers den innloggedes egne.
+   * Andre medlemmer foreslår endringer i stedet for å redigere (`!canEdit`).
+   */
+  suggestions: SuggestionView[]
+  /** Noen sier at den innloggede var med i selskapet, og venter på svar. */
+  linkRequests: LinkRequestView[]
+  /** Den innloggede har lagt til andre her, og venter på at de bekrefter. */
+  requestedLinks: LinkRequestView[]
 }
 
 /** Slugen er byttet ut (nytt navn, eller slått sammen med et annet selskap). */
@@ -473,11 +495,16 @@ export async function getCompany(
           ? row.status === 'unknown' && row.lastSeenOnEsSite !== null
           : row[field] !== null,
   )
-  const [events, quotes, sources] = await Promise.all([
-    loadCompanyEvents(db, row.id, { includeReview: canEdit }),
-    loadQuotes(db, viewer, { companyId: row.id }),
-    loadFieldSources(db, viewer, 'company', row.id, shown),
-  ])
+  const [events, quotes, sources, viewerRoles, suggestions, linkRequests, requestedLinks] =
+    await Promise.all([
+      loadCompanyEvents(db, row.id, { includeReview: canEdit }),
+      loadQuotes(db, viewer, { companyId: row.id }),
+      loadFieldSources(db, viewer, 'company', row.id, shown),
+      viewerCompanyRoles(db, viewer.personId, row.id),
+      loadCompanySuggestions(db, viewer, row.id, { canEdit }),
+      listMyLinkRequests(db, viewer, { companyId: row.id }),
+      loadRequestedLinks(db, viewer, row.id),
+    ])
   return {
     ...row,
     logo: logoUrls(logoKey),
@@ -489,6 +516,10 @@ export async function getCompany(
     sources,
     connected,
     canEdit,
+    viewerRoles,
+    suggestions,
+    linkRequests,
+    requestedLinks,
   }
 }
 
@@ -529,13 +560,94 @@ export async function getEditableCompany(
   }
 }
 
-const pgCode = (error: unknown): string | undefined => {
+export const pgCode = (error: unknown): string | undefined => {
   const e = error as { code?: string; cause?: { code?: string } } | null
   return e?.code ?? e?.cause?.code
 }
 
 const sameTags = (a: string[], b: string[]) =>
   a.length === b.length && a.every((tag, i) => tag === b[i])
+
+/** Selskapsinfo slik den står i databasen, låst for oppdatering. */
+type CompanyRow = Awaited<ReturnType<typeof lockCompany>>
+
+export async function lockCompany(tx: Tx, companyId: string) {
+  const [current] = await tx
+    .select(editableColumns)
+    .from(company)
+    .where(eq(company.id, companyId))
+    .for('update')
+  if (!current) throw new NotFoundError('Fant ikke selskapet.')
+  return current
+}
+
+/** Feltene i `values` som er forskjellige fra det som står i databasen. */
+export function changedCompanyFields(
+  current: Pick<CompanyRow, keyof z.output<typeof companyInput>>,
+  values: Partial<z.output<typeof companyInput>>,
+) {
+  return (Object.keys(values) as (keyof typeof values)[]).filter((key) =>
+    key === 'industries'
+      ? !sameTags(values.industries!, current.industries)
+      : values[key] !== current[key],
+  )
+}
+
+/**
+ * Skriver endret selskapsinfo i en transaksjon som allerede har låst selskapet
+ * og sjekket tilgang. Nytt navn gir ny slug, og den gamle blir et alias. `connected`
+ * avgjør om kildene bekreftes (knyttet til selskapet) eller glemmes (admin).
+ * Gir feltene som faktisk ble endret.
+ */
+export async function writeCompanyValues(
+  tx: Tx,
+  viewer: Viewer,
+  current: CompanyRow,
+  values: Partial<z.output<typeof companyInput>>,
+  { connected }: { connected: boolean },
+): Promise<{ slug: string; changed: string[] }> {
+  const changed = changedCompanyFields(current, values)
+  if (!changed.length) return { slug: current.slug, changed }
+  const name = values.name ?? current.name
+  const slug = companySlug(name)
+  if (slug !== current.slug) {
+    const [taken] = await tx
+      .select({ name: company.name })
+      .from(company)
+      .where(
+        and(
+          ne(company.id, current.id),
+          or(eq(company.slug, slug), sql`${slug} = any(${company.aliasSlugs})`),
+        ),
+      )
+    if (taken) {
+      throw new DomainError(
+        `Navnet hører allerede til ${taken.name}. ` +
+          (can(viewer, 'profiles.edit')
+            ? 'Slå dem sammen i stedet, under Admin → Selskaper eller nederst på redigeringssiden.'
+            : 'Be en admin om å slå dem sammen.'),
+      )
+    }
+  }
+  await tx
+    .update(company)
+    .set({
+      ...values,
+      slug,
+      aliasSlugs: [...new Set([...current.aliasSlugs, current.slug])].filter((s) => s !== slug),
+      editedAt: new Date(),
+    })
+    .where(eq(company.id, current.id))
+  // De som er knyttet til selskapet, bekrefter det de endrer; admins erstatter det.
+  await recordFieldEdits(tx, 'company', current.id, changed, connected ? 'confirm' : 'forget')
+  return { slug, changed }
+}
+
+/** Oversetter brudd på unik slug (to samtidige navnebytter til samme navn). */
+export function rethrowSlugConflict(error: unknown): never {
+  if (pgCode(error) === '23505') throw new DomainError('Navnet hører allerede til et selskap.')
+  throw error
+}
 
 /**
  * Lagrer selskapsinfo. Gründere, ES-teamet og de som jobber der nå kan endre den,
@@ -555,55 +667,13 @@ export async function updateCompany(
 
   try {
     return await db.transaction(async (tx) => {
-      const [current] = await tx
-        .select(editableColumns)
-        .from(company)
-        .where(eq(company.id, companyId))
-        .for('update')
-      if (!current) throw new NotFoundError('Fant ikke selskapet.')
+      const current = await lockCompany(tx, companyId)
       const connected = await isConnected(tx, viewer.personId, companyId)
       if (!connected) assertCan(viewer, 'profiles.edit')
-
-      const changed = (Object.keys(values) as (keyof typeof values)[]).filter((key) =>
-        key === 'industries'
-          ? !sameTags(values.industries, current.industries)
-          : values[key] !== current[key],
-      )
-      if (!changed.length) return { slug: current.slug }
-
-      const slug = companySlug(values.name)
-      if (slug !== current.slug) {
-        const [taken] = await tx
-          .select({ name: company.name })
-          .from(company)
-          .where(
-            and(
-              ne(company.id, companyId),
-              or(eq(company.slug, slug), sql`${slug} = any(${company.aliasSlugs})`),
-            ),
-          )
-        if (taken) {
-          throw new DomainError(
-            `Navnet hører allerede til ${taken.name}. ` +
-              (can(viewer, 'profiles.edit')
-                ? 'Slå dem sammen i stedet, nederst på denne siden.'
-                : 'Be en admin om å slå dem sammen.'),
-          )
-        }
-      }
-      await tx
-        .update(company)
-        .set({
-          ...values,
-          slug,
-          aliasSlugs: [...new Set([...current.aliasSlugs, current.slug])].filter((s) => s !== slug),
-          editedAt: new Date(),
-        })
-        .where(eq(company.id, companyId))
-
-      // De som er knyttet til selskapet, bekrefter det de endrer; admins erstatter det.
-      await recordFieldEdits(tx, 'company', companyId, changed, connected ? 'confirm' : 'forget')
-      if (!connected) {
+      const { slug, changed } = await writeCompanyValues(tx, viewer, current, values, {
+        connected,
+      })
+      if (changed.length && !connected) {
         await tx.insert(auditEvent).values({
           actorPersonId: viewer.personId,
           action: 'company.admin_edit',
@@ -619,9 +689,7 @@ export async function updateCompany(
       return { slug }
     })
   } catch (error) {
-    // To samtidige navnebytter til samme navn.
-    if (pgCode(error) === '23505') throw new DomainError('Navnet hører allerede til et selskap.')
-    throw error
+    return rethrowSlugConflict(error)
   }
 }
 
@@ -858,6 +926,29 @@ export async function mergeCompanies(
       .set({ companyId: target.id })
       .where(eq(companyEvent.companyId, source.id))
     await tx.update(quote).set({ companyId: target.id }).where(eq(quote.companyId, source.id))
+    // Forslag, tilknytninger og varsler om duplikatet gjelder nå selskapet det slås sammen med.
+    await tx
+      .update(companySuggestion)
+      .set({ companyId: target.id })
+      .where(eq(companySuggestion.companyId, source.id))
+    // En åpen tilknytning for samme person og rolle i begge blir én.
+    await tx
+      .delete(companyLinkRequest)
+      .where(
+        and(
+          eq(companyLinkRequest.companyId, source.id),
+          eq(companyLinkRequest.status, 'pending'),
+          sql`exists (select 1 from ${companyLinkRequest} other where other.company_id = ${target.id} and other.person_id = ${companyLinkRequest.personId} and other.role = ${companyLinkRequest.role} and other.status = 'pending')`,
+        ),
+      )
+    await tx
+      .update(companyLinkRequest)
+      .set({ companyId: target.id })
+      .where(eq(companyLinkRequest.companyId, source.id))
+    await tx
+      .update(notification)
+      .set({ companyId: target.id })
+      .where(eq(notification.companyId, source.id))
     // Kildene følger feltene som hentes fra duplikatet.
     const filled: CompanySourceField[] = (
       ['tagline', 'description', 'website', 'foundedYear', 'location'] as const

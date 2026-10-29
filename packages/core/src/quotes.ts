@@ -231,3 +231,23 @@ export async function deleteQuote(db: Db, viewer: Viewer, quoteId: string): Prom
     }
   })
 }
+
+/**
+ * Bekrefter hvem som sa sitatet, så det vises for alle (`confidence = 'high'`).
+ * Bare admins, fra Gjennomgang. Logges.
+ */
+export async function confirmQuote(db: Db, viewer: Viewer, quoteId: string): Promise<void> {
+  assertCan(viewer, 'profiles.edit')
+  await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(quote).where(eq(quote.id, quoteId)).for('update')
+    if (!current) throw new NotFoundError('Fant ikke sitatet.')
+    if (current.confidence === 'high') throw new DomainError('Sitatet er allerede bekreftet.')
+    await tx.update(quote).set({ confidence: 'high' }).where(eq(quote.id, quoteId))
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'quote.confirm',
+      subjectPersonId: current.personId,
+      details: { quoteId, speaker: current.speakerName, previous: current.confidence },
+    })
+  })
+}

@@ -7,7 +7,7 @@ import { NotFoundError } from './errors.ts'
 import { mentionsToPlainText, reachablePeople } from './mentions.ts'
 import type { Tx } from './members.ts'
 
-const { cohort, comment, notification, person, personCohort, post } = schema
+const { cohort, comment, company, notification, person, personCohort, post } = schema
 
 /**
  * Varsler lages i samme transaksjon som det de handler om, så et varsel aldri
@@ -22,17 +22,19 @@ const { cohort, comment, notification, person, personCohort, post } = schema
 
 export const notificationTypes = schema.notificationType.enumValues
 
-type NewNotification = {
+export type NewNotification = {
   recipientPersonId: string
   type: NotificationType
   actorPersonId: string | null
   postId?: string
   commentId?: string
+  companyId?: string
   eventKey: string
   payload?: NotificationPayload
 }
 
-async function deliver(tx: Tx, rows: NewNotification[]) {
+/** Lagrer varslene etter reglene over. Brukes også av forslag og tilknytninger (contributions.ts). */
+export async function deliver(tx: Tx, rows: NewNotification[]) {
   const wanted = rows.filter((r) => r.recipientPersonId !== r.actorPersonId)
   if (!wanted.length) return
   const reachable = await reachablePeople(
@@ -171,6 +173,12 @@ export type NotificationView = {
   actor: { personId: string; fullName: string; claimed: boolean } | null
   post: { id: string; title: string } | null
   commentId: string | null
+  /** Selskapet, for forslag og tilknytninger. Navnet er det gjeldende. */
+  company: { slug: string; name: string } | null
+  /** Hva et forslag gjaldt: selskapsinfo eller en hendelse. */
+  suggestionKind: NotificationPayload['suggestionKind'] | null
+  /** Rollen i en tilknytning: gründer, ES-team eller ansatt. */
+  linkRole: NotificationPayload['linkRole'] | null
   /** Starten på kommentaren eller innlegget, med omtaler som vanlig tekst. */
   excerpt: string | null
   graduationYear: number | null
@@ -227,6 +235,8 @@ export async function listNotifications(
       actorUserId: actor.userId,
       postId: post.id,
       postTitle: post.title,
+      companySlug: company.slug,
+      companyName: company.name,
       // Innholdet i innlegget trengs bare til utdrag når varselet gjelder selve innlegget.
       postBody: sql<
         string | null
@@ -237,6 +247,7 @@ export async function listNotifications(
     .leftJoin(actor, eq(actor.id, notification.actorPersonId))
     .leftJoin(post, eq(post.id, notification.postId))
     .leftJoin(comment, eq(comment.id, notification.commentId))
+    .leftJoin(company, eq(company.id, notification.companyId))
     .where(and(...conditions))
     .orderBy(desc(notification.createdAt), desc(notification.id))
     .limit(limit + 1)
@@ -254,6 +265,9 @@ export async function listNotifications(
           : null,
       post: r.postId && r.postTitle !== null ? { id: r.postId, title: r.postTitle } : null,
       commentId: r.commentId,
+      company: r.companySlug && r.companyName ? { slug: r.companySlug, name: r.companyName } : null,
+      suggestionKind: r.payload.suggestionKind ?? null,
+      linkRole: r.payload.linkRole ?? null,
       excerpt: excerptOf(r.commentBody ?? r.postBody),
       graduationYear: r.payload.graduationYear ?? null,
     })),

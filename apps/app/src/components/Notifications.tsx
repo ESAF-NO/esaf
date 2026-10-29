@@ -17,10 +17,18 @@ import {
   readAllNotifications,
   readNotification,
 } from '#/lib/notifications.functions.ts'
+import { linkRoleLabels } from './Contributions.tsx'
 import { Avatar, cx } from './ui.tsx'
 
-/** Hvor et varsel leder: til kommentaren, innlegget, personen eller kullet. */
+/** Hvor et varsel leder: til kommentaren, innlegget, selskapet, personen eller kullet. */
 function target(n: NotificationView) {
+  if (n.company) {
+    return linkOptions({
+      to: '/selskaper/$slug',
+      params: { slug: n.company.slug },
+      hash: n.type === 'company_suggestion' ? 'forslag' : undefined,
+    })
+  }
   if (n.post) {
     return linkOptions({
       to: '/feed/$postId',
@@ -39,7 +47,45 @@ function Sentence({ n }: { n: NotificationView }) {
     <strong className="font-semibold text-stone-900">{n.actor?.fullName ?? 'Noen'}</strong>
   )
   const title = n.post && <span className="font-medium text-stone-900">«{n.post.title}»</span>
+  const company = (
+    <span className="font-medium text-stone-900">{n.company?.name ?? 'et selskap'}</span>
+  )
+  const role = n.linkRole ? linkRoleLabels[n.linkRole] : 'med'
   switch (n.type) {
+    case 'company_suggestion':
+      return n.suggestionKind === 'event' ? (
+        <>
+          {who} foreslår en ny hendelse i historikken til {company}
+        </>
+      ) : (
+        <>
+          {who} foreslår endringer i {company}
+        </>
+      )
+    case 'suggestion_accepted':
+      return (
+        <>
+          {who} godtok forslaget ditt til {company}
+        </>
+      )
+    case 'suggestion_rejected':
+      return (
+        <>
+          {who} avslo forslaget ditt til {company}
+        </>
+      )
+    case 'company_link_request':
+      return (
+        <>
+          {who} sier at du var {role === 'med' ? 'med' : role} i {company}. Stemmer det?
+        </>
+      )
+    case 'company_link_confirmed':
+      return (
+        <>
+          {who} bekreftet at de var {role} i {company}
+        </>
+      )
     case 'comment_on_post':
       return (
         <>
@@ -187,8 +233,8 @@ export function NoNotifications({ children }: { children?: ReactNode }) {
       </div>
       <p className="mt-3 text-sm font-medium text-stone-900">Ingen varsler ennå</p>
       <p className="mx-auto mt-1 max-w-xs text-sm text-stone-500">
-        Du får varsel når noen kommenterer innleggene dine eller der du har kommentert, og når noen
-        nevner deg med @.
+        Du får varsel når noen kommenterer innleggene dine eller der du har kommentert, når noen
+        nevner deg med @, og om forslag og selskaper du er knyttet til.
       </p>
       {children}
     </div>

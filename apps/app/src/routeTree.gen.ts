@@ -21,8 +21,11 @@ import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
+import { Route as KontoAdminGjennomgangRouteImport } from './routes/_konto/admin/gjennomgang'
 import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
 import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
+import { Route as KontoAdminProfilerRouteImport } from './routes/_konto/admin/profiler'
+import { Route as KontoAdminSelskaperRouteImport } from './routes/_konto/admin/selskaper'
 import { Route as KontoFeedIndexRouteImport } from './routes/_konto/feed/index'
 import { Route as KontoFeedPostIdRouteImport } from './routes/_konto/feed/$postId'
 import { Route as KontoFeedNyRouteImport } from './routes/_konto/feed/ny'
@@ -37,6 +40,7 @@ import { Route as KontoFeedPostIdRedigerRouteImport } from './routes/_konto/feed
 import { Route as KontoMedlemmerPersonIdIndexRouteImport } from './routes/_konto/medlemmer/$personId/index'
 import { Route as KontoMedlemmerPersonIdRedigerRouteImport } from './routes/_konto/medlemmer/$personId/rediger'
 import { Route as KontoSelskaperSlugIndexRouteImport } from './routes/_konto/selskaper/$slug/index'
+import { Route as KontoSelskaperSlugForeslaRouteImport } from './routes/_konto/selskaper/$slug/foresla'
 import { Route as KontoSelskaperSlugRedigerRouteImport } from './routes/_konto/selskaper/$slug/rediger'
 import { Route as ApiMedlemmerPersonIdBildeRouteImport } from './routes/api/medlemmer/$personId/bilde'
 import { Route as ApiSelskaperCompanyIdLogoRouteImport } from './routes/api/selskaper/$companyId/logo'
@@ -100,6 +104,11 @@ const KontoAdminIndexRoute = KontoAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
+const KontoAdminGjennomgangRoute = KontoAdminGjennomgangRouteImport.update({
+  id: '/gjennomgang',
+  path: '/gjennomgang',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
 const KontoAdminLoggRoute = KontoAdminLoggRouteImport.update({
   id: '/logg',
   path: '/logg',
@@ -108,6 +117,16 @@ const KontoAdminLoggRoute = KontoAdminLoggRouteImport.update({
 const KontoAdminMedlemmerRoute = KontoAdminMedlemmerRouteImport.update({
   id: '/medlemmer',
   path: '/medlemmer',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminProfilerRoute = KontoAdminProfilerRouteImport.update({
+  id: '/profiler',
+  path: '/profiler',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminSelskaperRoute = KontoAdminSelskaperRouteImport.update({
+  id: '/selskaper',
+  path: '/selskaper',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
 const KontoFeedIndexRoute = KontoFeedIndexRouteImport.update({
@@ -182,6 +201,12 @@ const KontoSelskaperSlugIndexRoute = KontoSelskaperSlugIndexRouteImport.update({
   path: '/selskaper/$slug/',
   getParentRoute: () => KontoRoute,
 } as any)
+const KontoSelskaperSlugForeslaRoute =
+  KontoSelskaperSlugForeslaRouteImport.update({
+    id: '/selskaper/$slug/foresla',
+    path: '/selskaper/$slug/foresla',
+    getParentRoute: () => KontoRoute,
+  } as any)
 const KontoSelskaperSlugRedigerRoute =
   KontoSelskaperSlugRedigerRouteImport.update({
     id: '/selskaper/$slug/rediger',
@@ -212,8 +237,11 @@ export interface FileRoutesByFullPath {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/admin/profiler': typeof KontoAdminProfilerRoute
+  '/admin/selskaper': typeof KontoAdminSelskaperRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/kull/$year': typeof KontoKullYearRoute
@@ -227,6 +255,7 @@ export interface FileRoutesByFullPath {
   '/selskaper/': typeof KontoSelskaperIndexRoute
   '/feed/$postId/rediger': typeof KontoFeedPostIdRedigerRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
   '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
   '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
@@ -243,8 +272,11 @@ export interface FileRoutesByTo {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/admin/profiler': typeof KontoAdminProfilerRoute
+  '/admin/selskaper': typeof KontoAdminSelskaperRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/kull/$year': typeof KontoKullYearRoute
@@ -258,6 +290,7 @@ export interface FileRoutesByTo {
   '/selskaper': typeof KontoSelskaperIndexRoute
   '/feed/$postId/rediger': typeof KontoFeedPostIdRedigerRoute
   '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
   '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
   '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
@@ -277,8 +310,11 @@ export interface FileRoutesById {
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/_konto/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
   '/_konto/admin/logg': typeof KontoAdminLoggRoute
   '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/_konto/admin/profiler': typeof KontoAdminProfilerRoute
+  '/_konto/admin/selskaper': typeof KontoAdminSelskaperRoute
   '/_konto/feed/$postId': typeof KontoFeedPostIdRoute
   '/_konto/feed/ny': typeof KontoFeedNyRoute
   '/_konto/kull/$year': typeof KontoKullYearRoute
@@ -292,6 +328,7 @@ export interface FileRoutesById {
   '/_konto/selskaper/': typeof KontoSelskaperIndexRoute
   '/_konto/feed/$postId_/rediger': typeof KontoFeedPostIdRedigerRoute
   '/_konto/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/_konto/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
   '/_konto/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
   '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
@@ -311,8 +348,11 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/admin/gjennomgang'
     | '/admin/logg'
     | '/admin/medlemmer'
+    | '/admin/profiler'
+    | '/admin/selskaper'
     | '/feed/$postId'
     | '/feed/ny'
     | '/kull/$year'
@@ -326,6 +366,7 @@ export interface FileRouteTypes {
     | '/selskaper/'
     | '/feed/$postId/rediger'
     | '/medlemmer/$personId/rediger'
+    | '/selskaper/$slug/foresla'
     | '/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
     | '/api/selskaper/$companyId/logo'
@@ -342,8 +383,11 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/admin/gjennomgang'
     | '/admin/logg'
     | '/admin/medlemmer'
+    | '/admin/profiler'
+    | '/admin/selskaper'
     | '/feed/$postId'
     | '/feed/ny'
     | '/kull/$year'
@@ -357,6 +401,7 @@ export interface FileRouteTypes {
     | '/selskaper'
     | '/feed/$postId/rediger'
     | '/medlemmer/$personId/rediger'
+    | '/selskaper/$slug/foresla'
     | '/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
     | '/api/selskaper/$companyId/logo'
@@ -375,8 +420,11 @@ export interface FileRouteTypes {
     | '/_konto/velkommen'
     | '/_konto/venter'
     | '/api/health'
+    | '/_konto/admin/gjennomgang'
     | '/_konto/admin/logg'
     | '/_konto/admin/medlemmer'
+    | '/_konto/admin/profiler'
+    | '/_konto/admin/selskaper'
     | '/_konto/feed/$postId'
     | '/_konto/feed/ny'
     | '/_konto/kull/$year'
@@ -390,6 +438,7 @@ export interface FileRouteTypes {
     | '/_konto/selskaper/'
     | '/_konto/feed/$postId_/rediger'
     | '/_konto/medlemmer/$personId/rediger'
+    | '/_konto/selskaper/$slug/foresla'
     | '/_konto/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
     | '/api/selskaper/$companyId/logo'
@@ -496,6 +545,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoAdminIndexRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
+    '/_konto/admin/gjennomgang': {
+      id: '/_konto/admin/gjennomgang'
+      path: '/gjennomgang'
+      fullPath: '/admin/gjennomgang'
+      preLoaderRoute: typeof KontoAdminGjennomgangRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
     '/_konto/admin/logg': {
       id: '/_konto/admin/logg'
       path: '/logg'
@@ -508,6 +564,20 @@ declare module '@tanstack/react-router' {
       path: '/medlemmer'
       fullPath: '/admin/medlemmer'
       preLoaderRoute: typeof KontoAdminMedlemmerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/profiler': {
+      id: '/_konto/admin/profiler'
+      path: '/profiler'
+      fullPath: '/admin/profiler'
+      preLoaderRoute: typeof KontoAdminProfilerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/selskaper': {
+      id: '/_konto/admin/selskaper'
+      path: '/selskaper'
+      fullPath: '/admin/selskaper'
+      preLoaderRoute: typeof KontoAdminSelskaperRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
     '/_konto/feed/': {
@@ -608,6 +678,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoSelskaperSlugIndexRouteImport
       parentRoute: typeof KontoRoute
     }
+    '/_konto/selskaper/$slug/foresla': {
+      id: '/_konto/selskaper/$slug/foresla'
+      path: '/selskaper/$slug/foresla'
+      fullPath: '/selskaper/$slug/foresla'
+      preLoaderRoute: typeof KontoSelskaperSlugForeslaRouteImport
+      parentRoute: typeof KontoRoute
+    }
     '/_konto/selskaper/$slug/rediger': {
       id: '/_konto/selskaper/$slug/rediger'
       path: '/selskaper/$slug/rediger'
@@ -633,14 +710,20 @@ declare module '@tanstack/react-router' {
 }
 
 interface KontoAdminRouteRouteChildren {
+  KontoAdminGjennomgangRoute: typeof KontoAdminGjennomgangRoute
   KontoAdminLoggRoute: typeof KontoAdminLoggRoute
   KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
+  KontoAdminProfilerRoute: typeof KontoAdminProfilerRoute
+  KontoAdminSelskaperRoute: typeof KontoAdminSelskaperRoute
   KontoAdminIndexRoute: typeof KontoAdminIndexRoute
 }
 
 const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
+  KontoAdminGjennomgangRoute: KontoAdminGjennomgangRoute,
   KontoAdminLoggRoute: KontoAdminLoggRoute,
   KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
+  KontoAdminProfilerRoute: KontoAdminProfilerRoute,
+  KontoAdminSelskaperRoute: KontoAdminSelskaperRoute,
   KontoAdminIndexRoute: KontoAdminIndexRoute,
 }
 
@@ -664,6 +747,7 @@ interface KontoRouteChildren {
   KontoSelskaperIndexRoute: typeof KontoSelskaperIndexRoute
   KontoFeedPostIdRedigerRoute: typeof KontoFeedPostIdRedigerRoute
   KontoMedlemmerPersonIdRedigerRoute: typeof KontoMedlemmerPersonIdRedigerRoute
+  KontoSelskaperSlugForeslaRoute: typeof KontoSelskaperSlugForeslaRoute
   KontoSelskaperSlugRedigerRoute: typeof KontoSelskaperSlugRedigerRoute
   KontoMedlemmerPersonIdIndexRoute: typeof KontoMedlemmerPersonIdIndexRoute
   KontoSelskaperSlugIndexRoute: typeof KontoSelskaperSlugIndexRoute
@@ -685,6 +769,7 @@ const KontoRouteChildren: KontoRouteChildren = {
   KontoSelskaperIndexRoute: KontoSelskaperIndexRoute,
   KontoFeedPostIdRedigerRoute: KontoFeedPostIdRedigerRoute,
   KontoMedlemmerPersonIdRedigerRoute: KontoMedlemmerPersonIdRedigerRoute,
+  KontoSelskaperSlugForeslaRoute: KontoSelskaperSlugForeslaRoute,
   KontoSelskaperSlugRedigerRoute: KontoSelskaperSlugRedigerRoute,
   KontoMedlemmerPersonIdIndexRoute: KontoMedlemmerPersonIdIndexRoute,
   KontoSelskaperSlugIndexRoute: KontoSelskaperSlugIndexRoute,

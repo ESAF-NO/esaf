@@ -168,22 +168,23 @@ export async function confirmProfileFields(
 }
 
 /**
- * Når et selskap slås sammen med et annet: kildene for feltene som hentes fra
+ * Når to selskaper eller personer slås sammen: kildene for feltene som hentes fra
  * duplikatet, flyttes med. Resten slettes sammen med duplikatet.
  */
-export async function moveCompanySources(
+export async function moveFieldSources(
   tx: Tx,
+  entityType: FieldSourceEntity,
   sourceId: string,
   targetId: string,
   fields: readonly string[],
 ) {
-  const fromSource = and(eq(fieldSource.entityType, 'company'), eq(fieldSource.entityId, sourceId))
+  const fromSource = and(eq(fieldSource.entityType, entityType), eq(fieldSource.entityId, sourceId))
   if (fields.length) {
     // Kilder målet allerede har for samme felt og kilde, beholdes.
     const existing = await tx
       .select({ field: fieldSource.field, label: fieldSource.sourceLabel })
       .from(fieldSource)
-      .where(and(eq(fieldSource.entityType, 'company'), eq(fieldSource.entityId, targetId)))
+      .where(and(eq(fieldSource.entityType, entityType), eq(fieldSource.entityId, targetId)))
     const taken = new Set(existing.map((r) => `${r.field}\n${r.label}`))
     const moving = await tx
       .select({ id: fieldSource.id, field: fieldSource.field, label: fieldSource.sourceLabel })
@@ -196,6 +197,13 @@ export async function moveCompanySources(
   }
   await tx.delete(fieldSource).where(fromSource)
 }
+
+export const moveCompanySources = (
+  tx: Tx,
+  sourceId: string,
+  targetId: string,
+  fields: readonly string[],
+) => moveFieldSources(tx, 'company', sourceId, targetId, fields)
 
 /** Kildene til personer eller selskaper som slettes. Radene har ingen fremmednøkkel som tar dem. */
 export async function deleteFieldSources(

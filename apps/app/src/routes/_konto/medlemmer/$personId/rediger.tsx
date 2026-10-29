@@ -2,6 +2,7 @@ import type { CompanyLogoUrls, Experience } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, BriefcaseBusiness, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { PersonAdmin } from '#/components/PersonAdmin.tsx'
 import { PhotoUpload } from '#/components/PhotoUpload.tsx'
 import { CompanyInput, type CompanyValue } from '#/components/CompanyInput.tsx'
 import { TagInput } from '#/components/TagInput.tsx'
@@ -16,10 +17,20 @@ import {
   Textarea,
 } from '#/components/ui.tsx'
 import { industrySuggestions } from '#/lib/industries.ts'
+import { fetchPersonAdmin } from '#/lib/people.functions.ts'
 import { fetchEditableProfile, saveProfile } from '#/lib/profiles.functions.ts'
 
 export const Route = createFileRoute('/_konto/medlemmer/$personId/rediger')({
-  loader: ({ params }) => fetchEditableProfile({ data: { personId: params.personId } }),
+  loader: async ({ params, context: { viewer } }) => {
+    const [profile, admin] = await Promise.all([
+      fetchEditableProfile({ data: { personId: params.personId } }),
+      // Kull, e-post og sammenslåing er bare for admins med `profiles.edit`.
+      viewer.permissions.includes('profiles.edit')
+        ? fetchPersonAdmin({ data: { personId: params.personId } })
+        : null,
+    ])
+    return { ...profile, admin }
+  },
   head: () => ({ meta: [{ title: 'Rediger profil – ESAF' }] }),
   component: EditProfile,
 })
@@ -501,6 +512,8 @@ function EditProfile() {
           </Button>
         </div>
       </form>
+
+      {profile.admin && <PersonAdmin key={profile.personId} person={profile.admin} />}
     </div>
   )
 }

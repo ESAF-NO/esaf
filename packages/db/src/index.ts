@@ -6,7 +6,11 @@ export type {
   AccessRequestStatus,
   CohortRelation,
   CompanyEventType,
+  CompanyLinkRole,
+  CompanySuggestionChanges,
+  CompanySuggestionKind,
   CompanyStatus,
+  ContributionStatus,
   DatePrecision,
   FieldSourceEntity,
   MemberRole,
@@ -15,6 +19,7 @@ export type {
   NotificationType,
   PersonSource,
   PostChannel,
+  ReviewDismissalKind,
   SourceConfidence,
 } from './schema.ts'
 export { sql } from 'drizzle-orm'

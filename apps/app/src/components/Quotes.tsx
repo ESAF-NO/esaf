@@ -227,7 +227,7 @@ export function FeaturedQuote({ quote: q }: { quote: Quote }) {
 }
 
 /** Admins retter tekst, taler, dato og kilde, og hvor sikker kilden er. */
-function EditQuoteDialog({ quoteId, onClose }: { quoteId: string; onClose: () => void }) {
+export function EditQuoteDialog({ quoteId, onClose }: { quoteId: string; onClose: () => void }) {
   const router = useRouter()
   const load = useServerFn(fetchEditableQuote)
   const [values, setValues] = useState<QuoteFormValues | null>(null)

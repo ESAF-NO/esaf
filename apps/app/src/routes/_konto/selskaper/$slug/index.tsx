@@ -1,21 +1,37 @@
 import type { CompanyDetails, CompanySourceField } from '@esaf/core'
-import { createFileRoute, Link, redirect } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 import {
   ArrowLeft,
   ArrowUpRight,
   CalendarDays,
   Globe,
+  Hand,
   History,
+  LogOut,
   MapPin,
+  MessageSquarePlus,
   Pencil,
   Rocket,
+  UserPlus,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
+import { AddPersonDialog, JoinCompanyDialog } from '#/components/CompanyLinkDialogs.tsx'
 import { CompanyTimeline } from '#/components/CompanyTimeline.tsx'
+import { LinkRequestCard, SuggestionCard, useAction } from '#/components/Contributions.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
-import { Avatar, buttonClass, Card, CompanyLogo, cx, Verified } from '#/components/ui.tsx'
+import {
+  Avatar,
+  Button,
+  buttonClass,
+  Card,
+  CompanyLogo,
+  cx,
+  ErrorText,
+  Verified,
+} from '#/components/ui.tsx'
 import { statusLabels } from '#/lib/companies.ts'
 import { fetchCompany } from '#/lib/companies.functions.ts'
+import { leaveCompany } from '#/lib/contributions.functions.ts'
 import { longDay, yearSpan } from '#/lib/format.ts'
 import { companyFieldLabels, confidenceLabels } from '#/lib/sources.ts'
 
@@ -136,32 +152,46 @@ function CompanyPage() {
               </p>
             )}
           </div>
-          {(c.website || c.canEdit) && (
-            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-              {c.website && (
-                <a
-                  href={c.website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={buttonClass({ variant: 'secondary' })}
-                >
-                  <Globe className="size-4 text-stone-500" aria-hidden /> Nettside
-                  <ArrowUpRight className="size-3.5 text-stone-400" aria-hidden />
-                </a>
-              )}
-              {c.canEdit && (
-                <Link
-                  to="/selskaper/$slug/rediger"
-                  params={{ slug: c.slug }}
-                  className={buttonClass({ variant: 'secondary' })}
-                >
-                  <Pencil className="size-4" aria-hidden /> Rediger
-                </Link>
-              )}
-            </div>
-          )}
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            {c.website && (
+              <a
+                href={c.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonClass({ variant: 'secondary' })}
+              >
+                <Globe className="size-4 text-stone-500" aria-hidden /> Nettside
+                <ArrowUpRight className="size-3.5 text-stone-400" aria-hidden />
+              </a>
+            )}
+            {c.canEdit ? (
+              <Link
+                to="/selskaper/$slug/rediger"
+                params={{ slug: c.slug }}
+                className={buttonClass({ variant: 'secondary' })}
+              >
+                <Pencil className="size-4" aria-hidden /> Rediger
+              </Link>
+            ) : (
+              <Link
+                to="/selskaper/$slug/foresla"
+                params={{ slug: c.slug }}
+                className={buttonClass({ variant: 'secondary' })}
+              >
+                <MessageSquarePlus className="size-4" aria-hidden /> Foreslå endring
+              </Link>
+            )}
+          </div>
         </div>
       </Card>
+
+      {c.linkRequests.length > 0 && (
+        <Card className="mt-4 space-y-4 p-5 ring-brand-200">
+          {c.linkRequests.map((r) => (
+            <LinkRequestCard key={r.id} request={r} as="person" />
+          ))}
+        </Card>
+      )}
 
       {c.canEdit && bare && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand-50 p-4 text-sm text-brand-900 ring-1 ring-brand-200 ring-inset">
@@ -188,6 +218,29 @@ function CompanyPage() {
         )}
       >
         <div className="min-w-0 space-y-6">
+          {c.suggestions.length > 0 && (
+            <Card id="forslag" className="scroll-mt-20 p-5 sm:p-6">
+              <h2 className="text-sm font-semibold text-stone-950">
+                {c.canEdit ? 'Forslag til endringer' : 'Forslagene dine'}{' '}
+                <span className="font-normal text-stone-500 tabular-nums">
+                  {c.suggestions.length}
+                </span>
+              </h2>
+              <p className="mt-1 text-sm text-stone-500">
+                {c.canEdit
+                  ? 'Fra medlemmer som ikke kan redigere selskapet selv. Den som foreslo, får varsel når du har godtatt eller avslått.'
+                  : 'Venter på at noen som kan redigere selskapet, ser over dem.'}
+              </p>
+              <ul className="mt-4 divide-y divide-stone-100">
+                {c.suggestions.map((s) => (
+                  <li key={s.id} className="py-4 first:pt-0 last:pb-0">
+                    <SuggestionCard suggestion={s} canDecide={c.canEdit} />
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
           <Card className="p-5 sm:p-6">
             <h2 className="text-sm font-semibold text-stone-950">Om selskapet</h2>
             {c.description ? (
@@ -210,35 +263,7 @@ function CompanyPage() {
             adminEdit={c.canEdit && !c.connected}
           />
 
-          <Card className="p-5 sm:p-6">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
-              Fra ES
-              {c.people.length > 0 && (
-                <span className="font-normal text-stone-500 tabular-nums">{c.people.length}</span>
-              )}
-            </h2>
-            {c.people.length === 0 ? (
-              <p className="mt-2 text-sm text-stone-500">
-                Ingen fra ES er knyttet til {c.name} ennå. Selskapet dukker opp på profilen til dem
-                som legger det inn under erfaring.
-              </p>
-            ) : (
-              groups.map(({ role, title }) => {
-                const people = c.people.filter((p) => p.role === role)
-                if (!people.length) return null
-                return (
-                  <section key={role} className="mt-4 first-of-type:mt-3">
-                    <h3 className="text-xs font-medium text-stone-500">{title}</h3>
-                    <ul className="mt-1 divide-y divide-stone-100">
-                      {people.map((p) => (
-                        <PersonRow key={p.personId} person={p} />
-                      ))}
-                    </ul>
-                  </section>
-                )
-              })
-            )}
-          </Card>
+          <People company={c} />
 
           <QuoteList quotes={c.quotes} showSpeaker />
         </div>
@@ -350,6 +375,108 @@ function Sources({ sources }: { sources: CompanyDetails['sources'] }) {
           ))}
         </dl>
       </details>
+    </Card>
+  )
+}
+
+/**
+ * «Fra ES»: personene, «Jeg var med her» og «Legg til en person». Andre personer
+ * vises ikke før de selv har bekreftet.
+ */
+function People({ company: c }: { company: CompanyDetails }) {
+  const router = useRouter()
+  const { viewer } = Route.useRouteContext()
+  const [dialog, setDialog] = useState<'join' | 'add' | null>(null)
+  const { busy, error, run } = useAction()
+  const linked = c.viewerRoles.founder || c.viewerRoles.employee || c.viewerRoles.es
+
+  function leave() {
+    const question = `Fjerne ${c.name} fra profilen din? All erfaring derfra${c.viewerRoles.es ? ' og ES-selskapet' : ''} fjernes.`
+    if (!confirm(question)) return
+    void run(
+      () => leaveCompany({ data: { companyId: c.id } }),
+      async (result) => {
+        await router.invalidate()
+        // Et selskap ingen lenger er knyttet til og som bare fantes fra et navn, er borte.
+        if ((result as { companyDeleted: boolean }).companyDeleted) {
+          await router.navigate({ to: '/selskaper' })
+        }
+      },
+    )
+  }
+
+  return (
+    <Card className="p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
+          Fra ES
+          {c.people.length > 0 && (
+            <span className="font-normal text-stone-500 tabular-nums">{c.people.length}</span>
+          )}
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          {linked ? (
+            <Button variant="ghost" size="sm" onClick={leave} disabled={busy}>
+              <LogOut className="size-4" aria-hidden /> Fjern meg herfra
+            </Button>
+          ) : (
+            <Button variant="secondary" size="sm" onClick={() => setDialog('join')}>
+              <Hand className="size-4" aria-hidden /> Jeg var med her
+            </Button>
+          )}
+          <Button variant="secondary" size="sm" onClick={() => setDialog('add')}>
+            <UserPlus className="size-4" aria-hidden /> Legg til en person
+          </Button>
+        </div>
+      </div>
+      {error && (
+        <div className="mt-2">
+          <ErrorText>{error}</ErrorText>
+        </div>
+      )}
+      {c.people.length === 0 ? (
+        <p className="mt-2 text-sm text-stone-500">
+          Ingen fra ES er knyttet til {c.name} ennå. Var du med, trykk «Jeg var med her».
+        </p>
+      ) : (
+        groups.map(({ role, title }) => {
+          const people = c.people.filter((p) => p.role === role)
+          if (!people.length) return null
+          return (
+            <section key={role} className="mt-4 first-of-type:mt-3">
+              <h3 className="text-xs font-medium text-stone-500">{title}</h3>
+              <ul className="mt-1 divide-y divide-stone-100">
+                {people.map((p) => (
+                  <PersonRow key={p.personId} person={p} />
+                ))}
+              </ul>
+            </section>
+          )
+        })
+      )}
+      {c.requestedLinks.length > 0 && (
+        <section className="mt-5 rounded-xl bg-stone-50 p-4 ring-1 ring-stone-200 ring-inset">
+          <h3 className="text-xs font-medium text-stone-500">Venter på bekreftelse</h3>
+          <ul className="mt-3 space-y-4">
+            {c.requestedLinks.map((r) => (
+              <li key={r.id}>
+                <LinkRequestCard request={r} as="requester" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {dialog === 'join' && (
+        <JoinCompanyDialog companyId={c.id} name={c.name} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'add' && viewer.personId && (
+        <AddPersonDialog
+          companyId={c.id}
+          name={c.name}
+          viewerId={viewer.personId}
+          onClose={() => setDialog(null)}
+        />
+      )}
     </Card>
   )
 }

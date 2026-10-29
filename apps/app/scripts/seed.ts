@@ -328,7 +328,7 @@ const {
 } = schema
 
 await db.execute(
-  sql`truncate ${schema.fieldSource}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
+  sql`truncate ${schema.fieldSource}, ${schema.reviewDismissal}, ${schema.companySuggestion}, ${schema.companyLinkRequest}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
 )
 
 /** En innloggingskonto med bekreftet e-post og passord, som om personen hadde registrert seg. */

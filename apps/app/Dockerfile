@@ -17,6 +17,10 @@ RUN pnpm --filter @esaf/app build
 
 FROM node:24-slim
 ENV NODE_ENV=production PORT=3000
+# Coolifys helsesjekk kjører curl eller wget inne i containeren; slim-bildet har ingen av dem.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
 # Hele arbeidsområdet følger med, slik at migrering og admin-verktøy
 # (`pnpm admin:grant`, `pnpm profiles:import`) kan kjøres i containeren.

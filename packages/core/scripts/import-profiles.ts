@@ -145,7 +145,9 @@ try {
   console.log(
     `  ${plan.filter((r) => !r.emails.length).length} uten e-post (kan bare kobles manuelt av admin)`,
   )
-  console.log(`  ${plan.filter((r) => r.phone).length} med telefon (lagres skjult)`)
+  console.log(
+    `  ${plan.filter((r) => r.phone).length} med telefon (vises for medlemmer, kan skjules på profilen)`,
+  )
   console.log(`  ${parsed.errors.length} rader hoppet over`)
 
   const at = (sheet: string | undefined, line: number) =>

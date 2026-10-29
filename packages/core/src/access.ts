@@ -54,7 +54,10 @@ export const permissions = {
   'members.review': 'admin',
   /** Deaktivere og gjenopprette medlemmer med lavere rolle enn en selv. */
   'members.manage': 'admin',
-  /** Rette andres profiler, men aldri kontaktinfo. */
+  /**
+   * Rette andres profiler, men aldri kontaktinfo. På profiler uten konto kan
+   * kontaktinfo fra kullisten skjules eller vises.
+   */
   'profiles.edit': 'admin',
   /** Lese revisjonsloggen. */
   'audit.read': 'admin',

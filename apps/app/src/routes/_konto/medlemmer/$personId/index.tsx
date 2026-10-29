@@ -1,11 +1,14 @@
-import type { Experience, Profile, ProfileSourceField } from '@esaf/core'
+import type { ContactDetail, Experience, Profile, ProfileSourceField } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import {
   ArrowLeft,
   BadgeCheck,
   BriefcaseBusiness,
+  Check,
+  Copy,
   GraduationCap,
   Info,
+  Lock,
   Mail,
   MapPin,
   Pencil,
@@ -14,7 +17,7 @@ import {
   Rocket,
   Tent,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
@@ -268,9 +271,9 @@ function ProfilePage() {
                   <LinkedInIcon className="size-4 text-[#0A66C2]" /> LinkedIn
                 </a>
               )}
-              {p.contactEmail && (
+              {p.contactEmail && 'value' in p.contactEmail && (
                 <a
-                  href={`mailto:${p.contactEmail}`}
+                  href={`mailto:${p.contactEmail.value}`}
                   className={buttonClass({ variant: 'primary' })}
                 >
                   <Mail className="size-4" aria-hidden /> Send e-post
@@ -488,25 +491,24 @@ function ProfilePage() {
                   </li>
                 )}
                 {p.contactEmail && (
-                  <li>
-                    <a
-                      href={`mailto:${p.contactEmail}`}
-                      className="inline-flex items-center gap-2 break-all text-stone-700 hover:text-brand-600"
-                    >
-                      <Mail className="size-4 shrink-0 text-stone-400" aria-hidden />{' '}
-                      {p.contactEmail}
-                    </a>
-                  </li>
+                  <ContactRow
+                    icon={Mail}
+                    detail={p.contactEmail}
+                    href={(email) => `mailto:${email}`}
+                    hiddenLabel="E-post skjult"
+                    copyLabel="Kopier e-postadressen"
+                    isOwn={p.isOwn}
+                  />
                 )}
                 {p.phone && (
-                  <li>
-                    <a
-                      href={`tel:${p.phone.replace(/[^+0-9]/g, '')}`}
-                      className="inline-flex items-center gap-2 text-stone-700 hover:text-brand-600"
-                    >
-                      <Phone className="size-4 text-stone-400" aria-hidden /> {p.phone}
-                    </a>
-                  </li>
+                  <ContactRow
+                    icon={Phone}
+                    detail={p.phone}
+                    href={(phone) => `tel:${phone.replace(/[^+0-9]/g, '')}`}
+                    hiddenLabel="Telefon skjult"
+                    copyLabel="Kopier telefonnummeret"
+                    isOwn={p.isOwn}
+                  />
                 )}
               </ul>
             ) : (
@@ -520,6 +522,78 @@ function ProfilePage() {
         </aside>
       </div>
     </div>
+  )
+}
+
+/**
+ * E-post eller telefon i kontaktkortet. Skjult viser bare at det finnes, med en
+ * lås; verdien kommer aldri fra serveren.
+ */
+function ContactRow({
+  icon: Icon,
+  detail,
+  href,
+  hiddenLabel,
+  copyLabel,
+  isOwn,
+}: {
+  icon: typeof Mail
+  detail: ContactDetail
+  href: (value: string) => string
+  hiddenLabel: string
+  copyLabel: string
+  isOwn: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  if (!('value' in detail)) {
+    return (
+      <li
+        className="flex items-center gap-2 text-stone-500"
+        title={
+          isOwn
+            ? 'Andre medlemmer ser at du har skjult dette. Endre det under «Rediger profil».'
+            : 'Skjult for medlemmer.'
+        }
+      >
+        <Lock className="size-4 shrink-0 text-stone-400" aria-hidden /> {hiddenLabel}
+      </li>
+    )
+  }
+  return (
+    <li className="group flex items-center gap-1">
+      <a
+        href={href(detail.value)}
+        className="inline-flex min-w-0 items-center gap-2 break-all text-stone-700 hover:text-brand-600"
+      >
+        <Icon className="size-4 shrink-0 text-stone-400" aria-hidden /> {detail.value}
+      </a>
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(detail.value)
+            setCopied(true)
+          } catch {
+            // Utklippstavlen kan være sperret; lenken fungerer uansett.
+          }
+        }}
+        className="grid size-7 shrink-0 place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-2 focus-visible:outline-brand-500"
+        aria-label={copied ? 'Kopiert' : copyLabel}
+        title={copied ? 'Kopiert' : copyLabel}
+      >
+        {copied ? (
+          <Check className="size-3.5 text-emerald-600" aria-hidden />
+        ) : (
+          <Copy className="size-3.5" aria-hidden />
+        )}
+      </button>
+    </li>
   )
 }
 

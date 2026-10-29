@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Check,
   CircleCheck,
+  Lock,
   Phone,
   Search,
   ShieldCheck,
@@ -114,7 +115,14 @@ function Requests() {
 }
 
 /** En profil fra kullisten som forespørselen kan kobles til. */
-type Option = { personId: string; fullName: string; years: number[]; phone: string | null }
+type Option = {
+  personId: string
+  fullName: string
+  years: number[]
+  phone: string | null
+  /** Skjult for medlemmer. Admin ser det likevel, for å ringe og sjekke. */
+  phoneHidden: boolean
+}
 
 function Signal({ tone, children }: { tone: 'ok' | 'strong' | 'warn'; children: ReactNode }) {
   const Icon = tone === 'warn' ? AlertTriangle : tone === 'strong' ? ShieldCheck : CircleCheck
@@ -146,7 +154,14 @@ function RequestCard({ request: r }: { request: AccessRequestView }) {
     fullName: string
     years: number[]
     phone: string | null
-  }) => ({ personId: p.personId, fullName: p.fullName, years: p.years, phone: p.phone }) as Option
+    phoneHidden: boolean
+  }): Option => ({
+    personId: p.personId,
+    fullName: p.fullName,
+    years: p.years,
+    phone: p.phone,
+    phoneHidden: p.phoneHidden,
+  })
   const [options, setOptions] = useState<Option[]>(() =>
     [...(r.profile ? [r.profile] : []), ...r.suggestions].map(toOption),
   )
@@ -352,9 +367,18 @@ function ProfileOption({
         <a
           href={`tel:${o.phone.replace(/[^+0-9]/g, '')}`}
           className="inline-flex shrink-0 items-center gap-1 text-xs text-stone-500 hover:text-brand-600"
-          title="Nummeret fra telefonlista. Ring for å sjekke at det er personen selv."
+          title={
+            o.phoneHidden
+              ? 'Nummeret fra telefonlista, skjult for medlemmer. Ring for å sjekke at det er personen selv.'
+              : 'Nummeret fra telefonlista. Ring for å sjekke at det er personen selv.'
+          }
         >
-          <Phone className="size-3.5" aria-hidden /> {o.phone}
+          {o.phoneHidden ? (
+            <Lock className="size-3.5" aria-label="Skjult for medlemmer" />
+          ) : (
+            <Phone className="size-3.5" aria-hidden />
+          )}{' '}
+          {o.phone}
         </a>
       )}
     </li>

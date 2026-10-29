@@ -20,6 +20,12 @@ import {
   writeCompanyValues,
   type CompanyInput,
 } from './companies.ts'
+import {
+  findDuplicateArticle,
+  insertArticle,
+  parseArticle,
+  type CompanyArticleInput,
+} from './company-articles.ts'
 import { companyEventInput, eventValues, type CompanyEventInput } from './company-events.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
@@ -49,8 +55,8 @@ const {
  *   De kan også fjerne seg selv. Er de da gründer, ES-team eller ansatt nå, kan
  *   de redigere selskapet etter de vanlige reglene (`isConnected`).
  * - **Forslag:** Medlemmer som ikke kan redigere selskapet, kan foreslå endringer
- *   i selskapsinfoen (bare feltene som endres lagres, med verdien før og etter)
- *   og nye hendelser i historikken. De som kan redigere selskapet, og admins med
+ *   i selskapsinfoen (bare feltene som endres lagres, med verdien før og etter),
+ *   nye hendelser i historikken og saker under «I media». De som kan redigere selskapet, og admins med
  *   `profiles.edit`, godtar eller avslår. Den som foreslo får varsel, og kan
  *   trekke forslaget så lenge det ikke er behandlet. Ingen behandler sine egne.
  * - **Andre personer:** Sier et medlem at en annen person var med i et selskap,
@@ -252,6 +258,8 @@ export type SuggestionView = {
   fields: { field: string; from: SuggestedValue; to: SuggestedValue; current: SuggestedValue }[]
   /** For `event`: hendelsen som foreslås. */
   event: Extract<CompanySuggestionChanges, { kind: 'event' }>['event'] | null
+  /** For `article`: saken som foreslås. */
+  article: Extract<CompanySuggestionChanges, { kind: 'article' }>['article'] | null
   /** Den innloggede foreslo det, og kan trekke det. */
   own: boolean
 }
@@ -422,6 +430,40 @@ export async function suggestCompanyEvent(
   })
 }
 
+/**
+ * Foreslår en sak under «I media». Står saken der allerede (samme lenke), sies det
+ * fra med en gang.
+ */
+export async function suggestCompanyArticle(
+  db: Db,
+  viewer: Viewer,
+  companyId: string,
+  input: CompanyArticleInput,
+  note?: string | null,
+): Promise<{ id: string }> {
+  assertMember(viewer)
+  const article = parseArticle(input)
+  const comment = parse(noteInput, note ?? '')
+  return db.transaction(async (tx) => {
+    await startSuggestion(tx, viewer, companyId)
+    if (await findDuplicateArticle(tx, companyId, article.url)) {
+      throw new DomainError('Saken står allerede under «I media».')
+    }
+    const [row] = await tx
+      .insert(companySuggestion)
+      .values({
+        companyId,
+        suggestedByPersonId: viewer.personId,
+        kind: 'article',
+        changes: { kind: 'article', article },
+        note: comment,
+      })
+      .returning({ id: companySuggestion.id })
+    await notifyConnected(tx, companyId, viewer.personId, row!.id, 'article')
+    return { id: row!.id }
+  })
+}
+
 async function lockSuggestion(tx: Tx, suggestionId: string) {
   const [row] = await tx
     .select()
@@ -498,11 +540,17 @@ export async function decideSuggestion(
           })
           slug = written.slug
           fields = written.changed
-        } else {
+        } else if (row.changes.kind === 'event') {
           await tx.insert(companyEvent).values({
             companyId: row.companyId,
             ...eventValues(parse(companyEventInput, row.changes.event)),
             confidence: 'high',
+          })
+        } else {
+          // Står saken der allerede (lagt inn mens forslaget ventet), er forslaget gjennomført.
+          await insertArticle(tx, row.companyId, parseArticle(row.changes.article), {
+            source: 'member',
+            byPersonId: row.suggestedByPersonId,
           })
         }
       }
@@ -620,6 +668,7 @@ async function suggestionViews(
             }))
           : [],
       event: r.changes.kind === 'event' ? r.changes.event : null,
+      article: r.changes.kind === 'article' ? r.changes.article : null,
       own: r.byId === viewerId,
     }
   })

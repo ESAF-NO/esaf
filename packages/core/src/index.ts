@@ -206,6 +206,7 @@ export {
   listMyLinkRequests,
   removeSelfFromCompany,
   requestCompanyLink,
+  suggestCompanyArticle,
   suggestCompanyEvent,
   suggestCompanyInfo,
   withdrawCompanyLink,
@@ -264,6 +265,16 @@ export {
   type CompanyEvent,
   type CompanyEventInput,
 } from './company-events.ts'
+export {
+  addCompanyArticle,
+  articleUrlKey,
+  companyArticleInput,
+  deleteCompanyArticle,
+  normalizeArticleUrl,
+  updateCompanyArticle,
+  type CompanyArticle,
+  type CompanyArticleInput,
+} from './company-articles.ts'
 export {
   confirmQuote,
   deleteQuote,

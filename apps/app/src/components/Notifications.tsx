@@ -57,6 +57,10 @@ function Sentence({ n }: { n: NotificationView }) {
         <>
           {who} foreslår en ny hendelse i historikken til {company}
         </>
+      ) : n.suggestionKind === 'article' ? (
+        <>
+          {who} foreslår en sak om {company} under «I media»
+        </>
       ) : (
         <>
           {who} foreslår endringer i {company}

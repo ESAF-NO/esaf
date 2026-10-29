@@ -440,6 +440,21 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} slettet en hendelse i historikken til <Company details={details} />.
     </>
   ),
+  'company.admin_article_add': ({ actor, details }) => (
+    <>
+      {actor} la til en sak under «I media» hos <Company details={details} />.
+    </>
+  ),
+  'company.admin_article_edit': ({ actor, details }) => (
+    <>
+      {actor} rettet en sak under «I media» hos <Company details={details} />.
+    </>
+  ),
+  'company.admin_article_remove': ({ actor, details }) => (
+    <>
+      {actor} fjernet en sak under «I media» hos <Company details={details} />.
+    </>
+  ),
   'company.create': ({ actor, details }) => (
     <>
       {actor} opprettet <Company details={details} />.

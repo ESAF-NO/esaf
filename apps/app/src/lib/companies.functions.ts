@@ -1,10 +1,12 @@
 import {
+  addCompanyArticle,
   addCompanyEvent,
   createCompany,
   deleteCompany,
   listAdminCompanies,
   companyEventTypes,
   companyStatuses,
+  deleteCompanyArticle,
   deleteCompanyEvent,
   getCompany,
   getEditableCompany,
@@ -12,6 +14,7 @@ import {
   mergeCompanies,
   searchCompanies,
   updateCompany,
+  updateCompanyArticle,
   updateCompanyEvent,
 } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
@@ -92,6 +95,39 @@ export const saveCompanyEvent = createServerFn({ method: 'POST' })
 export const removeCompanyEvent = createServerFn({ method: 'POST' })
   .validator(z.object({ eventId: z.uuid() }))
   .handler(({ data }) => run((viewer) => deleteCompanyEvent(db, viewer, data.eventId)))
+
+// Full validering av saken skjer i @esaf/core (companyArticleInput). Her sjekkes bare formen.
+const articleFields = z.object({
+  url: z.string().max(2000),
+  title: z.string().max(1000),
+  publisher: z.string().max(500),
+  year: z.number().int().nullable(),
+  month: z.number().int().nullable(),
+  day: z.number().int().nullable(),
+  paywall: z.boolean(),
+  mentionsEs: z.boolean(),
+})
+
+export type CompanyArticleFormValues = z.infer<typeof articleFields>
+
+/** Ny sak under «I media» med `companyId`, eller rett en med `articleId`. */
+export const saveCompanyArticle = createServerFn({ method: 'POST' })
+  .validator(
+    z.union([
+      z.object({ companyId: z.uuid(), values: articleFields }),
+      z.object({ articleId: z.uuid(), values: articleFields }),
+    ]),
+  )
+  .handler(({ data }) =>
+    run(async (viewer) => {
+      if ('articleId' in data) await updateCompanyArticle(db, viewer, data.articleId, data.values)
+      else await addCompanyArticle(db, viewer, data.companyId, data.values)
+    }),
+  )
+
+export const removeCompanyArticle = createServerFn({ method: 'POST' })
+  .validator(z.object({ articleId: z.uuid() }))
+  .handler(({ data }) => run((viewer) => deleteCompanyArticle(db, viewer, data.articleId)))
 
 /** Alle selskaper for Admin → Selskaper. Krever `profiles.edit`. */
 export const fetchAdminCompanies = createServerFn({ method: 'GET' }).handler(() =>

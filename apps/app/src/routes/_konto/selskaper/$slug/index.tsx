@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { AddPersonDialog, JoinCompanyDialog } from '#/components/CompanyLinkDialogs.tsx'
+import { CompanyArticles } from '#/components/CompanyArticles.tsx'
 import { CompanyTimeline } from '#/components/CompanyTimeline.tsx'
 import { LinkRequestCard, SuggestionCard, useAction } from '#/components/Contributions.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
@@ -259,6 +260,14 @@ function CompanyPage() {
             companyId={c.id}
             name={c.name}
             events={c.events}
+            canEdit={c.canEdit}
+            adminEdit={c.canEdit && !c.connected}
+          />
+
+          <CompanyArticles
+            companyId={c.id}
+            name={c.name}
+            articles={c.articles}
             canEdit={c.canEdit}
             adminEdit={c.canEdit && !c.connected}
           />

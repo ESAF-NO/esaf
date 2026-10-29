@@ -405,6 +405,41 @@ export const quote = pgTable(
   (t) => [index().on(t.personId), index().on(t.companyId)],
 )
 
+/** Hvem som la inn en sak under «I media»: importen, noen knyttet til selskapet, eller en admin. */
+export const companyArticleSource = pgEnum('company_article_source', ['import', 'member', 'admin'])
+
+/**
+ * En sak i media om et selskap (nyhetssak, intervju, portrett). Bare lenken,
+ * tittelen, utgiveren og datoen lagres, aldri teksten i saken. `url` er
+ * normalisert (se `normalizeArticleUrl` i @esaf/core), og samme sak står bare én
+ * gang per selskap. `publishedAt` lagres som en hel dato; `publishedPrecision`
+ * sier hvor mye av den som er kjent. Uten dato sorteres saken sist.
+ */
+export const companyArticle = pgTable(
+  'company_article',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    companyId: uuid()
+      .notNull()
+      .references(() => company.id, { onDelete: 'cascade' }),
+    url: text().notNull(),
+    title: text().notNull(),
+    /** Avisen eller nettstedet, f.eks. «Adresseavisen». */
+    publisher: text(),
+    publishedAt: date({ mode: 'string' }),
+    publishedPrecision: datePrecision().notNull().default('day'),
+    /** Saken krever abonnement. */
+    paywall: boolean().notNull().default(false),
+    /** Saken nevner Entreprenørskolen. */
+    mentionsEs: boolean().notNull().default(false),
+    source: companyArticleSource().notNull(),
+    /** Den som la inn saken, eller foreslo den. Null fra import. */
+    addedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex().on(t.companyId, t.url), index().on(t.companyId, t.publishedAt)],
+)
+
 export const fieldSourceEntity = pgEnum('field_source_entity', ['person', 'company'])
 
 /**
@@ -458,15 +493,16 @@ export const contributionStatus = pgEnum('contribution_status', [
   'withdrawn',
 ])
 
-/** `info`: endringer i selskapsinfoen. `event`: en ny hendelse i historikken. */
-export const companySuggestionKind = pgEnum('company_suggestion_kind', ['info', 'event'])
+/** `info`: endringer i selskapsinfoen. `event`: en ny hendelse i historikken. `article`: en sak i media. */
+export const companySuggestionKind = pgEnum('company_suggestion_kind', ['info', 'event', 'article'])
 
 /** Et felt i et forslag til selskapsinfo: verdien da forslaget ble laget, og den foreslåtte. */
 export type SuggestedFieldChange = { from: unknown; to: unknown }
 
 /**
  * Data i et forslag. For `info` bare feltene som endres; for `event` hele
- * hendelsen, i samme form som `companyEventInput` i @esaf/core.
+ * hendelsen, i samme form som `companyEventInput` i @esaf/core; for `article`
+ * saken, i samme form som `companyArticleInput`.
  */
 export type CompanySuggestionChanges =
   | { kind: 'info'; fields: Record<string, SuggestedFieldChange> }
@@ -480,6 +516,19 @@ export type CompanySuggestionChanges =
         text: string
         sourceUrl: string | null
         sourceLabel: string | null
+      }
+    }
+  | {
+      kind: 'article'
+      article: {
+        url: string
+        title: string
+        publisher: string | null
+        year: number | null
+        month: number | null
+        day: number | null
+        paywall: boolean
+        mentionsEs: boolean
       }
     }
 
@@ -802,6 +851,41 @@ export const accessRequest = pgTable(
   (t) => [index().on(t.status, t.createdAt)],
 )
 
+/** Hva i et datasett en rad i `import_record` gjelder. */
+export const importRecordKind = pgEnum('import_record_kind', [
+  'company',
+  /** Et felt på et selskap, `<nøkkel>|<felt>`: importen har fylt det eller kjent det igjen. */
+  'company_field',
+  'company_logo',
+  'company_event',
+  'company_article',
+  'person',
+  /** Et felt på en profil, `<nøkkel>|<felt>`. */
+  'person_field',
+  'person_photo',
+  'quote',
+])
+
+/**
+ * Hva `pnpm data:import` allerede har tatt inn. Gjør importen idempotent også når
+ * noen har rettet eller slettet det som ble importert: en hendelse, sak, sitat,
+ * logo eller et bilde som er tatt inn én gang, tas aldri inn igjen, et selskap
+ * eller en person som er slettet i appen, lages ikke på nytt, og et felt
+ * importen har fylt, oppdateres bare så lenge ingen har rørt det. `keyHash` er
+ * SHA-256 av nøkkelen i datasettet, så navn ikke står i klartekst; `entityId` er
+ * raden importen laget eller kjente igjen, uten fremmednøkkel.
+ */
+export const importRecord = pgTable(
+  'import_record',
+  {
+    kind: importRecordKind().notNull(),
+    keyHash: text().notNull(),
+    entityId: uuid(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.kind, t.keyHash] })],
+)
+
 /** Revisjonslogg for tilgangsendringer. Skrives aldri over. */
 export const auditEvent = pgTable(
   'audit_event',
@@ -830,6 +914,8 @@ export type FieldSourceEntity = (typeof fieldSourceEntity.enumValues)[number]
 export type ContributionStatus = (typeof contributionStatus.enumValues)[number]
 export type CompanySuggestionKind = (typeof companySuggestionKind.enumValues)[number]
 export type CompanyLinkRole = (typeof companyLinkRole.enumValues)[number]
+export type CompanyArticleSource = (typeof companyArticleSource.enumValues)[number]
+export type ImportRecordKind = (typeof importRecordKind.enumValues)[number]
 export type ReviewDismissalKind = (typeof reviewDismissalKind.enumValues)[number]
 export type ParticipationRole = (typeof participationRole.enumValues)[number]
 export type ParticipationSource = (typeof participationSource.enumValues)[number]

@@ -5,6 +5,11 @@ import { and, arrayOverlaps, asc, eq, inArray, isNotNull, isNull, ne, or, sql } 
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
+import {
+  loadCompanyArticles,
+  moveCompanyArticles,
+  type CompanyArticle,
+} from './company-articles.ts'
 import { loadCompanyEvents, type CompanyEvent } from './company-events.ts'
 import {
   listMyLinkRequests,
@@ -184,6 +189,8 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   people: (CompanyPerson & { cohortYears: number[] })[]
   /** Historikken, nyeste først. */
   events: CompanyEvent[]
+  /** «I media»: saker om selskapet, nyeste først og de uten dato sist. */
+  articles: CompanyArticle[]
   /** Sitater om selskapet eller fra folk i det. */
   quotes: Quote[]
   /** Hvor de importerte feltene kom fra, for feltene som vises. */
@@ -495,16 +502,25 @@ export async function getCompany(
           ? row.status === 'unknown' && row.lastSeenOnEsSite !== null
           : row[field] !== null,
   )
-  const [events, quotes, sources, viewerRoles, suggestions, linkRequests, requestedLinks] =
-    await Promise.all([
-      loadCompanyEvents(db, row.id, { includeReview: canEdit }),
-      loadQuotes(db, viewer, { companyId: row.id }),
-      loadFieldSources(db, viewer, 'company', row.id, shown),
-      viewerCompanyRoles(db, viewer.personId, row.id),
-      loadCompanySuggestions(db, viewer, row.id, { canEdit }),
-      listMyLinkRequests(db, viewer, { companyId: row.id }),
-      loadRequestedLinks(db, viewer, row.id),
-    ])
+  const [
+    events,
+    articles,
+    quotes,
+    sources,
+    viewerRoles,
+    suggestions,
+    linkRequests,
+    requestedLinks,
+  ] = await Promise.all([
+    loadCompanyEvents(db, row.id, { includeReview: canEdit }),
+    loadCompanyArticles(db, row.id),
+    loadQuotes(db, viewer, { companyId: row.id }),
+    loadFieldSources(db, viewer, 'company', row.id, shown),
+    viewerCompanyRoles(db, viewer.personId, row.id),
+    loadCompanySuggestions(db, viewer, row.id, { canEdit }),
+    listMyLinkRequests(db, viewer, { companyId: row.id }),
+    loadRequestedLinks(db, viewer, row.id),
+  ])
   return {
     ...row,
     logo: logoUrls(logoKey),
@@ -512,6 +528,7 @@ export async function getCompany(
     websiteLabel: websiteLabel(row.website),
     people: people.map((p) => ({ ...p, cohortYears: years.get(p.personId) ?? [] })),
     events,
+    articles,
     quotes,
     sources,
     connected,
@@ -882,9 +899,10 @@ export async function searchCompanies(
 }
 
 /**
- * Slår sammen to skrivemåter av samme selskap. Erfaring og ES-team flyttes til
- * `targetId`, tomme felt fylles fra duplikatet, og duplikatets slug blir et alias,
- * så gamle lenker og den gamle skrivemåten finner fram. Har bare duplikatet logo,
+ * Slår sammen to skrivemåter av samme selskap. Erfaring, ES-team, historikk,
+ * saker i media, sitater, forslag og varsler flyttes til `targetId`, tomme felt
+ * fylles fra duplikatet, og duplikatets slug blir et alias, så gamle lenker og
+ * den gamle skrivemåten finner fram. Har bare duplikatet logo,
  * flyttes den; har begge, beholdes logoen hit og duplikatets slettes. Krever
  * `profiles.edit`, siden det endrer erfaringen på andres profiler. Logges.
  */
@@ -926,6 +944,8 @@ export async function mergeCompanies(
       .set({ companyId: target.id })
       .where(eq(companyEvent.companyId, source.id))
     await tx.update(quote).set({ companyId: target.id }).where(eq(quote.companyId, source.id))
+    // Sakene i media følger med, utenom dem selskapet det slås sammen med, allerede har.
+    const articles = await moveCompanyArticles(tx, source.id, target.id)
     // Forslag, tilknytninger og varsler om duplikatet gjelder nå selskapet det slås sammen med.
     await tx
       .update(companySuggestion)
@@ -999,6 +1019,7 @@ export async function mergeCompanies(
         into: { companyId: target.id, slug: target.slug, name: target.name },
         experience: moved.length,
         esTeam: team.length,
+        articles,
       },
     })
     return {

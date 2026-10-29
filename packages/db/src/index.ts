@@ -17,10 +17,11 @@ export type {
   MembershipStatus,
   NotificationPayload,
   NotificationType,
+  ParticipationRole,
+  ParticipationSource,
   PersonSource,
   PostChannel,
   ReviewDismissalKind,
   SourceConfidence,
-  WeekendAttendanceSource,
 } from './schema.ts'
 export { sql } from 'drizzle-orm'

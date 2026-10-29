@@ -226,7 +226,20 @@ function Feed() {
                 <h1 className="text-2xl font-semibold tracking-tight text-stone-950">
                   {channel.plural}
                 </h1>
-                <p className="text-sm text-stone-500">{channel.hint}</p>
+                <p className="text-sm text-stone-500">
+                  {channel.hint}
+                  {kanal === 'arrangement' && (
+                    <>
+                      {' · '}
+                      <Link
+                        to="/arrangementer"
+                        className="font-medium text-stone-700 hover:text-brand-600"
+                      >
+                        Se tidligere arrangementer og hvem som var der
+                      </Link>
+                    </>
+                  )}
+                </p>
               </div>
             </div>
           ) : (

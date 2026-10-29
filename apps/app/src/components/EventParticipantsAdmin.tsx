@@ -1,22 +1,28 @@
-import type { AdminPerson, MatchLine } from '@esaf/core'
-import { useRouter } from '@tanstack/react-router'
+import type { AdminPerson, EventRole, MatchLine } from '@esaf/core'
+import { Link, useRouter } from '@tanstack/react-router'
 import { Check, ClipboardList, Search, UserPlus, Users } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { kull, plural } from '#/lib/format.ts'
 import { findAnyPerson } from '#/lib/people.functions.ts'
-import { addAttendees, addCohortAttendees, matchAttendees } from '#/lib/weekends.functions.ts'
+import { roleLabels, roleOrder } from '#/lib/events.ts'
+import {
+  addCohortParticipants,
+  addParticipants,
+  matchParticipants,
+} from '#/lib/events.functions.ts'
 import { Avatar, Button, Card, cx, ErrorText, Input, Select, Textarea, Verified } from './ui.tsx'
 
 /**
- * Adminverktøyene for oppmøte på en helg: legge til én person, et helt kull,
- * eller en innlimt liste med navn og e-post. Lista matches på serveren og vises
- * linje for linje før noe lagres, så uklare treff kan velges for hånd.
+ * Adminverktøyene for deltakere på et arrangement: legge til én person, et helt
+ * kull, eller en innlimt liste med navn og e-post, eventuelt med en rolle. Lista
+ * matches på serveren og vises linje for linje før noe lagres, så uklare treff
+ * kan velges for hånd. Regneark importeres under Admin → Arrangementer.
  */
-export function WeekendAttendanceAdmin({
-  weekendId,
+export function EventParticipantsAdmin({
+  eventId,
   cohortYears,
 }: {
-  weekendId: string
+  eventId: string
   cohortYears: number[]
 }) {
   const [mode, setMode] = useState<'person' | 'kull' | 'liste'>('liste')
@@ -30,7 +36,16 @@ export function WeekendAttendanceAdmin({
   return (
     <Card className="p-5">
       <h2 className="text-sm font-semibold text-stone-950">Legg til deltakere</h2>
-      <p className="mt-0.5 text-xs text-stone-500">Bare for admins. Alt logges.</p>
+      <p className="mt-0.5 text-xs text-stone-500">
+        Bare for admins. Alt logges. Har du et regneark?{' '}
+        <Link
+          to="/admin/arrangementer/import"
+          className="font-medium text-stone-700 hover:text-brand-600"
+        >
+          Importer det
+        </Link>
+        .
+      </p>
       <div role="tablist" aria-label="Legg til" className="mt-3 flex flex-wrap gap-1">
         {tabs.map((t) => (
           <button
@@ -54,11 +69,9 @@ export function WeekendAttendanceAdmin({
         ))}
       </div>
       <div className="mt-4" role="tabpanel">
-        {mode === 'liste' && <ImportList weekendId={weekendId} onDone={setMessage} />}
-        {mode === 'person' && <AddPerson weekendId={weekendId} onDone={setMessage} />}
-        {mode === 'kull' && (
-          <AddCohort weekendId={weekendId} years={cohortYears} onDone={setMessage} />
-        )}
+        {mode === 'liste' && <ImportList eventId={eventId} onDone={setMessage} />}
+        {mode === 'person' && <AddPerson eventId={eventId} onDone={setMessage} />}
+        {mode === 'kull' && <AddCohort eventId={eventId} years={cohortYears} onDone={setMessage} />}
       </div>
       <p role="status" className="mt-3 text-sm text-emerald-700 empty:hidden">
         {message}
@@ -71,7 +84,7 @@ const added = (n: number) =>
   n ? `La til ${plural(n, 'deltaker', 'deltakere')}.` : 'Alle var allerede registrert.'
 
 /** Søk blant alle personer ESAF kjenner. Velg ett treff. */
-function PersonSearch({
+export function PersonSearch({
   onPick,
   placeholder = 'Søk på navn',
   autoFocus,
@@ -171,30 +184,64 @@ function useAdd(onDone: (message: string) => void) {
   return { busy, error, run }
 }
 
-function AddPerson({ weekendId, onDone }: { weekendId: string; onDone: (m: string) => void }) {
+/** Rollen de som legges til, får. Uten rolle er de deltakere. */
+function RoleSelect({
+  value,
+  onChange,
+}: {
+  value: EventRole | null
+  onChange: (role: EventRole | null) => void
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-stone-600">
+      Som
+      <Select
+        value={value ?? ''}
+        onChange={(e) => onChange((e.target.value || null) as EventRole | null)}
+        className="h-8 w-44"
+      >
+        <option value="">Deltaker</option>
+        {roleOrder.map((r) => (
+          <option key={r} value={r}>
+            {roleLabels[r]}
+          </option>
+        ))}
+      </Select>
+    </label>
+  )
+}
+
+function AddPerson({ eventId, onDone }: { eventId: string; onDone: (m: string) => void }) {
   const { busy, error, run } = useAdd(onDone)
+  const [role, setRole] = useState<EventRole | null>(null)
   return (
     <div className="space-y-3">
+      <RoleSelect value={role} onChange={setRole} />
       <PersonSearch
         autoFocus
         onPick={(p) =>
           !busy &&
           void run(() =>
-            addAttendees({ data: { weekendId, personIds: [p.personId], source: 'admin' } }),
+            addParticipants({
+              data: { eventId, personIds: [p.personId], source: 'admin', role },
+            }),
           )
         }
       />
+      <p className="text-xs text-stone-500">
+        Står personen der allerede, endrer du rollen på personen i lista.
+      </p>
       {error && <ErrorText>{error}</ErrorText>}
     </div>
   )
 }
 
 function AddCohort({
-  weekendId,
+  eventId,
   years,
   onDone,
 }: {
-  weekendId: string
+  eventId: string
   years: number[]
   onDone: (m: string) => void
 }) {
@@ -204,7 +251,7 @@ function AddCohort({
     e.preventDefault()
     if (!year) return
     if (!confirm(`Legge til alle aktive medlemmer fra ES ${year} som deltakere?`)) return
-    void run(() => addCohortAttendees({ data: { weekendId, graduationYear: Number(year) } }))
+    void run(() => addCohortParticipants({ data: { eventId, graduationYear: Number(year) } }))
   }
   return (
     <form onSubmit={submit} className="space-y-3">
@@ -236,7 +283,7 @@ function AddCohort({
 
 type Pick = { personId: string; fullName: string } | null
 
-/** Ett sikkert treff som allerede står på helgen. Trenger ikke avklares. */
+/** Ett sikkert treff som allerede står på arrangementet. Trenger ikke avklares. */
 const registered = (l: MatchLine) => l.status === 'matched' && l.candidates[0]?.attending === true
 
 const statusText: Record<MatchLine['status'], string> = {
@@ -247,8 +294,9 @@ const statusText: Record<MatchLine['status'], string> = {
   duplicate: 'Står over',
 }
 
-function ImportList({ weekendId, onDone }: { weekendId: string; onDone: (m: string) => void }) {
+function ImportList({ eventId, onDone }: { eventId: string; onDone: (m: string) => void }) {
   const { busy, error, run } = useAdd(onDone)
+  const [role, setRole] = useState<EventRole | null>(null)
   const [text, setText] = useState('')
   const [lines, setLines] = useState<MatchLine[] | null>(null)
   const [picks, setPicks] = useState<Pick[]>([])
@@ -260,7 +308,7 @@ function ImportList({ weekendId, onDone }: { weekendId: string; onDone: (m: stri
     setMatching(true)
     setMatchError(null)
     try {
-      const result = await matchAttendees({ data: { weekendId, text } })
+      const result = await matchParticipants({ data: { eventId, text } })
       setLines(result)
       // Sikre treff er valgt; resten må avklares. De som allerede er registrert, hoppes over.
       setPicks(
@@ -314,6 +362,7 @@ function ImportList({ weekendId, onDone }: { weekendId: string; onDone: (m: stri
         {done > 0 && ` · ${done} allerede registrert`}
         {open > 0 && ` · ${open} må avklares eller hoppes over`}
       </p>
+      <RoleSelect value={role} onChange={setRole} />
       <ol className="max-h-[28rem] divide-y divide-stone-100 overflow-y-auto rounded-xl ring-1 ring-stone-200 ring-inset">
         {lines.map((l, i) => (
           <MatchRow key={i} line={l} pick={picks[i] ?? null} onPick={(p) => setPick(i, p)} />
@@ -326,7 +375,7 @@ function ImportList({ weekendId, onDone }: { weekendId: string; onDone: (m: stri
           disabled={busy || chosen.length === 0}
           onClick={async () => {
             const ok = await run(() =>
-              addAttendees({ data: { weekendId, personIds: chosen, source: 'import' } }),
+              addParticipants({ data: { eventId, personIds: chosen, source: 'import', role } }),
             )
             if (ok) {
               setLines(null)

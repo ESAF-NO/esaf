@@ -18,6 +18,7 @@ import { useState, type ReactNode } from 'react'
 import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
+import { RoleBadge } from '#/components/EventCharts.tsx'
 import { RepresentativeBadges } from '#/components/Representatives.tsx'
 import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
 import {
@@ -33,6 +34,7 @@ import {
 } from '#/components/ui.tsx'
 import { fetchMyLinkRequests } from '#/lib/contributions.functions.ts'
 import { fetchPosts } from '#/lib/feed.functions.ts'
+import { participationLine } from '#/lib/events.ts'
 import { esPeriod, plural, yearSpan } from '#/lib/format.ts'
 import { confirmProfile, fetchProfile } from '#/lib/profiles.functions.ts'
 import { profileFieldLabels, profileFields, sourcesFor, unconfirmed } from '#/lib/sources.ts'
@@ -466,7 +468,7 @@ function ProfilePage() {
             </dl>
           </Card>
 
-          <WeekendsCard profile={p} />
+          <EventsCard profile={p} />
 
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold text-stone-950">Kontakt</h2>
@@ -521,42 +523,69 @@ function ProfilePage() {
   )
 }
 
-/** ESAF-helgene personen har vært på, med lenke til hver. */
-function WeekendsCard({ profile: p }: { profile: Profile }) {
-  const n = p.weekends.length
-  if (!n && !p.isOwn) return null
+/**
+ * Arrangementene personen har vært på, per type: «ESAF-helgen: deltatt 5
+ * ganger, arrangert 2», og arrangementene med rollen, med lenke til hvert.
+ */
+function EventsCard({ profile: p }: { profile: Profile }) {
+  const [expanded, setExpanded] = useState(false)
+  if (!p.events.length && !p.isOwn) return null
   return (
     <Card className="p-5">
       <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
-        <Tent className="size-4 text-stone-400" aria-hidden /> ESAF-helgen
+        <Tent className="size-4 text-stone-400" aria-hidden /> Arrangementer
       </h2>
-      {n ? (
-        <>
-          <p className="mt-1 text-sm text-stone-600">
-            {p.isOwn ? 'Du har deltatt' : 'Deltatt'} på ESAF-helgen{' '}
-            {n === 1 ? 'én gang' : `${n} ganger`}.
-          </p>
-          <ul className="mt-3 space-y-1.5 text-sm">
-            {p.weekends.slice(0, 8).map((w) => (
-              <li key={w.id}>
-                <Link
-                  to="/esaf-helgen/$weekendId"
-                  params={{ weekendId: w.id }}
-                  className="text-stone-700 hover:text-brand-600"
-                >
-                  {w.name}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {n > 8 && (
-            <p className="mt-2 text-xs text-stone-500">og {plural(n - 8, 'helg', 'helger')} til</p>
-          )}
-        </>
+      {p.events.length ? (
+        <div className="mt-2 space-y-4">
+          {p.events.map((g) => {
+            const shown = expanded ? g.events : g.events.slice(0, 6)
+            return (
+              <section key={g.type.slug} aria-label={g.type.name}>
+                <p className="text-sm text-stone-600">
+                  <Link
+                    to="/arrangementer/$typeSlug"
+                    params={{ typeSlug: g.type.slug }}
+                    className="font-medium text-stone-900 hover:text-brand-600"
+                  >
+                    {g.type.name}
+                  </Link>
+                  : {participationLine(g.total, g.roles)}
+                </p>
+                <ul className="mt-1.5 space-y-1 text-sm">
+                  {shown.map((e) => (
+                    <li key={e.id} className="flex items-center gap-1.5">
+                      <Link
+                        to="/arrangementer/$typeSlug/$eventId"
+                        params={{ typeSlug: g.type.slug, eventId: e.id }}
+                        className="min-w-0 truncate text-stone-700 hover:text-brand-600"
+                      >
+                        {e.name}
+                      </Link>
+                      <RoleBadge role={e.role} />
+                    </li>
+                  ))}
+                </ul>
+                {g.events.length > shown.length && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(true)}
+                    className="mt-1.5 text-xs font-medium text-stone-500 hover:text-stone-900"
+                  >
+                    Vis {plural(g.events.length - shown.length, 'til', 'til')}
+                  </button>
+                )}
+              </section>
+            )
+          })}
+        </div>
       ) : (
         <p className="mt-1 text-sm text-stone-500">
           Har du vært på ESAF-helgen?{' '}
-          <Link to="/esaf-helgen" className="font-medium text-stone-700 hover:text-brand-600">
+          <Link
+            to="/arrangementer/$typeSlug"
+            params={{ typeSlug: 'esaf-helgen' }}
+            className="font-medium text-stone-700 hover:text-brand-600"
+          >
             Finn helgene du var på
           </Link>
           .

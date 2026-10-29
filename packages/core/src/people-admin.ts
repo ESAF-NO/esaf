@@ -21,9 +21,9 @@ const {
   cohort,
   cohortRepresentative,
   comment,
+  eventParticipation,
   companyLinkRequest,
   companySuggestion,
-  esafWeekendAttendance,
   experience,
   membership,
   notification,
@@ -45,7 +45,7 @@ const {
  *   medlemmer. Adressen kontoen logger inn med, kan ikke fjernes.
  * - Sammenslåing flytter alt fra duplikatet til personen som beholdes: erfaring,
  *   kull, e-post, sitater, kilder, innlegg, kommentarer, stemmer, varsler,
- *   forslag, forespørsler, verv som kullrepresentant og oppmøte på ESAF-helgen.
+ *   forslag, forespørsler, verv som kullrepresentant og deltakelse på arrangementer.
  *   Tomme felt fylles fra duplikatet. Har en av dem
  *   konto, er det den som beholdes; to kontoer slås aldri sammen.
  * - Alt logges (`profile.create`, `profile.admin_cohorts`,
@@ -144,46 +144,60 @@ export async function createProfile(
 ): Promise<{ personId: string }> {
   assertCan(viewer, 'profiles.edit')
   const values = parse(newProfileInput, input)
+  return db.transaction((tx) => insertProfile(tx, viewer, values))
+}
+
+/**
+ * Lager profilen i en transaksjon som allerede er i gang, og logger det som
+ * `profile.create`. Importene bruker den for personer admin vil opprette.
+ * Rettighetene må være sjekket av den som kaller.
+ */
+export async function insertProfile(
+  tx: Tx,
+  viewer: Viewer,
+  input: NewProfileInput,
+  extra: { via?: string } = {},
+): Promise<{ personId: string }> {
+  const values = parse(newProfileInput, input)
   const emails = [...new Set(values.emails)]
-  return db.transaction(async (tx) => {
-    await assertEmailsFree(tx, emails)
-    const [created] = await tx
-      .insert(person)
-      .values({ fullName: values.fullName, source: 'admin' })
-      .returning({ id: person.id })
-    const personId = created!.id
-    await tx.insert(membership).values({ personId, status: values.status })
-    const ids = await cohortIds(
-      tx,
-      values.cohorts.map((c) => c.graduationYear),
+  await assertEmailsFree(tx, emails)
+  const [created] = await tx
+    .insert(person)
+    .values({ fullName: values.fullName, source: 'admin' })
+    .returning({ id: person.id })
+  const personId = created!.id
+  await tx.insert(membership).values({ personId, status: values.status })
+  const ids = await cohortIds(
+    tx,
+    values.cohorts.map((c) => c.graduationYear),
+  )
+  if (values.cohorts.length) {
+    await tx.insert(personCohort).values(
+      values.cohorts.map((c) => ({
+        personId,
+        cohortId: ids.get(c.graduationYear)!,
+        relation: c.relation,
+      })),
     )
-    if (values.cohorts.length) {
-      await tx.insert(personCohort).values(
-        values.cohorts.map((c) => ({
-          personId,
-          cohortId: ids.get(c.graduationYear)!,
-          relation: c.relation,
-        })),
-      )
-    }
-    if (emails.length) {
-      await tx
-        .insert(personEmail)
-        .values(emails.map((email) => ({ email, personId, source: 'admin' as const })))
-    }
-    await tx.insert(auditEvent).values({
-      actorPersonId: viewer.personId,
-      action: 'profile.create',
-      subjectPersonId: personId,
-      details: {
-        fullName: values.fullName,
-        cohorts: values.cohorts.map((c) => c.graduationYear),
-        emails: emails.length,
-        status: values.status,
-      },
-    })
-    return { personId }
+  }
+  if (emails.length) {
+    await tx
+      .insert(personEmail)
+      .values(emails.map((email) => ({ email, personId, source: 'admin' as const })))
+  }
+  await tx.insert(auditEvent).values({
+    actorPersonId: viewer?.personId ?? null,
+    action: 'profile.create',
+    subjectPersonId: personId,
+    details: {
+      fullName: values.fullName,
+      cohorts: values.cohorts.map((c) => c.graduationYear),
+      emails: emails.length,
+      status: values.status,
+      ...(extra.via ? { via: extra.via } : {}),
+    },
   })
+  return { personId }
 }
 
 export type AdminPerson = {
@@ -573,9 +587,10 @@ export async function mergePeople(
       .where(eq(cohortRepresentative.personId, from))
       .returning({ id: cohortRepresentative.id })
 
-    // ESAF-helgen: oppmøtet til begge, én gang per helg.
-    const movedWeekends = await tx.execute(
-      sql`insert into ${esafWeekendAttendance} (weekend_id, person_id, source, created_at) select weekend_id, ${into}, source, created_at from ${esafWeekendAttendance} where person_id = ${from} on conflict do nothing returning weekend_id`,
+    // Arrangementer: deltakelsen til begge, én gang per arrangement. Har den som
+    // beholdes ingen rolle eller notat der, tas duplikatets med.
+    const movedEvents = await tx.execute(
+      sql`insert into ${eventParticipation} (event_id, person_id, role, source, note, created_at) select event_id, ${into}, role, source, note, created_at from ${eventParticipation} where person_id = ${from} on conflict (event_id, person_id) do update set role = coalesce(${eventParticipation}.role, excluded.role), note = coalesce(${eventParticipation}.note, excluded.note) returning (xmax = 0) as inserted`,
     )
 
     const emails = await tx
@@ -738,7 +753,7 @@ export async function mergePeople(
         experience: movedJobs,
         cohorts: movedCohorts.rows.length,
         representatives: movedReps.length,
-        weekends: movedWeekends.rows.length,
+        events: movedEvents.rows.filter((r) => r.inserted).length,
         emails: emails.length,
         quotes: quotes.length,
         fields: filled,

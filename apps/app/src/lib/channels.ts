@@ -68,7 +68,8 @@ export const channels: Record<
   },
   arrangement: {
     label: 'Arrangement',
-    plural: 'Arrangementer',
+    // Ikke «Arrangementer»: det er navnet på oversikten over arrangementer og deltakere.
+    plural: 'Arrangementsinnlegg',
     icon: CalendarDays,
     tone: 'bg-amber-50 text-amber-800 ring-amber-600/20',
     dot: 'bg-amber-500',

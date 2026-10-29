@@ -26,7 +26,7 @@ import {
   type ProfileSourceField,
 } from './sources.ts'
 import { optionalText, tagList, yearInput } from './validation.ts'
-import { loadPersonWeekends } from './weekends.ts'
+import { loadPersonEvents, type PersonEventGroup } from './events.ts'
 
 const { auditEvent, cohort, company, experience, membership, person, personCohort } = schema
 
@@ -161,8 +161,8 @@ export type Profile = {
   cohorts: { graduationYear: number; relation: schema.CohortRelation }[]
   /** Kullrepresentant nå og tidligere, slik det vises på profilen. */
   representative: RepresentativeBadge[]
-  /** ESAF-helgene personen har vært på, nyeste først. */
-  weekends: { id: string; name: string; startDate: string }[]
+  /** Arrangementene personen har vært på, per type (ESAF-helgen først). */
+  events: PersonEventGroup[]
   /** Sitater fra personen. */
   quotes: Quote[]
   /**
@@ -210,7 +210,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     city: row.city,
     linkedinUrl: row.linkedinUrl,
   }
-  const [quotes, sources, terms, weekends] = await Promise.all([
+  const [quotes, sources, terms, events] = await Promise.all([
     loadQuotes(db, viewer, { personId }),
     loadFieldSources(
       db,
@@ -220,7 +220,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
       profileSourceFields.filter((field) => values[field] !== null),
     ),
     loadRepresentativeTerms(db, [personId]),
-    loadPersonWeekends(db, personId),
+    loadPersonEvents(db, personId),
   ])
 
   const claimed = row.userId !== null
@@ -244,7 +244,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     phone: claimed && row.phoneVisible ? row.phone : null,
     cohorts,
     representative: representativeBadges(terms.get(personId) ?? []),
-    weekends,
+    events,
     quotes,
     sources,
     isOwn,

@@ -90,8 +90,8 @@ function AuditLog() {
     <div className="max-w-3xl">
       <p className="mb-5 text-sm text-stone-500">
         Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater, forslag,
-        kullrepresentanter, ESAF-helgen og andres innhold, nyeste først. Hendelsene kan ikke endres
-        eller slettes i appen.
+        kullrepresentanter, arrangementer og andres innhold, nyeste først. Hendelsene kan ikke
+        endres eller slettes i appen.
       </p>
 
       {entries.length === 0 ? (
@@ -239,21 +239,49 @@ function Company({ details }: { details: Entry['details'] }) {
   )
 }
 
-/** Helgen i en setning, med lenke. */
-function Weekend({ details }: { details: Entry['details'] }) {
-  const name = text(details.name) ?? 'en ESAF-helg'
-  const weekendId = text(details.weekendId)
-  if (!weekendId) return <>{name}</>
+/**
+ * Arrangementet i en setning, med lenke. Gamle hendelser fra før ESAF-helgen
+ * ble et arrangement (`weekend.*`) har `weekendId`; id-en er den samme nå.
+ */
+function EventLink({ details }: { details: Entry['details'] }) {
+  const name = text(details.name) ?? 'et arrangement'
+  const eventId = text(details.eventId) ?? text(details.weekendId)
+  if (!eventId) return <>{name}</>
   return (
     <Link
-      to="/esaf-helgen/$weekendId"
-      params={{ weekendId }}
+      to="/arrangementer/$typeSlug/$eventId"
+      params={{ typeSlug: text(details.typeSlug) ?? 'esaf-helgen', eventId }}
       className="font-medium text-stone-900 hover:text-brand-600"
     >
       {name}
     </Link>
   )
 }
+
+/** Typen i en setning, med lenke. */
+function EventTypeLink({ details }: { details: Entry['details'] }) {
+  const name = text(details.name) ?? 'en arrangementstype'
+  const slug = text(details.slug)
+  if (!slug) return <>{name}</>
+  return (
+    <Link
+      to="/arrangementer/$typeSlug"
+      params={{ typeSlug: slug }}
+      className="font-medium text-stone-900 hover:text-brand-600"
+    >
+      {name}
+    </Link>
+  )
+}
+
+const roleNamesNb: Record<string, string> = {
+  organizer: 'arrangør',
+  speaker: 'foredragsholder',
+  volunteer: 'frivillig',
+}
+/** «arrangør», eller «deltaker» uten rolle. */
+const eventRole = (value: unknown) =>
+  (typeof value === 'string' && roleNamesNb[value]) || 'deltaker'
 
 /** «ES 2024» fra `graduationYear`. */
 const cohortName = (details: Entry['details']) =>
@@ -471,9 +499,10 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       </>
     )
   },
-  'profile.create': ({ actor, subject }) => (
+  'profile.create': ({ actor, subject, details }) => (
     <>
-      {actor} la inn profilen til {subject}.
+      {actor} la inn profilen til {subject}
+      {typeof details.via === 'string' && details.via.endsWith('import') && ' under en import'}.
     </>
   ),
   'profile.admin_cohorts': ({ actor, subject, details }) => (
@@ -536,14 +565,15 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} slettet vervet til {subject} som kullrepresentant for {cohortName(details)}.
     </>
   ),
+  // Fra før ESAF-helgen ble et arrangement (migrering 0019).
   'weekend.create': ({ actor, details }) => (
     <>
-      {actor} opprettet <Weekend details={details} />.
+      {actor} opprettet <EventLink details={details} />.
     </>
   ),
   'weekend.edit': ({ actor, details }) => (
     <>
-      {actor} redigerte <Weekend details={details} />.
+      {actor} redigerte <EventLink details={details} />.
     </>
   ),
   'weekend.delete': ({ actor, details }) => {
@@ -564,14 +594,119 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
           ? `${plural(count(details.added), 'person', 'personer')} fra ES ${details.cohort}`
           : plural(count(details.added), 'deltaker', 'deltakere')}{' '}
       {details.source === 'import' && !entry.subject ? 'fra en liste ' : ''}på{' '}
-      <Weekend details={details} />.
+      <EventLink details={details} />.
     </>
   ),
   'weekend.attendance_remove': ({ actor, subject, details }) => (
     <>
-      {actor} fjernet {subject} fra <Weekend details={details} />.
+      {actor} fjernet {subject} fra <EventLink details={details} />.
     </>
   ),
+  'event_type.create': ({ actor, details }) => (
+    <>
+      {actor} opprettet arrangementstypen <EventTypeLink details={details} />.
+    </>
+  ),
+  'event_type.edit': ({ actor, details }) => (
+    <>
+      {actor} redigerte arrangementstypen <EventTypeLink details={details} />
+      {text(details.previousName) && text(details.previousName) !== text(details.name)
+        ? ` (het «${text(details.previousName)}»)`
+        : ''}
+      .
+    </>
+  ),
+  'event_type.delete': ({ actor, details }) => (
+    <>
+      {actor} slettet arrangementstypen «{text(details.name) ?? 'ukjent'}».
+    </>
+  ),
+  'event.create': ({ actor, details }) => (
+    <>
+      {actor} opprettet <EventLink details={details} />
+      {details.via === 'import' && ' under en import'}.
+    </>
+  ),
+  'event.edit': ({ actor, details }) => (
+    <>
+      {actor} redigerte <EventLink details={details} />
+      {text(details.previousType) &&
+        ` og flyttet det fra ${text(details.previousType)} til ${text(details.typeName) ?? 'en annen type'}`}
+      .
+    </>
+  ),
+  'event.delete': ({ actor, details }) => {
+    const participants = count(details.participants)
+    return (
+      <>
+        {actor} slettet «{text(details.name) ?? 'et arrangement'}»
+        {participants > 0 && ` med ${plural(participants, 'deltaker', 'deltakere')}`}.
+      </>
+    )
+  },
+  'event.participant_add': ({ actor, subject, details, entry }) => (
+    <>
+      {actor} la til{' '}
+      {entry.subject
+        ? subject
+        : typeof details.cohort === 'number'
+          ? `${plural(count(details.added), 'person', 'personer')} fra ES ${details.cohort}`
+          : plural(count(details.added), 'deltaker', 'deltakere')}{' '}
+      {details.source === 'import' && !entry.subject ? 'fra en liste ' : ''}
+      {typeof details.role === 'string' && `som ${eventRole(details.role)} `}på{' '}
+      <EventLink details={details} />.
+    </>
+  ),
+  'event.participant_edit': ({ actor, subject, details }) => {
+    const from = (details.from ?? {}) as Entry['details']
+    const to = (details.to ?? {}) as Entry['details']
+    const roleChanged = from.role !== to.role
+    return (
+      <>
+        {actor} {roleChanged ? 'endret rollen til' : 'rettet notatet om'} {subject} på{' '}
+        <EventLink details={details} />
+        {roleChanged && ` fra ${eventRole(from.role)} til ${eventRole(to.role)}`}.
+      </>
+    )
+  },
+  'event.participant_remove': ({ actor, subject, details }) => (
+    <>
+      {actor} fjernet {subject} fra <EventLink details={details} />.
+    </>
+  ),
+  'event.import': ({ actor, details }) => {
+    const events = Array.isArray(details.events) ? (details.events as Entry['details'][]) : []
+    const created = count(details.profilesCreated)
+    const newEvents = count(details.eventsCreated)
+    return (
+      <>
+        {actor} importerte deltakelse fra «{text(details.fileName) ?? 'et regneark'}»:{' '}
+        {plural(count(details.added), 'ny deltakelse', 'nye deltakelser')}
+        {count(details.updated) > 0 &&
+          `, ${plural(count(details.updated), 'endret rolle', 'endrede roller')}`}
+        {newEvents > 0 && `, ${plural(newEvents, 'nytt arrangement', 'nye arrangementer')}`}
+        {created > 0 && `, ${plural(created, 'ny profil', 'nye profiler')}`}
+        {events.length === 1 && (
+          <>
+            {' '}
+            på <EventLink details={events[0]!} />
+          </>
+        )}
+        .
+      </>
+    )
+  },
+  'cohort.rep_import': ({ actor, details }) => {
+    const created = count(details.profilesCreated)
+    return (
+      <>
+        {actor} importerte kullrepresentanter fra «{text(details.fileName) ?? 'et regneark'}»:{' '}
+        {plural(count(details.added), 'nytt verv', 'nye verv')}
+        {count(details.updated) > 0 && `, ${plural(count(details.updated), 'rettet', 'rettet')}`}
+        {created > 0 && `, ${plural(created, 'ny profil', 'nye profiler')}`}.
+      </>
+    )
+  },
   'quote.edit': (parts) => (
     <>
       {parts.actor} rettet et sitat fra {speaker(parts)}.

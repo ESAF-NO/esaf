@@ -39,7 +39,7 @@ export type ColumnKey =
  * fordi «Selskap» like gjerne kan bety ES-selskapet; de må oppgis eksplisitt.
  * Facebook og adresse er bevisst ikke med.
  */
-const defaultHeaders: Record<ColumnKey, string[]> = {
+export const defaultHeaders: Record<ColumnKey, string[]> = {
   name: ['navn', 'fullt navn', 'name', 'full name'],
   firstName: ['fornavn', 'first name'],
   lastName: ['etternavn', 'last name', 'surname'],
@@ -134,9 +134,9 @@ export type ParsedSheet = {
   skippedSheets: string[]
 }
 
-type Cell = { text: string; link?: string }
+export type Cell = { text: string; link?: string }
 
-const normalizeHeader = (h: string) =>
+export const normalizeHeader = (h: string) =>
   h
     .toLowerCase()
     .replace(/\([^)]*\)?/g, ' ')
@@ -448,7 +448,7 @@ export function parseProfileSheet(csv: string, options: ParseOptions): ParsedShe
 
 const KULL_SHEET = /^ES\s*(\d{4})(?:\s*[-–]\s*(\d{4}))?\s*$/i
 
-function cellOf(value: ExcelJS.CellValue): Cell {
+export function cellOf(value: ExcelJS.CellValue): Cell {
   if (value === null || value === undefined) return { text: '' }
   if (value instanceof Date) return { text: value.toISOString().slice(0, 10) }
   if (typeof value === 'object') {

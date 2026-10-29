@@ -328,7 +328,7 @@ const {
 } = schema
 
 await db.execute(
-  sql`truncate ${schema.esafWeekend}, ${schema.cohortRepresentative}, ${schema.fieldSource}, ${schema.reviewDismissal}, ${schema.companySuggestion}, ${schema.companyLinkRequest}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
+  sql`truncate ${schema.event}, ${schema.eventType}, ${schema.cohortRepresentative}, ${schema.fieldSource}, ${schema.reviewDismissal}, ${schema.companySuggestion}, ${schema.companyLinkRequest}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
 )
 
 /** En innloggingskonto med bekreftet e-post og passord, som om personen hadde registrert seg. */
@@ -848,15 +848,41 @@ async function seedDemo() {
   )
   await db.insert(schema.cohortRepresentative).values(reps)
 
+  // Arrangementer. ESAF-helgen legges inn av migreringen, men tabellen ble tømt
+  // over, så typene lages på nytt her med samme adresser.
+  const [weekendType, gfType, talkType] = await db
+    .insert(schema.eventType)
+    .values([
+      {
+        slug: 'esaf-helgen',
+        name: 'ESAF-helgen',
+        plural: 'ESAF-helgene',
+        description: 'Samlingen for alle fra Entreprenørskolen, som regel én gang i året.',
+        sortOrder: 0,
+      },
+      {
+        slug: 'generalforsamling',
+        name: 'Generalforsamling',
+        plural: 'Generalforsamlinger',
+        description: 'Årsmøtet i ESAF.',
+        sortOrder: 10,
+      },
+      { slug: 'fagkveld', name: 'Fagkveld', plural: 'Fagkvelder', sortOrder: 20 },
+    ])
+    .returning({ id: schema.eventType.id })
+
   // ESAF-helgen: én helg hver høst, noen år også om våren, og én som kommer.
+  // Generalforsamling hver vår fra 2014, og noen fagkvelder.
   const places = ['Trondheim', 'Oppdal', 'Røros', 'Oslo', 'Hemsedal', 'Bergen']
-  const weekendRows = await db
-    .insert(schema.esafWeekend)
+  const topics = ['salg', 'finansiering', 'ledelse', 'produktutvikling', 'eksport', 'rekruttering']
+  const eventRows = await db
+    .insert(schema.event)
     .values([
       ...Array.from({ length: 2026 - 2010 + 1 }, (_, i) => 2010 + i).flatMap((year) => [
         ...([2015, 2019, 2022].includes(year)
           ? [
               {
+                typeId: weekendType!.id,
                 name: `ESAF-helgen vår ${year}`,
                 startDate: `${year}-04-0${3 + (year % 5)}`,
                 endDate: `${year}-04-0${5 + (year % 5)}`,
@@ -865,6 +891,7 @@ async function seedDemo() {
             ]
           : []),
         {
+          typeId: weekendType!.id,
           name: `ESAF-helgen høst ${year}`,
           startDate: `${year}-09-1${year % 8}`,
           endDate: `${year}-09-1${(year % 8) + 2}`,
@@ -874,8 +901,29 @@ async function seedDemo() {
               ? 'Foredrag fra gründere i tre kull, workshop om salg og middag på Bakklandet.'
               : null,
         },
+        ...(year >= 2014
+          ? [
+              {
+                typeId: gfType!.id,
+                name: `Generalforsamling ${year}`,
+                startDate: `${year}-03-${String(10 + (year % 12)).padStart(2, '0')}`,
+                location: 'Trondheim',
+              },
+            ]
+          : []),
+        ...(year >= 2020 && year % 2 === 0
+          ? [
+              {
+                typeId: talkType!.id,
+                name: `Fagkveld om ${topics[year % topics.length]}`,
+                startDate: `${year}-11-0${2 + (year % 5)}`,
+                location: pick(['Oslo', 'Trondheim']),
+              },
+            ]
+          : []),
       ]),
       {
+        typeId: weekendType!.id,
         name: 'ESAF-helgen vår 2027',
         startDate: '2027-04-09',
         endDate: '2027-04-11',
@@ -883,27 +931,46 @@ async function seedDemo() {
         description: 'Program kommer.',
       },
     ])
-    .returning({ id: schema.esafWeekend.id, startDate: schema.esafWeekend.startDate })
-  const attendance: (typeof schema.esafWeekendAttendance.$inferInsert)[] = []
-  for (const w of weekendRows) {
-    const year = Number(w.startDate.slice(0, 4))
+    .returning({
+      id: schema.event.id,
+      typeId: schema.event.typeId,
+      startDate: schema.event.startDate,
+    })
+  const participation: (typeof schema.eventParticipation.$inferInsert)[] = []
+  for (const e of eventRows) {
+    const year = Number(e.startDate.slice(0, 4))
     if (year > 2026) continue
-    // Helgen har vokst med årene; ferske kull kommer oftest.
-    const growth = 0.15 + (year - 2010) * 0.015
+    const weekend = e.typeId === weekendType!.id
+    // Helgen har vokst med årene; ferske kull kommer oftest. Generalforsamlingen
+    // og fagkveldene er mindre.
+    const base = weekend ? 0.15 + (year - 2010) * 0.015 : 0.06
+    let organizers = 0
     for (const p of [...people, { id: sara!.id, name: 'Sara Holm', year: 2016 }]) {
       if (p.year > year + 1) continue
-      const fresh = year - p.year <= 3 ? 0.2 : 0
-      if (rand() > growth + fresh) continue
-      attendance.push({
-        weekendId: w.id,
+      const fresh = weekend && year - p.year <= 3 ? 0.2 : 0
+      if (rand() > base + fresh) continue
+      // Noen få arrangerer, holder foredrag eller hjelper til.
+      const r = rand()
+      const role =
+        organizers < 3 && year - p.year >= 1 && r < 0.05
+          ? ('organizer' as const)
+          : r < 0.08
+            ? ('speaker' as const)
+            : weekend && r < 0.11
+              ? ('volunteer' as const)
+              : null
+      if (role === 'organizer') organizers++
+      participation.push({
+        eventId: e.id,
         personId: p.id,
+        role,
         source: claimedIds.has(p.id) && rand() < 0.6 ? 'self' : rand() < 0.5 ? 'import' : 'admin',
       })
     }
   }
-  await db.insert(schema.esafWeekendAttendance).values(attendance).onConflictDoNothing()
+  await db.insert(schema.eventParticipation).values(participation).onConflictDoNothing()
 
   console.log(
-    `Seedet ${people.length + 1} oppdiktede personer, ${posts.length} innlegg, ${years.length} kull og ${weekendRows.length} ESAF-helger. Logg inn som admin@example.test eller sara@example.test, passord ${PASSWORD}.`,
+    `Seedet ${people.length + 1} oppdiktede personer, ${posts.length} innlegg, ${years.length} kull og ${eventRows.length} arrangementer. Logg inn som admin@example.test eller sara@example.test, passord ${PASSWORD}.`,
   )
 }

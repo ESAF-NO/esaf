@@ -1,6 +1,7 @@
 import { Link, useLocation, useRouteContext, useRouter } from '@tanstack/react-router'
 import {
   Building2,
+  CalendarDays,
   GraduationCap,
   House,
   KeyRound,
@@ -28,6 +29,7 @@ function NavItem({
   label,
   active,
   dot,
+  nested,
   onNavigate,
 }: {
   to: string
@@ -36,6 +38,8 @@ function NavItem({
   label: string
   active: boolean
   dot?: string
+  /** Et underpunkt, rykket inn under punktet over. */
+  nested?: boolean
   onNavigate?: () => void
 }) {
   return (
@@ -45,6 +49,7 @@ function NavItem({
       onClick={onNavigate}
       className={cx(
         'group flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm font-medium transition',
+        nested && 'ml-6 h-8',
         active
           ? 'bg-white text-stone-950 shadow-card ring-1 ring-stone-200'
           : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900',
@@ -76,6 +81,8 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const kanal = new URLSearchParams(location.searchStr).get('kanal')
   const path = location.pathname
   const onFeed = path === '/feed'
+  const onWeekend =
+    path === '/arrangementer/esaf-helgen' || path.startsWith('/arrangementer/esaf-helgen/')
 
   async function signOut() {
     await authClient.signOut()
@@ -115,10 +122,18 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             onNavigate={onNavigate}
           />
           <NavItem
-            to="/esaf-helgen"
+            to="/arrangementer"
+            icon={CalendarDays}
+            label="Arrangementer"
+            active={path.startsWith('/arrangementer') && !onWeekend}
+            onNavigate={onNavigate}
+          />
+          <NavItem
+            to="/arrangementer/esaf-helgen"
             icon={Tent}
             label="ESAF-helgen"
-            active={path.startsWith('/esaf-helgen')}
+            active={onWeekend}
+            nested
             onNavigate={onNavigate}
           />
           <NavItem

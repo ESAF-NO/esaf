@@ -134,6 +134,13 @@
       "when": 1793288427171,
       "tag": "0018_cohort_reps_weekends",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793289778888,
+      "tag": "0019_events",
+      "breakpoints": true
     }
   ]
 }

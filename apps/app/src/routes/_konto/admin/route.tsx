@@ -28,6 +28,7 @@ const tabs = [
   { to: '/admin/medlemmer', label: 'Medlemmer', permission: 'members.manage' },
   { to: '/admin/kullrepresentanter', label: 'Kullrepresentanter', permission: 'members.manage' },
   { to: '/admin/profiler', label: 'Profiler', permission: 'profiles.edit' },
+  { to: '/admin/arrangementer', label: 'Arrangementer', permission: 'profiles.edit' },
   { to: '/admin/selskaper', label: 'Selskaper', permission: 'profiles.edit' },
   { to: '/admin/logg', label: 'Logg', permission: 'audit.read' },
 ] as const

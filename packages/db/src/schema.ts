@@ -662,15 +662,40 @@ export const cohortRepresentative = pgTable(
 )
 
 /**
- * ESAF-helgen: samlingen for alumni, som regel én gang i året, noen år én per
- * semester. `endDate` er null for helger på én dag eller når sluttdatoen ikke er
- * kjent.
+ * Typer arrangementer: ESAF-helgen (lagt inn av migreringen), og det admins
+ * legger til, f.eks. «Generalforsamling» eller «Fagkveld». `slug` er adressen
+ * (`/arrangementer/esaf-helgen`) og endres ikke etter at typen er laget, så
+ * lenker fortsetter å virke.
  */
-export const esafWeekend = pgTable(
-  'esaf_weekend',
+export const eventType = pgTable(
+  'event_type',
   {
     id: uuid().primaryKey().defaultRandom(),
-    /** F.eks. «ESAF-helgen høst 2018». */
+    slug: text().notNull().unique(),
+    /** Entall, f.eks. «ESAF-helgen» eller «Fagkveld». */
+    name: text().notNull(),
+    /** Flertall, f.eks. «Fagkvelder». Null når navnet passer begge steder. */
+    plural: text(),
+    description: text(),
+    /** Lavest først. ESAF-helgen har 0, så den står øverst. */
+    sortOrder: integer().notNull().default(100),
+    ...timestamps,
+  },
+  (t) => [check('event_type_slug', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)],
+)
+
+/**
+ * Et arrangement, f.eks. «ESAF-helgen høst 2018». `endDate` er null for
+ * arrangementer på én dag eller når sluttdatoen ikke er kjent. En type med
+ * arrangementer kan ikke slettes.
+ */
+export const event = pgTable(
+  'event',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    typeId: uuid()
+      .notNull()
+      .references(() => eventType.id, { onDelete: 'restrict' }),
     name: text().notNull(),
     startDate: date({ mode: 'string' }).notNull(),
     endDate: date({ mode: 'string' }),
@@ -679,32 +704,43 @@ export const esafWeekend = pgTable(
     ...timestamps,
   },
   (t) => [
+    index().on(t.typeId, t.startDate),
     index().on(t.startDate),
-    check('esaf_weekend_dates', sql`${t.endDate} is null or ${t.endDate} >= ${t.startDate}`),
+    check('event_dates', sql`${t.endDate} is null or ${t.endDate} >= ${t.startDate}`),
   ],
 )
 
-/** Hvem som registrerte oppmøtet: personen selv, en admin, eller en innlimt liste. */
-export const weekendAttendanceSource = pgEnum('weekend_attendance_source', [
-  'self',
-  'admin',
-  'import',
+/**
+ * Rollen en person hadde på et arrangement. Null (eller `attended`) betyr at
+ * personen deltok uten noen særskilt rolle; appen lagrer alltid null for det.
+ */
+export const participationRole = pgEnum('participation_role', [
+  'attended',
+  'organizer',
+  'speaker',
+  'volunteer',
 ])
 
-/** Hvem som var på en ESAF-helg. Én rad per person og helg. */
-export const esafWeekendAttendance = pgTable(
-  'esaf_weekend_attendance',
+/** Hvem som registrerte deltakelsen: personen selv, en admin, eller en import (liste eller regneark). */
+export const participationSource = pgEnum('participation_source', ['self', 'admin', 'import'])
+
+/** Hvem som var på et arrangement, og eventuelt i hvilken rolle. Én rad per person og arrangement. */
+export const eventParticipation = pgTable(
+  'event_participation',
   {
-    weekendId: uuid()
+    eventId: uuid()
       .notNull()
-      .references(() => esafWeekend.id, { onDelete: 'cascade' }),
+      .references(() => event.id, { onDelete: 'cascade' }),
     personId: uuid()
       .notNull()
       .references(() => person.id, { onDelete: 'cascade' }),
-    source: weekendAttendanceSource().notNull(),
+    role: participationRole(),
+    source: participationSource().notNull(),
+    /** Notat fra styret. Vises bare for admins. */
+    note: text(),
     createdAt: timestamps.createdAt,
   },
-  (t) => [primaryKey({ columns: [t.weekendId, t.personId] }), index().on(t.personId)],
+  (t) => [primaryKey({ columns: [t.eventId, t.personId] }), index().on(t.personId)],
 )
 
 export const membershipStatus = pgEnum('membership_status', ['pending', 'active', 'inactive'])
@@ -795,7 +831,8 @@ export type ContributionStatus = (typeof contributionStatus.enumValues)[number]
 export type CompanySuggestionKind = (typeof companySuggestionKind.enumValues)[number]
 export type CompanyLinkRole = (typeof companyLinkRole.enumValues)[number]
 export type ReviewDismissalKind = (typeof reviewDismissalKind.enumValues)[number]
-export type WeekendAttendanceSource = (typeof weekendAttendanceSource.enumValues)[number]
+export type ParticipationRole = (typeof participationRole.enumValues)[number]
+export type ParticipationSource = (typeof participationSource.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)

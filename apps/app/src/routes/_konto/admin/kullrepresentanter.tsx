@@ -1,13 +1,14 @@
 import type { AdminRepresentative, RepresentativeOverviewCohort } from '@esaf/core'
 import { createFileRoute, Link, notFound, useNavigate, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { AlertTriangle, Megaphone, Pencil, Plus, Search } from 'lucide-react'
+import { AlertTriangle, FileSpreadsheet, Megaphone, Pencil, Plus, Search } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import {
   Avatar,
   Button,
+  buttonClass,
   Card,
   cx,
   EmptyState,
@@ -74,6 +75,12 @@ function Representatives() {
           kull kan ha flere. Vervene vises på kullsiden og profilen, og tidligere verv blir stående
           med årene. Alt logges.
         </p>
+        <Link
+          to="/admin/kullrepresentanter/import"
+          className={buttonClass({ variant: 'secondary', size: 'sm' })}
+        >
+          <FileSpreadsheet className="size-4" aria-hidden /> Importer fra regneark
+        </Link>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

@@ -2,6 +2,7 @@ import {
   schema,
   type CohortRelation,
   type Db,
+  type MemberRole,
   type MembershipStatus,
   type PersonSource,
 } from '@esaf/db'
@@ -12,7 +13,8 @@ import { deleteOrphanCompanies } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { normalizeEmail, type Tx } from './members.ts'
 import { deletePhotoFiles, photoUrls, type ProfilePhoto } from './photos.ts'
-import { moveFieldSources, type ProfileSourceField } from './sources.ts'
+import { normalizePhone } from './profile-import.ts'
+import { deleteFieldSources, moveFieldSources, type ProfileSourceField } from './sources.ts'
 import type { ObjectStorage } from './storage.ts'
 
 const {
@@ -75,7 +77,7 @@ const cohortInput = z.object({
   relation: z.enum(schema.cohortRelation.enumValues),
 })
 
-const cohortsInput = z
+export const cohortsInput = z
   .array(cohortInput)
   .max(10, 'Maks 10 kull.')
   .refine(
@@ -83,7 +85,7 @@ const cohortsInput = z
     'Samme kull står to ganger.',
   )
 
-const emailInput = z
+export const emailInput = z
   .string()
   .trim()
   .max(200)
@@ -320,6 +322,7 @@ export type PersonAdminDetails = {
   claimed: boolean
   source: PersonSource
   status: MembershipStatus | null
+  role: MemberRole | null
   cohorts: { graduationYear: number; relation: CohortRelation }[]
   /** Alle kjente adresser. Vises aldri for andre enn admins. */
   emails: { email: string; source: 'signup' | 'import' | 'admin'; login: boolean }[]
@@ -339,6 +342,7 @@ export async function getPersonAdmin(
       userId: person.userId,
       source: person.source,
       status: membership.status,
+      role: membership.role,
       loginEmail: user.email,
     })
     .from(person)
@@ -366,6 +370,7 @@ export async function getPersonAdmin(
     claimed: row.userId !== null,
     source: row.source,
     status: row.status,
+    role: row.role,
     cohorts,
     emails: emails.map((e) => ({ ...e, login: e.email === login })),
   }
@@ -789,4 +794,300 @@ export async function mergePeople(
   })
   if (unusedPhoto) await deletePhotoFiles(storage, unusedPhoto)
   return { personId }
+}
+
+/**
+ * Sletter en profil ingen har tatt i bruk, for eksempel en som ble lagt inn ved
+ * en feil eller to ganger (da er sammenslåing som regel bedre). Profiler med
+ * konto, innlegg eller kommentarer slettes aldri. Krever begrunnelse. Kull,
+ * e-postadresser, erfaring, verv, deltakelse og kilder forsvinner med profilen;
+ * sitater blir stående uten kobling, med navnet slik kilden skriver det.
+ * Ventende invitasjoner til profilen trekkes tilbake. Selskaper som bare fantes
+ * fordi profilen nevnte dem, ryddes bort. Logges som `profile.delete`.
+ */
+export async function deleteProfile(
+  db: Db,
+  storage: ObjectStorage,
+  viewer: Viewer,
+  input: { personId: string; reason: string },
+): Promise<void> {
+  assertCan(viewer, 'profiles.edit')
+  const reason = input.reason.trim()
+  if (reason.length < 3) {
+    throw new DomainError('Skriv en kort begrunnelse. Den lagres i revisjonsloggen.')
+  }
+  const photoKey = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        id: person.id,
+        fullName: person.fullName,
+        userId: person.userId,
+        photoKey: person.photoKey,
+        esCompanyId: person.esCompanyId,
+        source: person.source,
+      })
+      .from(person)
+      .where(eq(person.id, input.personId))
+      .for('update')
+    if (!row) throw new NotFoundError('Fant ikke personen.')
+    if (row.userId) {
+      throw new DomainError(
+        'Profilen er tatt i bruk av en konto og kan ikke slettes. Deaktiver medlemmet i stedet.',
+      )
+    }
+    const [[posts], [comments]] = await Promise.all([
+      tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(post)
+        .where(eq(post.authorPersonId, row.id)),
+      tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(comment)
+        .where(eq(comment.authorPersonId, row.id)),
+    ])
+    if (posts!.n || comments!.n) {
+      throw new DomainError('Profilen har innlegg eller kommentarer. Slå den sammen i stedet.')
+    }
+    const [jobs, years] = await Promise.all([
+      tx
+        .select({ companyId: experience.companyId })
+        .from(experience)
+        .where(eq(experience.personId, row.id)),
+      tx
+        .select({ year: cohort.graduationYear })
+        .from(personCohort)
+        .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+        .where(eq(personCohort.personId, row.id)),
+    ])
+    const revoked = await tx
+      .update(invitation)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(invitation.personId, row.id),
+          isNull(invitation.usedAt),
+          isNull(invitation.revokedAt),
+        ),
+      )
+      .returning({ id: invitation.id })
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'profile.delete',
+      details: {
+        fullName: row.fullName,
+        personId: row.id,
+        source: row.source,
+        cohorts: years.map((y) => y.year).sort(),
+        reason,
+        ...(revoked.length ? { revokedInvitations: revoked.length } : {}),
+      },
+    })
+    await deleteFieldSources(tx, 'person', [row.id])
+    await tx.delete(person).where(eq(person.id, row.id))
+    await deleteOrphanCompanies(tx, [...jobs.map((j) => j.companyId), row.esCompanyId])
+    return row.photoKey
+  })
+  if (photoKey) await deletePhotoFiles(storage, photoKey)
+}
+
+/**
+ * Fyller inn kontaktinfo på en profil ingen har tatt i bruk, der feltet er tomt,
+ * som importen fra kullisten gjør. Står det noe der fra før, eller er profilen
+ * tatt i bruk, endres det aldri: da er det personens eget valg. Kontaktadressen
+ * blir også en kjent adresse, hvis ingen andre har den. Logges som
+ * `profile.admin_contact_fill`.
+ */
+export async function fillUnclaimedContact(
+  db: Db,
+  viewer: Viewer,
+  personId: string,
+  input: { contactEmail?: string | null; phone?: string | null },
+): Promise<{ filled: ('contactEmail' | 'phone')[] }> {
+  assertCan(viewer, 'profiles.edit')
+  const parsed = z
+    .object({
+      contactEmail: emailInput.nullable().optional(),
+      phone: z
+        .string()
+        .trim()
+        .max(30)
+        .refine((v) => /^\+?[0-9 ()-]{5,20}$/.test(v), 'Ugyldig telefonnummer.')
+        .nullable()
+        .optional(),
+    })
+    .safeParse(input)
+  if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? 'Ugyldige felt.')
+  const { contactEmail, phone } = parsed.data
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ userId: person.userId, contactEmail: person.contactEmail, phone: person.phone })
+      .from(person)
+      .where(eq(person.id, personId))
+      .for('update')
+    if (!row) throw new NotFoundError('Fant ikke personen.')
+    if (row.userId) {
+      throw new DomainError('Profilen er tatt i bruk. Bare personen selv endrer kontaktinfoen.')
+    }
+    const values: { contactEmail?: string; phone?: string } = {}
+    if (contactEmail) {
+      if (row.contactEmail && normalizeEmail(row.contactEmail) !== contactEmail) {
+        throw new DomainError('Profilen har allerede en kontaktadresse, og den endres ikke.')
+      }
+      if (!row.contactEmail) values.contactEmail = contactEmail
+    }
+    if (phone) {
+      const normalized = normalizePhone(phone) ?? phone
+      if (row.phone && row.phone !== normalized) {
+        throw new DomainError('Profilen har allerede et telefonnummer, og det endres ikke.')
+      }
+      if (!row.phone) values.phone = normalized
+    }
+    const filled = Object.keys(values) as ('contactEmail' | 'phone')[]
+    if (!filled.length) return { filled }
+    if (values.contactEmail) {
+      const [owner] = await tx
+        .select({ personId: personEmail.personId })
+        .from(personEmail)
+        .where(eq(personEmail.email, values.contactEmail))
+      if (owner && owner.personId !== personId) {
+        await assertEmailsFree(tx, [values.contactEmail], personId)
+      }
+      if (!owner) {
+        await tx
+          .insert(personEmail)
+          .values({ email: values.contactEmail, personId, source: 'admin' })
+      }
+    }
+    await tx.update(person).set(values).where(eq(person.id, personId))
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'profile.admin_contact_fill',
+      subjectPersonId: personId,
+      details: { fields: filled },
+    })
+    return { filled }
+  })
+}
+
+export type AdminPersonIndexItem = AdminPerson & {
+  role: MemberRole | null
+  cohorts: { graduationYear: number; relation: CohortRelation }[]
+  jobTitle: string | null
+  currentCompany: string | null
+  city: string | null
+  linkedinUrl: string | null
+  /** Hvilke profilfelt som er fylt ut, til å finne profiler som trenger mer info. */
+  has: {
+    photo: boolean
+    bio: boolean
+    linkedin: boolean
+    city: boolean
+    experience: boolean
+    studyBackground: boolean
+    esCompany: boolean
+    expertise: boolean
+    industries: boolean
+    contactEmail: boolean
+    phone: boolean
+    knownEmail: boolean
+  }
+}
+
+/**
+ * Alle personer med det som trengs for å søke og filtrere i adminverktøy (f.eks.
+ * MCP): kull med tilknytning, rolle, nåværende stilling og hvilke felt som
+ * mangler. Kontaktinfo tas ikke med, bare om den finnes.
+ */
+export async function listPeopleIndex(db: Db, viewer: Viewer): Promise<AdminPersonIndexItem[]> {
+  assertCan(viewer, 'profiles.edit')
+  const [rows, cohorts, jobs, emails] = await Promise.all([
+    db
+      .select({
+        personId: person.id,
+        fullName: person.fullName,
+        photoKey: person.photoKey,
+        userId: person.userId,
+        source: person.source,
+        status: membership.status,
+        role: membership.role,
+        createdAt: person.createdAt,
+        city: person.city,
+        linkedinUrl: person.linkedinUrl,
+        bio: person.bio,
+        studyBackground: person.studyBackground,
+        esCompanyId: person.esCompanyId,
+        expertise: person.expertise,
+        industries: person.industries,
+        contactEmail: person.contactEmail,
+        phone: person.phone,
+      })
+      .from(person)
+      .leftJoin(membership, eq(membership.personId, person.id))
+      .orderBy(asc(person.fullName)),
+    db
+      .select({
+        personId: personCohort.personId,
+        graduationYear: cohort.graduationYear,
+        relation: personCohort.relation,
+      })
+      .from(personCohort)
+      .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+      .orderBy(asc(cohort.graduationYear)),
+    db
+      .select({
+        personId: experience.personId,
+        title: experience.title,
+        endYear: experience.endYear,
+        company: schema.company.name,
+      })
+      .from(experience)
+      .innerJoin(schema.company, eq(schema.company.id, experience.companyId))
+      .orderBy(asc(experience.position)),
+    db.select({ personId: personEmail.personId }).from(personEmail),
+  ])
+  const cohortsOf = new Map<string, AdminPersonIndexItem['cohorts']>()
+  for (const c of cohorts) {
+    cohortsOf.set(c.personId, [
+      ...(cohortsOf.get(c.personId) ?? []),
+      { graduationYear: c.graduationYear, relation: c.relation },
+    ])
+  }
+  const jobsOf = new Map<string, typeof jobs>()
+  for (const j of jobs) jobsOf.set(j.personId, [...(jobsOf.get(j.personId) ?? []), j])
+  const withEmail = new Set(emails.map((e) => e.personId))
+  return rows.map((r) => {
+    const list = jobsOf.get(r.personId) ?? []
+    const now = list.find((j) => j.endYear === null)
+    const personCohorts = cohortsOf.get(r.personId) ?? []
+    return {
+      personId: r.personId,
+      fullName: r.fullName,
+      photo: photoUrls(r.photoKey),
+      claimed: r.userId !== null,
+      source: r.source,
+      status: r.status,
+      role: r.role,
+      createdAt: r.createdAt,
+      cohortYears: personCohorts.map((c) => c.graduationYear),
+      cohorts: personCohorts,
+      jobTitle: now?.title ?? null,
+      currentCompany: now?.company ?? null,
+      city: r.city,
+      linkedinUrl: r.linkedinUrl,
+      has: {
+        photo: r.photoKey !== null,
+        bio: r.bio !== null,
+        linkedin: r.linkedinUrl !== null,
+        city: r.city !== null,
+        experience: list.length > 0,
+        studyBackground: r.studyBackground !== null,
+        esCompany: r.esCompanyId !== null,
+        expertise: r.expertise.length > 0,
+        industries: r.industries.length > 0,
+        contactEmail: r.contactEmail !== null,
+        phone: r.phone !== null,
+        knownEmail: withEmail.has(r.personId),
+      },
+    }
+  })
 }

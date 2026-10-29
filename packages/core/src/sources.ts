@@ -1,9 +1,10 @@
 import { schema, type Db, type FieldSourceEntity, type SourceConfidence } from '@esaf/db'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
-import { AccessDeniedError } from './errors.ts'
-import { assertMember, can, type Viewer } from './access.ts'
+import { z } from 'zod'
+import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
+import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import type { Tx } from './members.ts'
-import { safeHttpUrl } from './validation.ts'
+import { hostLabel, optionalSourceUrl, optionalText, safeHttpUrl } from './validation.ts'
 
 const { fieldSource } = schema
 
@@ -215,4 +216,125 @@ export async function deleteFieldSources(
   await tx
     .delete(fieldSource)
     .where(and(eq(fieldSource.entityType, entityType), inArray(fieldSource.entityId, entityIds)))
+}
+
+/** En kilde en admin legger til for et felt, f.eks. etter å ha funnet informasjonen på nett. */
+export const fieldSourceInput = z
+  .object({
+    field: z.string(),
+    /** Kilden slik den skal vises. Uten navn brukes domenet i lenken. */
+    label: optionalText(80).default(null),
+    url: optionalSourceUrl.default(null),
+    confidence: z.enum(schema.sourceConfidence.enumValues),
+    /** Når informasjonen ble hentet. Standard nå. */
+    fetchedAt: z.coerce.date().optional(),
+  })
+  .refine((s) => s.label !== null || s.url !== null, {
+    message: 'En kilde må ha et navn eller en lenke.',
+  })
+
+export type FieldSourceInput = z.input<typeof fieldSourceInput>
+
+/**
+ * Skriver kildene i en transaksjon som allerede er i gang. Finnes samme kilde
+ * (felt og navn) fra før, får den ny lenke, tidspunkt og sikkerhet, men en
+ * bekreftelse fra eieren beholdes. `reviewed` tar feltene ut av Gjennomgang.
+ * Rettighetene og at personen eller selskapet finnes, må være sjekket.
+ */
+export async function writeFieldSources(
+  tx: Tx,
+  entityType: FieldSourceEntity,
+  entityId: string,
+  sources: z.output<typeof fieldSourceInput>[],
+  { reviewed = false }: { reviewed?: boolean } = {},
+): Promise<string[]> {
+  const allowed: readonly string[] =
+    entityType === 'person' ? profileSourceFields : companySourceFields
+  for (const s of sources) {
+    if (!allowed.includes(s.field)) {
+      throw new DomainError(
+        `Feltet «${s.field}» kan ikke ha kilde. Gyldige felt: ${allowed.join(', ')}.`,
+      )
+    }
+  }
+  const now = new Date()
+  for (const s of sources) {
+    const label = s.label ?? hostLabel(s.url)!
+    await tx
+      .insert(fieldSource)
+      .values({
+        entityType,
+        entityId,
+        field: s.field,
+        sourceLabel: label,
+        sourceUrl: s.url,
+        fetchedAt: s.fetchedAt ?? now,
+        confidence: s.confidence,
+        reviewedAt: reviewed ? now : null,
+      })
+      .onConflictDoUpdate({
+        target: [
+          fieldSource.entityType,
+          fieldSource.entityId,
+          fieldSource.field,
+          fieldSource.sourceLabel,
+        ],
+        set: {
+          sourceUrl: s.url,
+          fetchedAt: s.fetchedAt ?? now,
+          confidence: s.confidence,
+          ...(reviewed ? { reviewedAt: now } : {}),
+        },
+      })
+  }
+  return [...new Set(sources.map((s) => s.field))]
+}
+
+/**
+ * Legger til kilder for felt på en profil eller et selskap, så medlemmene ser
+ * hvor informasjonen kom fra («Fra proff.no · ikke bekreftet») og eieren kan
+ * bekrefte den. Bare admins med `profiles.edit`. Kontaktinfo kan aldri ha kilde.
+ * Logges som `source.add`.
+ */
+export async function addFieldSources(
+  db: Db,
+  viewer: Viewer,
+  input: {
+    entityType: FieldSourceEntity
+    entityId: string
+    sources: FieldSourceInput[]
+    reviewed?: boolean
+  },
+): Promise<{ fields: string[] }> {
+  assertCan(viewer, 'profiles.edit')
+  const parsed = z.array(fieldSourceInput).min(1).max(30).safeParse(input.sources)
+  if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? 'Ugyldig kilde.')
+  return db.transaction(async (tx) => {
+    const table = input.entityType === 'person' ? schema.person : schema.company
+    const [row] = await tx
+      .select({ id: table.id })
+      .from(table)
+      .where(eq(table.id, input.entityId))
+      .for('update')
+    if (!row) {
+      throw new NotFoundError(
+        input.entityType === 'person' ? 'Fant ikke personen.' : 'Fant ikke selskapet.',
+      )
+    }
+    const fields = await writeFieldSources(tx, input.entityType, input.entityId, parsed.data, {
+      reviewed: input.reviewed,
+    })
+    await tx.insert(schema.auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'source.add',
+      subjectPersonId: input.entityType === 'person' ? input.entityId : null,
+      details: {
+        entityType: input.entityType,
+        ...(input.entityType === 'company' ? { companyId: input.entityId } : {}),
+        fields,
+        labels: [...new Set(parsed.data.map((s) => s.label ?? hostLabel(s.url)))],
+      },
+    })
+    return { fields }
+  })
 }

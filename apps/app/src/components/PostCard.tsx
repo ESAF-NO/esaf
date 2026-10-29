@@ -1,6 +1,6 @@
 import type { Author, PostSummary } from '@esaf/core'
 import { Link } from '@tanstack/react-router'
-import { ArrowBigUp, ExternalLink, MessageCircle, Pin } from 'lucide-react'
+import { ArrowBigUp, ExternalLink, MessageCircle, Paperclip, Pin } from 'lucide-react'
 import { useState } from 'react'
 import { vote } from '#/lib/feed.functions.ts'
 import { fullDate, timeAgo } from '#/lib/format.ts'
@@ -128,7 +128,17 @@ export function AuthorLine({
   )
 }
 
+/** «2 bilder og 1 dokument», til skjermlesere og som hjelpetekst. */
+function attachmentLabel({ images, documents }: PostSummary['attachments']) {
+  const parts = [
+    images && `${images} ${images === 1 ? 'bilde' : 'bilder'}`,
+    documents && `${documents} ${documents === 1 ? 'dokument' : 'dokumenter'}`,
+  ].filter(Boolean)
+  return parts.join(' og ')
+}
+
 export function PostCard({ post }: { post: PostSummary }) {
+  const files = post.attachments.images + post.attachments.documents
   return (
     <article className="group relative flex gap-4 rounded-2xl bg-white p-4 shadow-card ring-1 ring-stone-200/70 transition hover:shadow-lift hover:ring-stone-300/80 sm:p-5">
       <VoteButton postId={post.id} votes={post.votes} voted={post.viewerVoted} />
@@ -162,12 +172,33 @@ export function PostCard({ post }: { post: PostSummary }) {
         )}
         <div className="relative z-10 mt-3 flex items-center justify-between gap-3">
           <AuthorLine author={post.author} date={post.createdAt} />
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-sm text-stone-500">
-            <MessageCircle className="size-4" aria-hidden />
-            {post.comments}
+          <span className="flex shrink-0 items-center gap-3 text-sm text-stone-500">
+            {files > 0 && (
+              <span
+                className="inline-flex items-center gap-1"
+                title={attachmentLabel(post.attachments)}
+              >
+                <Paperclip className="size-4" aria-hidden />
+                <span className="sr-only">Vedlegg: </span>
+                {files}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5">
+              <MessageCircle className="size-4" aria-hidden />
+              {post.comments}
+            </span>
           </span>
         </div>
       </div>
+      {post.attachments.thumbnail && (
+        <img
+          src={post.attachments.thumbnail}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="hidden size-20 shrink-0 self-center rounded-xl bg-stone-100 object-cover ring-1 ring-stone-200 sm:block"
+        />
+      )}
     </article>
   )
 }

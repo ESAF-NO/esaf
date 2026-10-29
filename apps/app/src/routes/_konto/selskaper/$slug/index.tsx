@@ -15,6 +15,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { DocumentsCard } from '#/components/Attachments.tsx'
 import { AddPersonDialog, JoinCompanyDialog } from '#/components/CompanyLinkDialogs.tsx'
 import { CompanyArticles } from '#/components/CompanyArticles.tsx'
 import { CompanyTimeline } from '#/components/CompanyTimeline.tsx'
@@ -325,6 +326,18 @@ function CompanyPage() {
               </ul>
             </Card>
           )}
+          <DocumentsCard
+            target={{ til: 'selskap', id: c.id }}
+            documents={c.documents}
+            canUpload={c.canEdit}
+            max={30}
+            emptyText="Ingen dokumenter ennå. Legg ut pitch deck, pressemateriale eller annet medlemmene kan ha nytte av."
+            uploadHint={
+              c.canEdit && !c.connected
+                ? 'Du laster opp som admin, og det logges. PDF, Word, Excel, PowerPoint, tekst, CSV eller bilder, maks 25 MB.'
+                : 'Alle medlemmer kan laste ned. PDF, Word, Excel, PowerPoint, tekst, CSV eller bilder, maks 25 MB.'
+            }
+          />
           {c.sources.length > 0 && <Sources sources={c.sources} />}
         </aside>
       </div>

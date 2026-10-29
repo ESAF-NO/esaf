@@ -23,6 +23,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
+import { storage } from '#/server/photos.server.ts'
 
 // Arrangementer. Medlemmer leser og melder seg selv på; resten krever
 // profiles.edit. Rettigheter og full validering i @esaf/core.
@@ -109,7 +110,7 @@ export const saveEvent = createServerFn({ method: 'POST' })
 
 export const removeEvent = createServerFn({ method: 'POST' })
   .validator(z.object(ev))
-  .handler(({ data }) => run((viewer) => deleteEvent(db, viewer, data.eventId)))
+  .handler(({ data }) => run((viewer) => deleteEvent(db, viewer, data.eventId, storage)))
 
 // Historikk (admin): mange gamle arrangementer på én gang
 

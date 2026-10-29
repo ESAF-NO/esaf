@@ -3,6 +3,7 @@ import { createFileRoute, Link, redirect, useNavigate, useRouter } from '@tansta
 import { ArrowLeft, Check, CircleCheck, MapPin, Pencil, Tent, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { z } from 'zod'
+import { DocumentsCard, EventAlbum } from '#/components/Attachments.tsx'
 import { RoleBadge } from '#/components/EventCharts.tsx'
 import { EventDialog } from '#/components/EventForm.tsx'
 import { EventParticipantsAdmin } from '#/components/EventParticipantsAdmin.tsx'
@@ -135,10 +136,25 @@ function EventPage() {
               {w.description}
             </p>
           )}
+          <EventAlbum
+            eventId={w.id}
+            photos={w.photos}
+            canUpload={w.canUploadPhotos}
+            upcoming={w.upcoming}
+            max={1000}
+          />
           <Participants event={w} />
         </div>
         <aside className="space-y-4">
           <SelfToggle event={w} />
+          <DocumentsCard
+            target={{ til: 'arrangement', id: w.id }}
+            documents={w.documents}
+            canUpload={w.canUploadDocuments}
+            max={30}
+            emptyText="Ingen dokumenter ennå. Legg ut program, referat eller presentasjoner."
+            uploadHint="Arrangørene og admins kan laste opp. PDF, Word, Excel, PowerPoint, tekst, CSV eller bilder, maks 25 MB."
+          />
           {w.canManage && !w.upcoming && (
             <EventParticipantsAdmin eventId={w.id} cohortYears={cohortYears} />
           )}

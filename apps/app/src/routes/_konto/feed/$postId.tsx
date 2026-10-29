@@ -2,6 +2,7 @@ import type { CommentView } from '@esaf/core'
 import { createFileRoute, Link, useLocation, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, ExternalLink, MessageCircle, Pencil, Pin, PinOff, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type KeyboardEvent } from 'react'
+import { AttachmentEditor, AttachmentList, useAttachments } from '#/components/Attachments.tsx'
 import { Markdown } from '#/components/Markdown.tsx'
 import { MarkdownEditor, MarkdownHint } from '#/components/MarkdownEditor.tsx'
 import { AuthorLine, PinnedLabel, VoteButton } from '#/components/PostCard.tsx'
@@ -126,6 +127,12 @@ function PostPage() {
             {post.body}
           </Markdown>
         )}
+        <AttachmentList
+          attachments={post.attachments}
+          // Forfatteren tar bort vedlegg under «Rediger»; moderatorer kan fjerne dem her.
+          removable={(a) => a.canRemove && !post.isOwn}
+          className="mt-5"
+        />
         {post.url && (
           <a
             href={post.url}
@@ -178,15 +185,18 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
   const [body, setBody] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const attachments = useAttachments({ til: 'kommentar' })
+  const empty = !body.trim() && !attachments.items.length
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!body.trim()) return
+    if (empty || attachments.busy) return
     setSending(true)
     setError(null)
     try {
-      await submitComment({ data: { postId, body } })
+      await submitComment({ data: { postId, body, attachmentIds: attachments.ids } })
       setBody('')
+      attachments.reset()
       await router.invalidate()
     } catch (err) {
       setError(errorText(err, 'Kunne ikke publisere kommentaren.'))
@@ -196,7 +206,15 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
   }
 
   return (
-    <form onSubmit={onSubmit} className="mb-6 flex gap-3">
+    <form
+      onSubmit={onSubmit}
+      {...attachments.drop.props}
+      className={cx(
+        'mb-6 flex gap-3 rounded-2xl transition',
+        attachments.drop.dragging &&
+          'bg-brand-50 ring-2 ring-brand-400 ring-offset-4 ring-offset-brand-50',
+      )}
+    >
       {viewer.fullName && (
         <Avatar
           name={viewer.fullName}
@@ -219,6 +237,7 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
           onKeyDown={submitOnModEnter}
           suggestFirst={people}
         />
+        <AttachmentEditor attachments={attachments} compact />
         {error && <ErrorText>{error}</ErrorText>}
         <div className="flex items-center justify-between gap-3">
           <MarkdownHint className="min-w-0" />
@@ -226,8 +245,13 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
             <span className="hidden text-xs text-stone-400 md:inline">
               @ for å nevne noen · ⌘ + Enter for å sende
             </span>
-            <Button type="submit" variant="primary" size="sm" disabled={sending || !body.trim()}>
-              {sending ? 'Sender …' : 'Kommenter'}
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={sending || empty || attachments.busy}
+            >
+              {sending ? 'Sender …' : attachments.busy ? 'Laster opp …' : 'Kommenter'}
             </Button>
           </div>
         </div>
@@ -244,20 +268,23 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
   const [draft, setDraft] = useState(c.body)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const attachments = useAttachments({ til: 'kommentar' }, c.attachments)
+  const empty = !draft.trim() && !attachments.items.length
 
   function startEditing() {
     setDraft(c.body)
+    attachments.reset(c.attachments)
     setError(null)
     setEditing(true)
   }
 
   async function onSave(e: FormEvent) {
     e.preventDefault()
-    if (!draft.trim()) return
+    if (empty || attachments.busy) return
     setSaving(true)
     setError(null)
     try {
-      await editComment({ data: { commentId: c.id, body: draft } })
+      await editComment({ data: { commentId: c.id, body: draft, attachmentIds: attachments.ids } })
       await router.invalidate()
       setEditing(false)
     } catch (err) {
@@ -321,7 +348,7 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
           )}
         </div>
         {editing ? (
-          <form onSubmit={onSave} className="mt-2 space-y-2">
+          <form onSubmit={onSave} className="mt-2 space-y-2" {...attachments.drop.props}>
             <MarkdownEditor
               id={`rediger-kommentar-${c.id}`}
               label="Rediger kommentaren"
@@ -337,6 +364,7 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
                 else submitOnModEnter(e)
               }}
             />
+            <AttachmentEditor attachments={attachments} compact />
             {error && <ErrorText>{error}</ErrorText>}
             <div className="flex items-center justify-between gap-3">
               <MarkdownHint className="min-w-0" />
@@ -348,7 +376,7 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
                   type="submit"
                   variant="primary"
                   size="sm"
-                  disabled={saving || !draft.trim()}
+                  disabled={saving || empty || attachments.busy}
                 >
                   {saving ? 'Lagrer …' : 'Lagre'}
                 </Button>
@@ -356,7 +384,18 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
             </div>
           </form>
         ) : (
-          <Markdown className="mt-1.5 text-sm leading-relaxed text-stone-700">{c.body}</Markdown>
+          <>
+            {c.body && (
+              <Markdown className="mt-1.5 text-sm leading-relaxed text-stone-700">
+                {c.body}
+              </Markdown>
+            )}
+            <AttachmentList
+              attachments={c.attachments}
+              removable={(a) => a.canRemove && !c.canEdit}
+              className="mt-2"
+            />
+          </>
         )}
       </div>
     </li>

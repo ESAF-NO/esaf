@@ -328,7 +328,7 @@ const {
 } = schema
 
 await db.execute(
-  sql`truncate ${schema.fieldSource}, ${schema.reviewDismissal}, ${schema.companySuggestion}, ${schema.companyLinkRequest}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
+  sql`truncate ${schema.esafWeekend}, ${schema.cohortRepresentative}, ${schema.fieldSource}, ${schema.reviewDismissal}, ${schema.companySuggestion}, ${schema.companyLinkRequest}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
 )
 
 /** En innloggingskonto med bekreftet e-post og passord, som om personen hadde registrert seg. */
@@ -807,7 +807,103 @@ async function seedDemo() {
     },
   ])
 
+  // Kullrepresentanter: de fleste kull har én, noen to, noen mangler, og noen
+  // har hatt andre før. Sara er representant for ES 2016, Ada var det før henne.
+  const byYear = new Map<number, Seeded[]>()
+  for (const p of people) byYear.set(p.year, [...(byYear.get(p.year) ?? []), p])
+  const reps: (typeof schema.cohortRepresentative.$inferInsert)[] = []
+  for (const year of years) {
+    if (year === 2016 || year % 7 === 3) continue
+    const [first, second] = some(byYear.get(year) ?? [], 2)
+    if (!first) continue
+    const start = Math.min(2026, year)
+    if (second && year % 4 === 0 && year <= 2020) {
+      reps.push({
+        cohortId: cohortId.get(year)!,
+        personId: second.id,
+        startYear: start,
+        endYear: start + 3,
+      })
+      reps.push({ cohortId: cohortId.get(year)!, personId: first.id, startYear: start + 4 })
+    } else {
+      reps.push({ cohortId: cohortId.get(year)!, personId: first.id, startYear: start })
+      if (second && year % 5 === 0) {
+        reps.push({ cohortId: cohortId.get(year)!, personId: second.id, startYear: start + 1 })
+      }
+    }
+  }
+  reps.push(
+    {
+      cohortId: cohortId.get(2016)!,
+      personId: people[0]!.id,
+      startYear: 2016,
+      endYear: 2019,
+    },
+    {
+      cohortId: cohortId.get(2016)!,
+      personId: sara!.id,
+      startYear: 2020,
+      note: 'Valgt på kullsamlingen i 2020',
+    },
+  )
+  await db.insert(schema.cohortRepresentative).values(reps)
+
+  // ESAF-helgen: én helg hver høst, noen år også om våren, og én som kommer.
+  const places = ['Trondheim', 'Oppdal', 'Røros', 'Oslo', 'Hemsedal', 'Bergen']
+  const weekendRows = await db
+    .insert(schema.esafWeekend)
+    .values([
+      ...Array.from({ length: 2026 - 2010 + 1 }, (_, i) => 2010 + i).flatMap((year) => [
+        ...([2015, 2019, 2022].includes(year)
+          ? [
+              {
+                name: `ESAF-helgen vår ${year}`,
+                startDate: `${year}-04-0${3 + (year % 5)}`,
+                endDate: `${year}-04-0${5 + (year % 5)}`,
+                location: pick(places),
+              },
+            ]
+          : []),
+        {
+          name: `ESAF-helgen høst ${year}`,
+          startDate: `${year}-09-1${year % 8}`,
+          endDate: `${year}-09-1${(year % 8) + 2}`,
+          location: pick(places),
+          description:
+            year === 2025
+              ? 'Foredrag fra gründere i tre kull, workshop om salg og middag på Bakklandet.'
+              : null,
+        },
+      ]),
+      {
+        name: 'ESAF-helgen vår 2027',
+        startDate: '2027-04-09',
+        endDate: '2027-04-11',
+        location: 'Trondheim',
+        description: 'Program kommer.',
+      },
+    ])
+    .returning({ id: schema.esafWeekend.id, startDate: schema.esafWeekend.startDate })
+  const attendance: (typeof schema.esafWeekendAttendance.$inferInsert)[] = []
+  for (const w of weekendRows) {
+    const year = Number(w.startDate.slice(0, 4))
+    if (year > 2026) continue
+    // Helgen har vokst med årene; ferske kull kommer oftest.
+    const growth = 0.15 + (year - 2010) * 0.015
+    for (const p of [...people, { id: sara!.id, name: 'Sara Holm', year: 2016 }]) {
+      if (p.year > year + 1) continue
+      const fresh = year - p.year <= 3 ? 0.2 : 0
+      if (rand() > growth + fresh) continue
+      attendance.push({
+        weekendId: w.id,
+        personId: p.id,
+        source: claimedIds.has(p.id) && rand() < 0.6 ? 'self' : rand() < 0.5 ? 'import' : 'admin',
+      })
+    }
+  }
+  await db.insert(schema.esafWeekendAttendance).values(attendance).onConflictDoNothing()
+
   console.log(
-    `Seedet ${people.length + 1} oppdiktede personer, ${posts.length} innlegg og ${years.length} kull. Logg inn som admin@example.test eller sara@example.test, passord ${PASSWORD}.`,
+    `Seedet ${people.length + 1} oppdiktede personer, ${posts.length} innlegg, ${years.length} kull og ${weekendRows.length} ESAF-helger. Logg inn som admin@example.test eller sara@example.test, passord ${PASSWORD}.`,
   )
 }

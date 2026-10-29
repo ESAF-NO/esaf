@@ -1,12 +1,13 @@
-import type { CohortCompany, MemberListItem } from '@esaf/core'
+import type { CohortCompany, CohortRepresentatives, MemberListItem } from '@esaf/core'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { ArrowLeft, Search } from 'lucide-react'
+import { ArrowLeft, Megaphone, Pencil, Search } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 import { comparePeople, PersonCard } from '#/components/PersonCard.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
+import { RepresentativeCard } from '#/components/Representatives.tsx'
 import { buttonClass, Card, CompanyLogo } from '#/components/ui.tsx'
 import { fetchCohort } from '#/lib/cohorts.functions.ts'
-import { esPeriod, plural } from '#/lib/format.ts'
+import { esPeriod, plural, yearSpan } from '#/lib/format.ts'
 
 export const Route = createFileRoute('/_konto/kull/$year')({
   // Kull heter etter uteksamineringsåret: /kull/2024 er ES 2024, som gikk 2022–2024.
@@ -48,6 +49,7 @@ function PeopleGrid({ people }: { people: MemberListItem[] }) {
 
 function CohortPage() {
   const c = Route.useLoaderData()
+  const { viewer } = Route.useRouteContext()
   const year = c.graduationYear
   // Mentorer og ansatte hører til kullet, men er ikke en del av klassen.
   const isStudent = (m: MemberListItem) =>
@@ -91,6 +93,12 @@ function CohortPage() {
           </Link>
         )}
       </div>
+
+      <Representatives
+        year={year}
+        reps={c.representatives}
+        canManage={viewer.permissions.includes('members.manage')}
+      />
 
       {c.members === 0 ? (
         <p className="text-sm text-stone-500">Ingen fra ES {year} er med i ESAF-appen ennå.</p>
@@ -143,6 +151,78 @@ function CohortPage() {
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Kullrepresentantene øverst på kullsiden: dem styret snakker med. Tidligere
+ * representanter står under, i en roligere stil.
+ */
+function Representatives({
+  year,
+  reps,
+  canManage,
+}: {
+  year: number
+  reps: CohortRepresentatives
+  canManage: boolean
+}) {
+  const edit = canManage && (
+    <Link
+      to="/admin/kullrepresentanter"
+      hash={`es-${year}`}
+      className={buttonClass({ variant: 'ghost', size: 'sm' })}
+    >
+      <Pencil className="size-3.5" aria-hidden /> Endre
+    </Link>
+  )
+  if (!reps.current.length && !reps.past.length) {
+    return (
+      <p className="mb-8 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-stone-500">
+        <Megaphone className="size-4 text-stone-400" aria-hidden />
+        Kullet har ingen kullrepresentant registrert.
+        {edit}
+      </p>
+    )
+  }
+  return (
+    <section aria-labelledby="kullrepresentanter" className="mb-10">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 id="kullrepresentanter" className="text-sm font-semibold text-stone-950">
+          {reps.current.length === 1 ? 'Kullrepresentant' : 'Kullrepresentanter'}
+        </h2>
+        {edit}
+      </div>
+      {reps.current.length > 0 ? (
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {reps.current.map((r) => (
+            <li key={r.id}>
+              <RepresentativeCard rep={r} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-stone-500">Kullet har ingen kullrepresentant nå.</p>
+      )}
+      {reps.past.length > 0 && (
+        <p className="mt-3 text-sm text-stone-500">
+          <span className="font-medium text-stone-600">Tidligere kullrepresentanter:</span>{' '}
+          {reps.past.map((r, i) => (
+            <Fragment key={r.id}>
+              {i > 0 && ', '}
+              <Link
+                to="/medlemmer/$personId"
+                params={{ personId: r.personId }}
+                className="text-stone-700 hover:text-brand-600"
+              >
+                {r.fullName}
+              </Link>{' '}
+              <span className="tabular-nums">({yearSpan(r.startYear, r.endYear)})</span>
+            </Fragment>
+          ))}
+        </p>
+      )}
+    </section>
   )
 }
 

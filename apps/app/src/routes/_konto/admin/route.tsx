@@ -26,6 +26,7 @@ const tabs = [
   { to: '/admin', label: 'Forespørsler', permission: 'members.review' },
   { to: '/admin/gjennomgang', label: 'Gjennomgang', permission: 'profiles.edit' },
   { to: '/admin/medlemmer', label: 'Medlemmer', permission: 'members.manage' },
+  { to: '/admin/kullrepresentanter', label: 'Kullrepresentanter', permission: 'members.manage' },
   { to: '/admin/profiler', label: 'Profiler', permission: 'profiles.edit' },
   { to: '/admin/selskaper', label: 'Selskaper', permission: 'profiles.edit' },
   { to: '/admin/logg', label: 'Logg', permission: 'audit.read' },

@@ -3,6 +3,11 @@ import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import {
+  loadRepresentativeTerms,
+  representativeBadges,
+  type RepresentativeBadge,
+} from './cohort-reps.ts'
+import {
   companyName,
   deleteOrphanCompanies,
   optionalCompanyName,
@@ -21,6 +26,7 @@ import {
   type ProfileSourceField,
 } from './sources.ts'
 import { optionalText, tagList, yearInput } from './validation.ts'
+import { loadPersonWeekends } from './weekends.ts'
 
 const { auditEvent, cohort, company, experience, membership, person, personCohort } = schema
 
@@ -153,6 +159,10 @@ export type Profile = {
   /** Bare satt når personen selv har valgt å vise det. */
   phone: string | null
   cohorts: { graduationYear: number; relation: schema.CohortRelation }[]
+  /** Kullrepresentant nå og tidligere, slik det vises på profilen. */
+  representative: RepresentativeBadge[]
+  /** ESAF-helgene personen har vært på, nyeste først. */
+  weekends: { id: string; name: string; startDate: string }[]
   /** Sitater fra personen. */
   quotes: Quote[]
   /**
@@ -200,7 +210,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     city: row.city,
     linkedinUrl: row.linkedinUrl,
   }
-  const [quotes, sources] = await Promise.all([
+  const [quotes, sources, terms, weekends] = await Promise.all([
     loadQuotes(db, viewer, { personId }),
     loadFieldSources(
       db,
@@ -209,6 +219,8 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
       personId,
       profileSourceFields.filter((field) => values[field] !== null),
     ),
+    loadRepresentativeTerms(db, [personId]),
+    loadPersonWeekends(db, personId),
   ])
 
   const claimed = row.userId !== null
@@ -231,6 +243,8 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     contactEmail: claimed && row.contactEmailVisible ? row.contactEmail : null,
     phone: claimed && row.phoneVisible ? row.phone : null,
     cohorts,
+    representative: representativeBadges(terms.get(personId) ?? []),
+    weekends,
     quotes,
     sources,
     isOwn,

@@ -9,6 +9,7 @@ import {
   PenSquare,
   Search,
   ShieldCheck,
+  Tent,
   Users,
   X,
   type LucideIcon,
@@ -111,6 +112,13 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             icon={GraduationCap}
             label="Kull"
             active={path === '/kull' || path.startsWith('/kull/')}
+            onNavigate={onNavigate}
+          />
+          <NavItem
+            to="/esaf-helgen"
+            icon={Tent}
+            label="ESAF-helgen"
+            active={path.startsWith('/esaf-helgen')}
             onNavigate={onNavigate}
           />
           <NavItem

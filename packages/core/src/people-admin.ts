@@ -5,7 +5,7 @@ import {
   type MembershipStatus,
   type PersonSource,
 } from '@esaf/db'
-import { and, asc, eq, ilike, inArray, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, ilike, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, type Viewer } from './access.ts'
 import { deleteOrphanCompanies } from './companies.ts'
@@ -19,9 +19,11 @@ const {
   accessRequest,
   auditEvent,
   cohort,
+  cohortRepresentative,
   comment,
   companyLinkRequest,
   companySuggestion,
+  esafWeekendAttendance,
   experience,
   membership,
   notification,
@@ -43,7 +45,8 @@ const {
  *   medlemmer. Adressen kontoen logger inn med, kan ikke fjernes.
  * - Sammenslåing flytter alt fra duplikatet til personen som beholdes: erfaring,
  *   kull, e-post, sitater, kilder, innlegg, kommentarer, stemmer, varsler,
- *   forslag og forespørsler. Tomme felt fylles fra duplikatet. Har en av dem
+ *   forslag, forespørsler, verv som kullrepresentant og oppmøte på ESAF-helgen.
+ *   Tomme felt fylles fra duplikatet. Har en av dem
  *   konto, er det den som beholdes; to kontoer slås aldri sammen.
  * - Alt logges (`profile.create`, `profile.admin_cohorts`,
  *   `profile.admin_email_add`, `profile.admin_email_remove`, `person.merge`).
@@ -553,6 +556,28 @@ export async function mergePeople(
       sql`insert into ${personCohort} (person_id, cohort_id, relation, created_at) select ${into}, cohort_id, relation, created_at from ${personCohort} where person_id = ${from} on conflict do nothing returning cohort_id`,
     )
 
+    // Kullrepresentant: et nåværende verv duplikatet har i et kull målet også
+    // representerer nå, er det samme vervet; ellers flyttes vervene.
+    await tx
+      .delete(cohortRepresentative)
+      .where(
+        and(
+          eq(cohortRepresentative.personId, from),
+          isNull(cohortRepresentative.endYear),
+          sql`exists (select 1 from ${cohortRepresentative} other where other.person_id = ${into} and other.cohort_id = ${cohortRepresentative.cohortId} and other.end_year is null)`,
+        ),
+      )
+    const movedReps = await tx
+      .update(cohortRepresentative)
+      .set({ personId: into })
+      .where(eq(cohortRepresentative.personId, from))
+      .returning({ id: cohortRepresentative.id })
+
+    // ESAF-helgen: oppmøtet til begge, én gang per helg.
+    const movedWeekends = await tx.execute(
+      sql`insert into ${esafWeekendAttendance} (weekend_id, person_id, source, created_at) select weekend_id, ${into}, source, created_at from ${esafWeekendAttendance} where person_id = ${from} on conflict do nothing returning weekend_id`,
+    )
+
     const emails = await tx
       .update(personEmail)
       .set({ personId: into })
@@ -712,6 +737,8 @@ export async function mergePeople(
         into: { personId: into, fullName: target.fullName, claimed: target.userId !== null },
         experience: movedJobs,
         cohorts: movedCohorts.rows.length,
+        representatives: movedReps.length,
+        weekends: movedWeekends.rows.length,
         emails: emails.length,
         quotes: quotes.length,
         fields: filled,

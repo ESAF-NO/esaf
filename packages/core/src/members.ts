@@ -2,6 +2,7 @@ import { schema, type Db } from '@esaf/db'
 import { and, asc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { assertCan, assertMember, type Viewer } from './access.ts'
+import { currentRepresentativeOf, loadRepresentativeTerms } from './cohort-reps.ts'
 import { DomainError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
@@ -25,6 +26,19 @@ export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
 export function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
+}
+
+/**
+ * Nøkkel for å kjenne igjen samme adresse skrevet ulikt. Gmail ser bort fra
+ * punktum og alt etter +, så de regnes som samme adresse.
+ */
+export function emailKey(email: string) {
+  const [local = '', domain = ''] = email.trim().toLowerCase().split('@')
+  const base = local.split('+')[0]!
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    return `${base.replace(/\./g, '')}@gmail.com`
+  }
+  return `${base}@${domain}`
 }
 
 /**
@@ -123,6 +137,8 @@ export type MemberListItem = {
   /** Nåværende og tidligere selskaper, nyeste først. */
   experience: Pick<Experience, 'company' | 'title' | 'endYear' | 'founder'>[]
   cohorts: { graduationYear: number; relation: schema.CohortRelation }[]
+  /** Kullene personen er kullrepresentant for nå. */
+  representativeOf: number[]
 }
 
 /**
@@ -176,10 +192,11 @@ export async function listActiveMembers(
     .leftJoin(cohort, eq(cohort.id, personCohort.cohortId))
     .where(and(eq(membership.status, 'active'), inCohort))
     .orderBy(asc(person.fullName), asc(cohort.graduationYear))
-  const experiences = await loadExperience(
-    db,
-    rows.map((r) => r.personId),
-  )
+  const ids = rows.map((r) => r.personId)
+  const [experiences, terms] = await Promise.all([
+    loadExperience(db, ids),
+    loadRepresentativeTerms(db, ids),
+  ])
 
   const byPerson = new Map<string, MemberListItem>()
   for (const row of rows) {
@@ -202,6 +219,7 @@ export async function listActiveMembers(
         founder,
       })),
       cohorts: [],
+      representativeOf: currentRepresentativeOf(terms.get(row.personId)),
     }
     if (row.graduationYear !== null && row.relation !== null) {
       item.cohorts.push({ graduationYear: row.graduationYear, relation: row.relation })
@@ -368,6 +386,8 @@ export type PersonHit = {
   claimed: boolean
   jobTitle: string | null
   currentCompany: string | null
+  /** Kullene personen er kullrepresentant for nå. */
+  representativeOf: number[]
 }
 
 /**
@@ -403,15 +423,17 @@ export async function searchPeople(
     )
     .orderBy(sql`${person.userId} is null`, asc(person.fullName))
     .limit(limit)
-  const experiences = await loadExperience(
-    db,
-    rows.map((r) => r.personId),
-  )
+  const ids = rows.map((r) => r.personId)
+  const [experiences, terms] = await Promise.all([
+    loadExperience(db, ids),
+    loadRepresentativeTerms(db, ids),
+  ])
   return rows.map(({ userId, photoKey, ...r }) => ({
     ...r,
     photo: photoUrls(photoKey),
     ...currentRole(experiences.get(r.personId) ?? []),
     claimed: userId !== null,
+    representativeOf: currentRepresentativeOf(terms.get(r.personId)),
   }))
 }
 

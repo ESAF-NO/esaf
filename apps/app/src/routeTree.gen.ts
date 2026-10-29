@@ -22,10 +22,13 @@ import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
 import { Route as KontoAdminGjennomgangRouteImport } from './routes/_konto/admin/gjennomgang'
+import { Route as KontoAdminKullrepresentanterRouteImport } from './routes/_konto/admin/kullrepresentanter'
 import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
 import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
 import { Route as KontoAdminProfilerRouteImport } from './routes/_konto/admin/profiler'
 import { Route as KontoAdminSelskaperRouteImport } from './routes/_konto/admin/selskaper'
+import { Route as KontoEsafHelgenIndexRouteImport } from './routes/_konto/esaf-helgen/index'
+import { Route as KontoEsafHelgenWeekendIdRouteImport } from './routes/_konto/esaf-helgen/$weekendId'
 import { Route as KontoFeedIndexRouteImport } from './routes/_konto/feed/index'
 import { Route as KontoFeedPostIdRouteImport } from './routes/_konto/feed/$postId'
 import { Route as KontoFeedNyRouteImport } from './routes/_konto/feed/ny'
@@ -109,6 +112,12 @@ const KontoAdminGjennomgangRoute = KontoAdminGjennomgangRouteImport.update({
   path: '/gjennomgang',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
+const KontoAdminKullrepresentanterRoute =
+  KontoAdminKullrepresentanterRouteImport.update({
+    id: '/kullrepresentanter',
+    path: '/kullrepresentanter',
+    getParentRoute: () => KontoAdminRouteRoute,
+  } as any)
 const KontoAdminLoggRoute = KontoAdminLoggRouteImport.update({
   id: '/logg',
   path: '/logg',
@@ -129,6 +138,17 @@ const KontoAdminSelskaperRoute = KontoAdminSelskaperRouteImport.update({
   path: '/selskaper',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
+const KontoEsafHelgenIndexRoute = KontoEsafHelgenIndexRouteImport.update({
+  id: '/esaf-helgen/',
+  path: '/esaf-helgen/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoEsafHelgenWeekendIdRoute =
+  KontoEsafHelgenWeekendIdRouteImport.update({
+    id: '/esaf-helgen/$weekendId',
+    path: '/esaf-helgen/$weekendId',
+    getParentRoute: () => KontoRoute,
+  } as any)
 const KontoFeedIndexRoute = KontoFeedIndexRouteImport.update({
   id: '/feed/',
   path: '/feed/',
@@ -238,10 +258,12 @@ export interface FileRoutesByFullPath {
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/kull/$year': typeof KontoKullYearRoute
@@ -249,6 +271,7 @@ export interface FileRoutesByFullPath {
   '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/admin/': typeof KontoAdminIndexRoute
+  '/esaf-helgen/': typeof KontoEsafHelgenIndexRoute
   '/feed/': typeof KontoFeedIndexRoute
   '/kull/': typeof KontoKullIndexRoute
   '/medlemmer/': typeof KontoMedlemmerIndexRoute
@@ -273,10 +296,12 @@ export interface FileRoutesByTo {
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/kull/$year': typeof KontoKullYearRoute
@@ -284,6 +309,7 @@ export interface FileRoutesByTo {
   '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/admin': typeof KontoAdminIndexRoute
+  '/esaf-helgen': typeof KontoEsafHelgenIndexRoute
   '/feed': typeof KontoFeedIndexRoute
   '/kull': typeof KontoKullIndexRoute
   '/medlemmer': typeof KontoMedlemmerIndexRoute
@@ -311,10 +337,12 @@ export interface FileRoutesById {
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
   '/_konto/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/_konto/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/_konto/admin/logg': typeof KontoAdminLoggRoute
   '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/_konto/admin/profiler': typeof KontoAdminProfilerRoute
   '/_konto/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/_konto/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
   '/_konto/feed/$postId': typeof KontoFeedPostIdRoute
   '/_konto/feed/ny': typeof KontoFeedNyRoute
   '/_konto/kull/$year': typeof KontoKullYearRoute
@@ -322,6 +350,7 @@ export interface FileRoutesById {
   '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/_konto/admin/': typeof KontoAdminIndexRoute
+  '/_konto/esaf-helgen/': typeof KontoEsafHelgenIndexRoute
   '/_konto/feed/': typeof KontoFeedIndexRoute
   '/_konto/kull/': typeof KontoKullIndexRoute
   '/_konto/medlemmer/': typeof KontoMedlemmerIndexRoute
@@ -349,10 +378,12 @@ export interface FileRouteTypes {
     | '/venter'
     | '/api/health'
     | '/admin/gjennomgang'
+    | '/admin/kullrepresentanter'
     | '/admin/logg'
     | '/admin/medlemmer'
     | '/admin/profiler'
     | '/admin/selskaper'
+    | '/esaf-helgen/$weekendId'
     | '/feed/$postId'
     | '/feed/ny'
     | '/kull/$year'
@@ -360,6 +391,7 @@ export interface FileRouteTypes {
     | '/api/bilder/$key'
     | '/api/logoer/$key'
     | '/admin/'
+    | '/esaf-helgen/'
     | '/feed/'
     | '/kull/'
     | '/medlemmer/'
@@ -384,10 +416,12 @@ export interface FileRouteTypes {
     | '/venter'
     | '/api/health'
     | '/admin/gjennomgang'
+    | '/admin/kullrepresentanter'
     | '/admin/logg'
     | '/admin/medlemmer'
     | '/admin/profiler'
     | '/admin/selskaper'
+    | '/esaf-helgen/$weekendId'
     | '/feed/$postId'
     | '/feed/ny'
     | '/kull/$year'
@@ -395,6 +429,7 @@ export interface FileRouteTypes {
     | '/api/bilder/$key'
     | '/api/logoer/$key'
     | '/admin'
+    | '/esaf-helgen'
     | '/feed'
     | '/kull'
     | '/medlemmer'
@@ -421,10 +456,12 @@ export interface FileRouteTypes {
     | '/_konto/venter'
     | '/api/health'
     | '/_konto/admin/gjennomgang'
+    | '/_konto/admin/kullrepresentanter'
     | '/_konto/admin/logg'
     | '/_konto/admin/medlemmer'
     | '/_konto/admin/profiler'
     | '/_konto/admin/selskaper'
+    | '/_konto/esaf-helgen/$weekendId'
     | '/_konto/feed/$postId'
     | '/_konto/feed/ny'
     | '/_konto/kull/$year'
@@ -432,6 +469,7 @@ export interface FileRouteTypes {
     | '/api/bilder/$key'
     | '/api/logoer/$key'
     | '/_konto/admin/'
+    | '/_konto/esaf-helgen/'
     | '/_konto/feed/'
     | '/_konto/kull/'
     | '/_konto/medlemmer/'
@@ -552,6 +590,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoAdminGjennomgangRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
+    '/_konto/admin/kullrepresentanter': {
+      id: '/_konto/admin/kullrepresentanter'
+      path: '/kullrepresentanter'
+      fullPath: '/admin/kullrepresentanter'
+      preLoaderRoute: typeof KontoAdminKullrepresentanterRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
     '/_konto/admin/logg': {
       id: '/_konto/admin/logg'
       path: '/logg'
@@ -579,6 +624,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/selskaper'
       preLoaderRoute: typeof KontoAdminSelskaperRouteImport
       parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/esaf-helgen/': {
+      id: '/_konto/esaf-helgen/'
+      path: '/esaf-helgen'
+      fullPath: '/esaf-helgen/'
+      preLoaderRoute: typeof KontoEsafHelgenIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/esaf-helgen/$weekendId': {
+      id: '/_konto/esaf-helgen/$weekendId'
+      path: '/esaf-helgen/$weekendId'
+      fullPath: '/esaf-helgen/$weekendId'
+      preLoaderRoute: typeof KontoEsafHelgenWeekendIdRouteImport
+      parentRoute: typeof KontoRoute
     }
     '/_konto/feed/': {
       id: '/_konto/feed/'
@@ -711,6 +770,7 @@ declare module '@tanstack/react-router' {
 
 interface KontoAdminRouteRouteChildren {
   KontoAdminGjennomgangRoute: typeof KontoAdminGjennomgangRoute
+  KontoAdminKullrepresentanterRoute: typeof KontoAdminKullrepresentanterRoute
   KontoAdminLoggRoute: typeof KontoAdminLoggRoute
   KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
   KontoAdminProfilerRoute: typeof KontoAdminProfilerRoute
@@ -720,6 +780,7 @@ interface KontoAdminRouteRouteChildren {
 
 const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
   KontoAdminGjennomgangRoute: KontoAdminGjennomgangRoute,
+  KontoAdminKullrepresentanterRoute: KontoAdminKullrepresentanterRoute,
   KontoAdminLoggRoute: KontoAdminLoggRoute,
   KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
   KontoAdminProfilerRoute: KontoAdminProfilerRoute,
@@ -738,9 +799,11 @@ interface KontoRouteChildren {
   KontoVarslerRoute: typeof KontoVarslerRoute
   KontoVelkommenRoute: typeof KontoVelkommenRoute
   KontoVenterRoute: typeof KontoVenterRoute
+  KontoEsafHelgenWeekendIdRoute: typeof KontoEsafHelgenWeekendIdRoute
   KontoFeedPostIdRoute: typeof KontoFeedPostIdRoute
   KontoFeedNyRoute: typeof KontoFeedNyRoute
   KontoKullYearRoute: typeof KontoKullYearRoute
+  KontoEsafHelgenIndexRoute: typeof KontoEsafHelgenIndexRoute
   KontoFeedIndexRoute: typeof KontoFeedIndexRoute
   KontoKullIndexRoute: typeof KontoKullIndexRoute
   KontoMedlemmerIndexRoute: typeof KontoMedlemmerIndexRoute
@@ -760,9 +823,11 @@ const KontoRouteChildren: KontoRouteChildren = {
   KontoVarslerRoute: KontoVarslerRoute,
   KontoVelkommenRoute: KontoVelkommenRoute,
   KontoVenterRoute: KontoVenterRoute,
+  KontoEsafHelgenWeekendIdRoute: KontoEsafHelgenWeekendIdRoute,
   KontoFeedPostIdRoute: KontoFeedPostIdRoute,
   KontoFeedNyRoute: KontoFeedNyRoute,
   KontoKullYearRoute: KontoKullYearRoute,
+  KontoEsafHelgenIndexRoute: KontoEsafHelgenIndexRoute,
   KontoFeedIndexRoute: KontoFeedIndexRoute,
   KontoKullIndexRoute: KontoKullIndexRoute,
   KontoMedlemmerIndexRoute: KontoMedlemmerIndexRoute,

@@ -624,6 +624,89 @@ export const personCohort = pgTable(
   (t) => [primaryKey({ columns: [t.personId, t.cohortId] }), index().on(t.cohortId)],
 )
 
+/**
+ * Kullrepresentantene: dem styret i ESAF snakker med, og som sender videre til
+ * kullet sitt. Et kull kan ha flere samtidig, og vervet har en historikk. Uten
+ * `endYear` er vervet nåværende. Reglene står i @esaf/core (cohort-reps.ts).
+ */
+export const cohortRepresentative = pgTable(
+  'cohort_representative',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    cohortId: uuid()
+      .notNull()
+      .references(() => cohort.id, { onDelete: 'cascade' }),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    /** Null når det ikke er kjent når vervet startet (f.eks. fra en gammel liste). */
+    startYear: integer(),
+    /** Null betyr at personen fortsatt er kullrepresentant. */
+    endYear: integer(),
+    /** Notat fra styret, f.eks. «Valgt på kullsamlingen». Vises bare for admins. */
+    note: text(),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.cohortId),
+    index().on(t.personId),
+    // Samme person kan bare ha ett nåværende verv per kull.
+    uniqueIndex('cohort_representative_current_index')
+      .on(t.cohortId, t.personId)
+      .where(sql`${t.endYear} is null`),
+    check(
+      'cohort_representative_years',
+      sql`(${t.startYear} is null or ${t.startYear} between 1990 and 2100) and (${t.endYear} is null or ${t.endYear} between 1990 and 2100) and (${t.startYear} is null or ${t.endYear} is null or ${t.endYear} >= ${t.startYear})`,
+    ),
+  ],
+)
+
+/**
+ * ESAF-helgen: samlingen for alumni, som regel én gang i året, noen år én per
+ * semester. `endDate` er null for helger på én dag eller når sluttdatoen ikke er
+ * kjent.
+ */
+export const esafWeekend = pgTable(
+  'esaf_weekend',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** F.eks. «ESAF-helgen høst 2018». */
+    name: text().notNull(),
+    startDate: date({ mode: 'string' }).notNull(),
+    endDate: date({ mode: 'string' }),
+    location: text(),
+    description: text(),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.startDate),
+    check('esaf_weekend_dates', sql`${t.endDate} is null or ${t.endDate} >= ${t.startDate}`),
+  ],
+)
+
+/** Hvem som registrerte oppmøtet: personen selv, en admin, eller en innlimt liste. */
+export const weekendAttendanceSource = pgEnum('weekend_attendance_source', [
+  'self',
+  'admin',
+  'import',
+])
+
+/** Hvem som var på en ESAF-helg. Én rad per person og helg. */
+export const esafWeekendAttendance = pgTable(
+  'esaf_weekend_attendance',
+  {
+    weekendId: uuid()
+      .notNull()
+      .references(() => esafWeekend.id, { onDelete: 'cascade' }),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    source: weekendAttendanceSource().notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.weekendId, t.personId] }), index().on(t.personId)],
+)
+
 export const membershipStatus = pgEnum('membership_status', ['pending', 'active', 'inactive'])
 /**
  * Roller fra minst til mest. Hva hver rolle får gjøre, står i `permissions` i
@@ -712,6 +795,7 @@ export type ContributionStatus = (typeof contributionStatus.enumValues)[number]
 export type CompanySuggestionKind = (typeof companySuggestionKind.enumValues)[number]
 export type CompanyLinkRole = (typeof companyLinkRole.enumValues)[number]
 export type ReviewDismissalKind = (typeof reviewDismissalKind.enumValues)[number]
+export type WeekendAttendanceSource = (typeof weekendAttendanceSource.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)

@@ -89,8 +89,9 @@ function AuditLog() {
   return (
     <div className="max-w-3xl">
       <p className="mb-5 text-sm text-stone-500">
-        Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater, forslag og andres
-        innhold, nyeste først. Hendelsene kan ikke endres eller slettes i appen.
+        Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater, forslag,
+        kullrepresentanter, ESAF-helgen og andres innhold, nyeste først. Hendelsene kan ikke endres
+        eller slettes i appen.
       </p>
 
       {entries.length === 0 ? (
@@ -237,6 +238,26 @@ function Company({ details }: { details: Entry['details'] }) {
     </Link>
   )
 }
+
+/** Helgen i en setning, med lenke. */
+function Weekend({ details }: { details: Entry['details'] }) {
+  const name = text(details.name) ?? 'en ESAF-helg'
+  const weekendId = text(details.weekendId)
+  if (!weekendId) return <>{name}</>
+  return (
+    <Link
+      to="/esaf-helgen/$weekendId"
+      params={{ weekendId }}
+      className="font-medium text-stone-900 hover:text-brand-600"
+    >
+      {name}
+    </Link>
+  )
+}
+
+/** «ES 2024» fra `graduationYear`. */
+const cohortName = (details: Entry['details']) =>
+  typeof details.graduationYear === 'number' ? `ES ${details.graduationYear}` : 'et kull'
 
 /** Hvem et sitat er fra: personen, ellers navnet slik kilden skriver det. */
 const speaker = ({ subject, details, entry }: Parts) =>
@@ -493,6 +514,64 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       </>
     )
   },
+  'cohort.rep_add': ({ actor, subject, details }) => (
+    <>
+      {actor} satte {subject} som kullrepresentant for {cohortName(details)}
+      {details.otherCohort === true && ', selv om personen går i et annet kull'}.
+    </>
+  ),
+  'cohort.rep_edit': ({ actor, subject, details }) => (
+    <>
+      {actor} rettet vervet til {subject} som kullrepresentant for {cohortName(details)}.
+    </>
+  ),
+  'cohort.rep_end': ({ actor, subject, details }) => (
+    <>
+      {actor} avsluttet vervet til {subject} som kullrepresentant for {cohortName(details)}
+      {typeof details.endYear === 'number' && ` (${details.endYear})`}.
+    </>
+  ),
+  'cohort.rep_remove': ({ actor, subject, details }) => (
+    <>
+      {actor} slettet vervet til {subject} som kullrepresentant for {cohortName(details)}.
+    </>
+  ),
+  'weekend.create': ({ actor, details }) => (
+    <>
+      {actor} opprettet <Weekend details={details} />.
+    </>
+  ),
+  'weekend.edit': ({ actor, details }) => (
+    <>
+      {actor} redigerte <Weekend details={details} />.
+    </>
+  ),
+  'weekend.delete': ({ actor, details }) => {
+    const attendees = count(details.attendees)
+    return (
+      <>
+        {actor} slettet «{text(details.name) ?? 'en ESAF-helg'}»
+        {attendees > 0 && ` med ${plural(attendees, 'deltaker', 'deltakere')}`}.
+      </>
+    )
+  },
+  'weekend.attendance_add': ({ actor, subject, details, entry }) => (
+    <>
+      {actor} la til{' '}
+      {entry.subject
+        ? subject
+        : typeof details.cohort === 'number'
+          ? `${plural(count(details.added), 'person', 'personer')} fra ES ${details.cohort}`
+          : plural(count(details.added), 'deltaker', 'deltakere')}{' '}
+      {details.source === 'import' && !entry.subject ? 'fra en liste ' : ''}på{' '}
+      <Weekend details={details} />.
+    </>
+  ),
+  'weekend.attendance_remove': ({ actor, subject, details }) => (
+    <>
+      {actor} fjernet {subject} fra <Weekend details={details} />.
+    </>
+  ),
   'quote.edit': (parts) => (
     <>
       {parts.actor} rettet et sitat fra {speaker(parts)}.

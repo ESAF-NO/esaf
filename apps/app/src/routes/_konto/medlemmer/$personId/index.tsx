@@ -12,11 +12,13 @@ import {
   Phone,
   Plus,
   Rocket,
+  Tent,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
+import { RepresentativeBadges } from '#/components/Representatives.tsx'
 import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
 import {
   Avatar,
@@ -31,7 +33,7 @@ import {
 } from '#/components/ui.tsx'
 import { fetchMyLinkRequests } from '#/lib/contributions.functions.ts'
 import { fetchPosts } from '#/lib/feed.functions.ts'
-import { esPeriod, yearSpan } from '#/lib/format.ts'
+import { esPeriod, plural, yearSpan } from '#/lib/format.ts'
 import { confirmProfile, fetchProfile } from '#/lib/profiles.functions.ts'
 import { profileFieldLabels, profileFields, sourcesFor, unconfirmed } from '#/lib/sources.ts'
 
@@ -310,6 +312,7 @@ function ProfilePage() {
               )}
               <ProfileStatus claimed={p.claimed} />
             </div>
+            <RepresentativeBadges badges={p.representative} />
             {note('photo', { label: 'Bildet', className: 'mt-2' })}
           </div>
         </div>
@@ -463,6 +466,8 @@ function ProfilePage() {
             </dl>
           </Card>
 
+          <WeekendsCard profile={p} />
+
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold text-stone-950">Kontakt</h2>
             {p.linkedinUrl || p.contactEmail || p.phone ? (
@@ -513,5 +518,50 @@ function ProfilePage() {
         </aside>
       </div>
     </div>
+  )
+}
+
+/** ESAF-helgene personen har vært på, med lenke til hver. */
+function WeekendsCard({ profile: p }: { profile: Profile }) {
+  const n = p.weekends.length
+  if (!n && !p.isOwn) return null
+  return (
+    <Card className="p-5">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
+        <Tent className="size-4 text-stone-400" aria-hidden /> ESAF-helgen
+      </h2>
+      {n ? (
+        <>
+          <p className="mt-1 text-sm text-stone-600">
+            {p.isOwn ? 'Du har deltatt' : 'Deltatt'} på ESAF-helgen{' '}
+            {n === 1 ? 'én gang' : `${n} ganger`}.
+          </p>
+          <ul className="mt-3 space-y-1.5 text-sm">
+            {p.weekends.slice(0, 8).map((w) => (
+              <li key={w.id}>
+                <Link
+                  to="/esaf-helgen/$weekendId"
+                  params={{ weekendId: w.id }}
+                  className="text-stone-700 hover:text-brand-600"
+                >
+                  {w.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {n > 8 && (
+            <p className="mt-2 text-xs text-stone-500">og {plural(n - 8, 'helg', 'helger')} til</p>
+          )}
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-stone-500">
+          Har du vært på ESAF-helgen?{' '}
+          <Link to="/esaf-helgen" className="font-medium text-stone-700 hover:text-brand-600">
+            Finn helgene du var på
+          </Link>
+          .
+        </p>
+      )}
+    </Card>
   )
 }

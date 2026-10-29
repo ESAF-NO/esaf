@@ -1,6 +1,7 @@
 import { schema, type Db } from '@esaf/db'
 import { and, arrayOverlaps, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { assertMember, type Viewer } from './access.ts'
+import { listCohortRepresentatives, type CohortRepresentatives } from './cohort-reps.ts'
 import { companySlug } from './companies.ts'
 import { NotFoundError } from './errors.ts'
 import { listPosts, type PostSummary } from './feed.ts'
@@ -127,6 +128,8 @@ export type CohortPage = {
   companies: CohortCompany[]
   /** De nyeste innleggene fra folk i kullet. */
   posts: PostSummary[]
+  /** Kullrepresentantene, nåværende og tidligere. */
+  representatives: CohortRepresentatives
 }
 
 const RECENT_POSTS = 5
@@ -145,9 +148,10 @@ export async function getCohortPage(
     .where(eq(cohort.graduationYear, graduationYear))
   if (!row) throw new NotFoundError('Fant ikke kullet.')
 
-  const [people, posts] = await Promise.all([
+  const [people, posts, representatives] = await Promise.all([
     listActiveMembers(db, viewer, { cohortYear: graduationYear }),
     listPosts(db, viewer, { cohortYear: graduationYear, sort: 'new', limit: RECENT_POSTS }),
+    listCohortRepresentatives(db, viewer, graduationYear),
   ])
   return {
     graduationYear,
@@ -158,6 +162,7 @@ export async function getCohortPage(
     people,
     companies: await withLogos(db, companiesStartedBy(people)),
     posts,
+    representatives,
   }
 }
 

@@ -21,5 +21,6 @@ export type {
   PostChannel,
   ReviewDismissalKind,
   SourceConfidence,
+  WeekendAttendanceSource,
 } from './schema.ts'
 export { sql } from 'drizzle-orm'

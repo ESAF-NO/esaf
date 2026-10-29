@@ -121,3 +121,23 @@ const day = new Intl.DateTimeFormat('nb-NO', { timeZone: zone, dateStyle: 'long'
 
 /** «29. oktober 2026» i norsk tid. */
 export const longDay = (date: Date | string) => day.format(new Date(date))
+
+const dayMonth = new Intl.DateTimeFormat('nb-NO', {
+  timeZone: 'UTC',
+  day: 'numeric',
+  month: 'long',
+})
+const dayOnly = new Intl.DateTimeFormat('nb-NO', { timeZone: 'UTC', day: 'numeric' })
+
+/**
+ * Datoene til en helg: «14.–16. september 2018», «30. september–2. oktober 2022»
+ * eller «14. september 2018». Datoene er `YYYY-MM-DD` og leses som UTC.
+ */
+export function dateRange(start: string, end: string | null) {
+  const a = new Date(`${start}T00:00:00Z`)
+  if (!end || end === start) return longDate.format(a)
+  const b = new Date(`${end}T00:00:00Z`)
+  if (start.slice(0, 4) !== end.slice(0, 4)) return `${longDate.format(a)}–${longDate.format(b)}`
+  if (start.slice(0, 7) !== end.slice(0, 7)) return `${dayMonth.format(a)}–${longDate.format(b)}`
+  return `${dayOnly.format(a)}–${longDate.format(b)}`
+}

@@ -21,6 +21,7 @@ import {
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { normalizeLinkedinUrl } from './profiles.ts'
+import { emailKey } from './members.ts'
 import { normalizePersonName } from './people-admin.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import { companySourceFields, profileSourceFields } from './sources.ts'
@@ -704,16 +705,6 @@ async function companyPairs(db: Db): Promise<ReviewCompanyPair[]> {
   return [...found.values()].sort(
     (a, b) => b.reasons.length - a.reasons.length || a.first.name.localeCompare(b.first.name, 'nb'),
   )
-}
-
-/** Gmail ser bort fra punktum og alt etter +, så de regnes som samme adresse. */
-function emailKey(email: string) {
-  const [local = '', domain = ''] = email.trim().toLowerCase().split('@')
-  const base = local.split('+')[0]!
-  if (domain === 'gmail.com' || domain === 'googlemail.com') {
-    return `${base.replace(/\./g, '')}@gmail.com`
-  }
-  return `${base}@${domain}`
 }
 
 function linkedinKey(url: string | null) {

@@ -1,6 +1,9 @@
 import { createRouter } from '@tanstack/react-router'
 import { ErrorPage, NotFoundPage } from './components/ErrorPage.tsx'
 import { routeTree } from './routeTree.gen'
+import { installPreloadRecovery } from './lib/preload-recovery.ts'
+
+if (typeof window !== 'undefined') installPreloadRecovery()
 
 export function getRouter() {
   return createRouter({

@@ -48,7 +48,8 @@ export function Progress({ share }: { share: number }) {
  * Last opp, bytt og fjern et profilbilde. Endringen lagres med en gang, uten
  * resten av skjemaet, og en opplasting fullføres selv om man går videre før den
  * er ferdig. Mens bildet lastes opp, vises det beskåret slik det blir (et
- * kvadrat fra midten). Et bilde kan også slippes på feltet.
+ * kvadrat midt på bredden og litt over midten på høyden, som `squareCrop` i
+ * @esaf/core). Et bilde kan også slippes på feltet.
  */
 export function PhotoUpload({
   personId,
@@ -139,7 +140,8 @@ export function PhotoUpload({
           <img
             src={uploading.preview}
             alt=""
-            className="size-full rounded-full bg-stone-100 object-cover"
+            // Samme utsnitt som serveren lager: PORTRAIT_CROP_TOP i @esaf/core.
+            className="size-full rounded-full bg-stone-100 object-cover object-[50%_15%]"
           />
         ) : (
           <Avatar name={fullName} photo={photo} size="xl" />

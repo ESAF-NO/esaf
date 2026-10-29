@@ -27,3 +27,6 @@ coverage
 .claude/worktrees/
 # Opplastede filer i utvikling (profilbilder), se UPLOAD_DIR
 .data/
+
+# Lokal database for Recall-verktøyet
+.recall/

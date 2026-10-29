@@ -18,3 +18,15 @@ coverage
 
 # Eksporterte kullister inneholder persondata og skal aldri committes
 *.csv
+# Kullister og andre eksporter med persondata skal aldri committes
+*.xlsx
+# Datasettbunter (pnpm data:bundle) inneholder persondata og skal aldri committes
+*.tar.gz
+
+# Worktrees for parallelle agenter
+.claude/worktrees/
+# Opplastede filer i utvikling (profilbilder), se UPLOAD_DIR
+.data/
+
+# Lokal database for Recall-verktøyet
+.recall/

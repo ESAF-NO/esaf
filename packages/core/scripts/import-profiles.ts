@@ -1,10 +1,10 @@
 /**
- * Importerer profiler fra kullisten (CSV fra Google Sheets: Fil → Last ned →
- * Kommaseparerte verdier). Viser alltid en forhåndsvisning; skriver bare til
- * databasen med --apply. Se README, «Import av kullisten».
+ * Importerer profiler fra kullister: Excel med én fane per kull («ES 2024»), eller
+ * CSV. Viser alltid en forhåndsvisning; skriver bare til databasen med --apply.
+ * Se README, «Import av kullisten».
  *
- *   pnpm profiles:import --fil kull.csv --kull-er opptak
- *   pnpm profiles:import --fil kull.csv --kull-er opptak --apply
+ *   pnpm profiles:import --fil telefonliste.xlsx
+ *   pnpm profiles:import --fil telefonliste.xlsx --apply
  */
 import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
@@ -13,6 +13,7 @@ import { createDb, loadRootEnv } from '@esaf/db'
 import {
   applyProfileImport,
   parseProfileSheet,
+  parseProfileWorkbook,
   planProfileImport,
   profileStatsByCohort,
   type ColumnKey,
@@ -20,19 +21,24 @@ import {
 
 loadRootEnv()
 
-const usage = `Bruk: pnpm profiles:import --fil <sti.csv> --kull-er <opptak|uteksaminert> [valg]
+const usage = `Bruk: pnpm profiles:import --fil <sti.xlsx|sti.csv> [valg]
 
-  --kull-er opptak|uteksaminert  Hva årstallet i kull-kolonnen betyr (påkrevd)
-  --kolonne navn="Fullt navn"     Overstyr kolonnenavn: navn, fornavn, etternavn, epost, kull
+  --kull-er uteksaminert|opptak  Hva årstallet i fanenavn/kull-kolonne betyr. Standard er
+                                  uteksaminert, slik ES navngir kull (ES 2024 startet i 2022)
+  --kolonne navn="Fullt navn"     Overstyr kolonnenavn: navn, fornavn, etternavn, epost, kull,
+                                  telefon, studieretning, ekspertise, bransjer, selskap,
+                                  stilling, by, es-selskap, linkedin
   --status aktiv|venter           Medlemsstatus for nye profiler (standard: aktiv)
+  --vis-rader                     Vis hver rad som importeres (inneholder persondata)
   --apply                         Skriv til databasen (uten: bare forhåndsvisning)`
 
 const { values } = parseArgs({
   options: {
     fil: { type: 'string' },
-    'kull-er': { type: 'string' },
+    'kull-er': { type: 'string', default: 'uteksaminert' },
     kolonne: { type: 'string', multiple: true },
     status: { type: 'string', default: 'aktiv' },
+    'vis-rader': { type: 'boolean', default: false },
     apply: { type: 'boolean', default: false },
   },
 })
@@ -48,7 +54,7 @@ const yearKind =
     ? 'start'
     : values['kull-er'] === 'uteksaminert'
       ? 'graduation'
-      : fail('Oppgi --kull-er opptak eller --kull-er uteksaminert.')
+      : fail('Ugyldig --kull-er. Bruk uteksaminert eller opptak.')
 const membershipStatus =
   values.status === 'aktiv'
     ? 'active'
@@ -63,6 +69,15 @@ const columnNames: Record<string, ColumnKey> = {
   epost: 'email',
   'e-post': 'email',
   kull: 'cohort',
+  telefon: 'phone',
+  studieretning: 'studyBackground',
+  ekspertise: 'expertise',
+  bransjer: 'industries',
+  selskap: 'currentCompany',
+  stilling: 'jobTitle',
+  by: 'city',
+  'es-selskap': 'esCompany',
+  linkedin: 'linkedinUrl',
 }
 const columns: Partial<Record<ColumnKey, string>> = {}
 for (const spec of values.kolonne ?? []) {
@@ -74,48 +89,90 @@ for (const spec of values.kolonne ?? []) {
 
 // pnpm kjører skriptet fra packages/core; tolk stien fra der kommandoen ble skrevet.
 const file = resolve(process.env.INIT_CWD ?? process.cwd(), values.fil!)
-const parsed = parseProfileSheet(readFileSync(file, 'utf8'), { yearKind, columns })
+const data = readFileSync(file)
+const parsed = /\.xlsx$/i.test(file)
+  ? await parseProfileWorkbook(data, { yearKind, columns })
+  : parseProfileSheet(data.toString('utf8'), { yearKind, columns })
 
 if (!process.env.DATABASE_URL) fail('Mangler DATABASE_URL.')
 const target = new URL(process.env.DATABASE_URL!)
 const db = createDb(process.env.DATABASE_URL!)
+const labels: Record<string, string> = {
+  name: 'navn',
+  firstName: 'fornavn',
+  lastName: 'etternavn',
+  email: 'e-post',
+  secondaryEmail: 'ekstra e-post',
+  cohort: 'kull',
+  phone: 'telefon',
+  studyBackground: 'studieretning',
+  expertise: 'ekspertise',
+  industries: 'bransjer',
+  currentCompany: 'selskap',
+  jobTitle: 'stilling',
+  city: 'by',
+  esCompany: 'es-selskap',
+  linkedinUrl: 'linkedin',
+}
 
 try {
   const plan = await planProfileImport(db, parsed.rows)
   const create = plan.filter((r) => r.action === 'create')
   const existing = plan.filter((r) => r.action === 'existing')
-  const years = [...new Set(plan.map((r) => r.startYear))].sort()
+  const years = [...new Set(plan.flatMap((r) => r.years))].sort()
 
   console.log(`Database: ${target.host}${target.pathname}`)
   console.log(`Fil: ${basename(file)}`)
-  console.log(
-    `Kolonner: ${Object.entries(parsed.columns)
-      .map(([k, v]) => `${k}=«${v}»`)
-      .join(', ')}`,
-  )
-  if (parsed.ignoredHeaders.length) {
-    console.log(`Importeres ikke (ennå): ${parsed.ignoredHeaders.join(', ')}`)
+  for (const sheet of parsed.sheets) {
+    const cols = Object.entries(sheet.columns)
+      .map(([k, v]) => `${labels[k] ?? k}=«${v}»`)
+      .join(', ')
+    console.log(`\n  ${sheet.name}: ${sheet.rows} rader`)
+    console.log(`    bruker: ${cols}`)
+    for (const note of sheet.inferred) console.log(`    NB: ${note}`)
+    if (sheet.ignoredHeaders.length)
+      console.log(`    importeres ikke: ${sheet.ignoredHeaders.join(', ')}`)
   }
-  console.log(`Kull (opptaksår): ${years.length ? `${years[0]}–${years.at(-1)}` : 'ingen'}`)
-  console.log('')
-  console.log(`  ${create.length} nye profiler (medlemsstatus: ${values.status})`)
-  console.log(`  ${existing.length} finnes fra før (endres ikke, får kull hvis det mangler)`)
+  if (parsed.skippedSheets.length) {
+    console.log(`\n  Faner som hoppes over: ${parsed.skippedSheets.join(', ')}`)
+  }
+
   console.log(
-    `  ${create.filter((r) => !r.email).length} nye uten e-post (kan bare kobles manuelt av admin)`,
+    `\nKull (uteksamineringsår): ${years.length ? `ES ${years[0]}–ES ${years.at(-1)}` : 'ingen'}`,
+  )
+  console.log(`  ${create.length} nye profiler (medlemsstatus: ${values.status})`)
+  console.log(`  ${existing.length} finnes fra før (navn og egne endringer røres ikke)`)
+  console.log(
+    `  ${plan.filter((r) => !r.emails.length).length} uten e-post (kan bare kobles manuelt av admin)`,
+  )
+  console.log(
+    `  ${plan.filter((r) => r.phone).length} med telefon (vises for medlemmer, kan skjules på profilen)`,
   )
   console.log(`  ${parsed.errors.length} rader hoppet over`)
 
-  const nameDiffs = existing.filter((r) => r.action === 'existing' && r.nameDiffers)
+  const at = (sheet: string | undefined, line: number) =>
+    sheet ? `${sheet} rad ${line}` : `linje ${line}`
   const notes = [
-    ...parsed.errors.map((e) => ({ line: e.line, text: `HOPPET OVER, ${e.message}` })),
-    ...parsed.warnings.map((w) => ({ line: w.line, text: w.message })),
-    ...nameDiffs.map((r) => ({
-      line: r.line,
-      text: `${r.fullName}: e-posten finnes fra før med et annet navn`,
-    })),
-  ].sort((a, b) => a.line - b.line)
+    ...parsed.errors.map((e) => ({ ...e, text: `HOPPET OVER, ${e.message}` })),
+    ...parsed.warnings.map((w) => ({ ...w, text: w.message })),
+    ...existing
+      .filter((r) => r.action === 'existing' && r.nameDiffers)
+      .map((r) => ({
+        sheet: r.sheet,
+        line: r.line,
+        text: `${r.fullName}: e-posten finnes fra før med et annet navn`,
+      })),
+  ]
   if (notes.length) {
-    console.log(`\nÅ se på:\n${notes.map((n) => `  linje ${n.line}: ${n.text}`).join('\n')}`)
+    console.log(`\nÅ se på:\n${notes.map((n) => `  ${at(n.sheet, n.line)}: ${n.text}`).join('\n')}`)
+  }
+  if (values['vis-rader']) {
+    console.log('\nRader:')
+    for (const r of plan) {
+      console.log(
+        `  ${at(r.sheet, r.line)}: ${r.action === 'create' ? 'ny' : 'finnes'} · ${r.fullName} · ${r.years.map((y) => `ES ${y}`).join(', ') || 'uten kull'}`,
+      )
+    }
   }
 
   if (!values.apply) {
@@ -130,10 +187,10 @@ try {
     console.log(
       `\nImportert: ${result.created} nye profiler, ${result.existing} eksisterende, ${result.cohortsCreated} nye kull.`,
     )
-    console.log('\nKull     profiler  tatt i bruk')
+    console.log('\nKull        profiler  tatt i bruk')
     for (const s of await profileStatsByCohort(db)) {
       console.log(
-        `${s.startYear}     ${String(s.profiles).padStart(8)}  ${String(s.claimed).padStart(11)}`,
+        `ES ${s.graduationYear}     ${String(s.profiles).padStart(8)}  ${String(s.claimed).padStart(11)}`,
       )
     }
   }

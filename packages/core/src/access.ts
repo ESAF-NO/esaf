@@ -8,21 +8,100 @@ import { AccessDeniedError } from './errors.ts'
 export type Viewer = {
   userId: string
   emailVerified: boolean
+  /** Kontoen har tofaktor; da har all innlogging med passord gått gjennom koden. */
+  twoFactorEnabled: boolean
+  /** Denne økten ble startet med passkey. */
+  passkeySession: boolean
+  /** Kontoen har minst én passkey. Gir ingen tilgang i seg selv, se `mayChangeSignInMethods`. */
+  hasPasskey: boolean
   personId: string | null
   membership: { status: MembershipStatus; role: MemberRole } | null
 } | null
 
-export type AccessLevel = 'anonymous' | 'pending' | 'member' | 'admin'
+export type AccessLevel = 'anonymous' | 'pending' | 'member'
 
 /**
  * Tilgangsgrensen i ett punkt. Innlogging alene gir aldri mer enn `pending`;
  * medlemsinnsyn krever bekreftet e-post og aktivt medlemskap godkjent av ESAF.
+ * Hva et medlem i tillegg kan gjøre, avgjøres av rollen (se `can`).
  */
 export function accessLevel(viewer: Viewer): AccessLevel {
   if (!viewer) return 'anonymous'
   const m = viewer.membership
   if (!viewer.emailVerified || !viewer.personId || !m || m.status !== 'active') return 'pending'
-  return m.role === 'admin' ? 'admin' : 'member'
+  return 'member'
+}
+
+/** Rollene fra minst til mest. En rolle har alt rollene under den har. */
+export const roles = [
+  'member',
+  'moderator',
+  'admin',
+  'owner',
+] as const satisfies readonly MemberRole[]
+
+export const roleAtLeast = (role: MemberRole, minimum: MemberRole) =>
+  roles.indexOf(role) >= roles.indexOf(minimum)
+
+/**
+ * Hva rollene får gjøre, som den laveste rollen som har rettigheten. Alle
+ * handlinger utover vanlig medlemskap sjekker en rettighet her, på serveren.
+ */
+export const permissions = {
+  /** Skjule andres innlegg og kommentarer. */
+  'content.moderate': 'moderator',
+  /** Behandle forespørsler om tilgang og koble kontoer til profiler. */
+  'members.review': 'admin',
+  /** Deaktivere og gjenopprette medlemmer med lavere rolle enn en selv. */
+  'members.manage': 'admin',
+  /**
+   * Rette andres profiler, men aldri kontaktinfo. På profiler uten konto kan
+   * kontaktinfo fra kullisten skjules eller vises.
+   */
+  'profiles.edit': 'admin',
+  /** Lese revisjonsloggen. */
+  'audit.read': 'admin',
+  /** Gi og fjerne roller. */
+  'roles.manage': 'owner',
+} as const satisfies Record<string, MemberRole>
+
+export type Permission = keyof typeof permissions
+
+/** Admins og hovedadmins må være sterkt innlogget for å bruke rettighetene sine. */
+export const strongAuthRequired = (role: MemberRole) => roleAtLeast(role, 'admin')
+
+/** Det serveren vet om hvordan den innloggede er logget inn. */
+export type SignInFactors = Pick<
+  NonNullable<Viewer>,
+  'twoFactorEnabled' | 'passkeySession' | 'hasPasskey'
+>
+
+/**
+ * Sterk innlogging: økten er startet med passkey, eller kontoen har tofaktor
+ * (da krever innlogging med passord alltid koden også). En konto med bare
+ * passkey som logger inn med passord, får en vanlig økt.
+ */
+export const strongAuth = (f: Pick<SignInFactors, 'twoFactorEnabled' | 'passkeySession'>) =>
+  f.twoFactorEnabled || f.passkeySession
+
+/**
+ * Om økten kan legge til eller fjerne passkeys og slå på tofaktor. Den første
+ * metoden kan legges til med en vanlig økt, som tofaktor alltid har kunnet.
+ * Har kontoen allerede passkey, kreves sterk innlogging. Ellers kunne den som
+ * bare kan passordet, bytte ut passkeyen med sin egen og bli sterkt innlogget.
+ */
+export const mayChangeSignInMethods = (f: SignInFactors) => !f.hasPasskey || strongAuth(f)
+
+/** Rollen til et aktivt medlem, ellers `null`. */
+export function activeRole(viewer: Viewer): MemberRole | null {
+  return accessLevel(viewer) === 'member' ? viewer!.membership!.role : null
+}
+
+/** Om den innloggede kan bruke en rettighet nå, medregnet kravet om sterk innlogging. */
+export function can(viewer: Viewer, permission: Permission): boolean {
+  const role = activeRole(viewer)
+  if (!role || !roleAtLeast(role, permissions[permission])) return false
+  return !strongAuthRequired(role) || strongAuth(viewer!)
 }
 
 export function assertMember(viewer: Viewer): asserts viewer is NonNullable<Viewer> & {
@@ -33,9 +112,19 @@ export function assertMember(viewer: Viewer): asserts viewer is NonNullable<View
   if (level === 'pending') throw new AccessDeniedError('not_member')
 }
 
-export function assertAdmin(viewer: Viewer): asserts viewer is NonNullable<Viewer> & {
-  personId: string
-} {
+/**
+ * Krever en rettighet. Mangler bare sterk innlogging, får den som spør vite
+ * det, så de kan logge inn med passkey eller slå på tofaktor. Ellers er svaret
+ * det samme som om handlingen ikke fantes.
+ */
+export function assertCan(
+  viewer: Viewer,
+  permission: Permission,
+): asserts viewer is NonNullable<Viewer> & { personId: string } {
   assertMember(viewer)
-  if (accessLevel(viewer) !== 'admin') throw new AccessDeniedError('not_admin')
+  const role = viewer.membership!.role
+  if (!roleAtLeast(role, permissions[permission])) throw new AccessDeniedError('forbidden')
+  if (strongAuthRequired(role) && !strongAuth(viewer)) {
+    throw new AccessDeniedError('strong_auth_required')
+  }
 }

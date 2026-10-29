@@ -13,11 +13,51 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as KontoRouteImport } from './routes/_konto'
 import { Route as LoggInnRouteImport } from './routes/logg-inn'
 import { Route as RegistrerRouteImport } from './routes/registrer'
-import { Route as KontoAdminRouteImport } from './routes/_konto/admin'
-import { Route as KontoMedlemmerRouteImport } from './routes/_konto/medlemmer'
+import { Route as KontoAdminRouteRouteImport } from './routes/_konto/admin/route'
+import { Route as KontoKomIGangRouteImport } from './routes/_konto/kom-i-gang'
+import { Route as KontoKontoRouteImport } from './routes/_konto/konto'
+import { Route as KontoVarslerRouteImport } from './routes/_konto/varsler'
+import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as InvitasjonTokenRouteImport } from './routes/invitasjon/$token'
+import { Route as NyttPassordTokenRouteImport } from './routes/nytt-passord/$token'
+import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
+import { Route as KontoAdminArrangementerRouteImport } from './routes/_konto/admin/arrangementer'
+import { Route as KontoAdminGjennomgangRouteImport } from './routes/_konto/admin/gjennomgang'
+import { Route as KontoAdminInvitasjonerRouteImport } from './routes/_konto/admin/invitasjoner'
+import { Route as KontoAdminKullrepresentanterRouteImport } from './routes/_konto/admin/kullrepresentanter'
+import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
+import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
+import { Route as KontoAdminProfilerRouteImport } from './routes/_konto/admin/profiler'
+import { Route as KontoAdminSelskaperRouteImport } from './routes/_konto/admin/selskaper'
+import { Route as KontoArrangementerIndexRouteImport } from './routes/_konto/arrangementer/index'
+import { Route as KontoEsafHelgenIndexRouteImport } from './routes/_konto/esaf-helgen/index'
+import { Route as KontoEsafHelgenWeekendIdRouteImport } from './routes/_konto/esaf-helgen/$weekendId'
+import { Route as KontoFeedIndexRouteImport } from './routes/_konto/feed/index'
+import { Route as KontoFeedPostIdRouteImport } from './routes/_konto/feed/$postId'
+import { Route as KontoFeedNyRouteImport } from './routes/_konto/feed/ny'
+import { Route as KontoKullIndexRouteImport } from './routes/_konto/kull/index'
+import { Route as KontoKullYearRouteImport } from './routes/_konto/kull/$year'
+import { Route as KontoMedlemmerIndexRouteImport } from './routes/_konto/medlemmer/index'
+import { Route as KontoSelskaperIndexRouteImport } from './routes/_konto/selskaper/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiBilderKeyRouteImport } from './routes/api/bilder/$key'
+import { Route as ApiImportDeltakelseRouteImport } from './routes/api/import/deltakelse'
+import { Route as ApiImportKullrepresentanterRouteImport } from './routes/api/import/kullrepresentanter'
+import { Route as ApiLogoerKeyRouteImport } from './routes/api/logoer/$key'
+import { Route as KontoAdminArrangementerImportRouteImport } from './routes/_konto/admin/arrangementer_.import'
+import { Route as KontoAdminKullrepresentanterImportRouteImport } from './routes/_konto/admin/kullrepresentanter_.import'
+import { Route as KontoArrangementerTypeSlugIndexRouteImport } from './routes/_konto/arrangementer/$typeSlug/index'
+import { Route as KontoArrangementerTypeSlugEventIdRouteImport } from './routes/_konto/arrangementer/$typeSlug/$eventId'
+import { Route as KontoFeedPostIdRedigerRouteImport } from './routes/_konto/feed/$postId_.rediger'
+import { Route as KontoMedlemmerPersonIdIndexRouteImport } from './routes/_konto/medlemmer/$personId/index'
+import { Route as KontoMedlemmerPersonIdRedigerRouteImport } from './routes/_konto/medlemmer/$personId/rediger'
+import { Route as KontoSelskaperSlugIndexRouteImport } from './routes/_konto/selskaper/$slug/index'
+import { Route as KontoSelskaperSlugForeslaRouteImport } from './routes/_konto/selskaper/$slug/foresla'
+import { Route as KontoSelskaperSlugRedigerRouteImport } from './routes/_konto/selskaper/$slug/rediger'
+import { Route as ApiMedlemmerPersonIdBildeRouteImport } from './routes/api/medlemmer/$personId/bilde'
+import { Route as ApiSelskaperCompanyIdLogoRouteImport } from './routes/api/selskaper/$companyId/logo'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -38,14 +78,29 @@ const RegistrerRoute = RegistrerRouteImport.update({
   path: '/registrer',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KontoAdminRoute = KontoAdminRouteImport.update({
+const KontoAdminRouteRoute = KontoAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => KontoRoute,
 } as any)
-const KontoMedlemmerRoute = KontoMedlemmerRouteImport.update({
-  id: '/medlemmer',
-  path: '/medlemmer',
+const KontoKomIGangRoute = KontoKomIGangRouteImport.update({
+  id: '/kom-i-gang',
+  path: '/kom-i-gang',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoKontoRoute = KontoKontoRouteImport.update({
+  id: '/konto',
+  path: '/konto',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoVarslerRoute = KontoVarslerRouteImport.update({
+  id: '/varsler',
+  path: '/varsler',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoVelkommenRoute = KontoVelkommenRouteImport.update({
+  id: '/velkommen',
+  path: '/velkommen',
   getParentRoute: () => KontoRoute,
 } as any)
 const KontoVenterRoute = KontoVenterRouteImport.update({
@@ -58,31 +113,308 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvitasjonTokenRoute = InvitasjonTokenRouteImport.update({
+  id: '/invitasjon/$token',
+  path: '/invitasjon/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NyttPassordTokenRoute = NyttPassordTokenRouteImport.update({
+  id: '/nytt-passord/$token',
+  path: '/nytt-passord/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KontoAdminIndexRoute = KontoAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminArrangementerRoute = KontoAdminArrangementerRouteImport.update({
+  id: '/arrangementer',
+  path: '/arrangementer',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminGjennomgangRoute = KontoAdminGjennomgangRouteImport.update({
+  id: '/gjennomgang',
+  path: '/gjennomgang',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminInvitasjonerRoute = KontoAdminInvitasjonerRouteImport.update({
+  id: '/invitasjoner',
+  path: '/invitasjoner',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminKullrepresentanterRoute =
+  KontoAdminKullrepresentanterRouteImport.update({
+    id: '/kullrepresentanter',
+    path: '/kullrepresentanter',
+    getParentRoute: () => KontoAdminRouteRoute,
+  } as any)
+const KontoAdminLoggRoute = KontoAdminLoggRouteImport.update({
+  id: '/logg',
+  path: '/logg',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminMedlemmerRoute = KontoAdminMedlemmerRouteImport.update({
+  id: '/medlemmer',
+  path: '/medlemmer',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminProfilerRoute = KontoAdminProfilerRouteImport.update({
+  id: '/profiler',
+  path: '/profiler',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminSelskaperRoute = KontoAdminSelskaperRouteImport.update({
+  id: '/selskaper',
+  path: '/selskaper',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoArrangementerIndexRoute = KontoArrangementerIndexRouteImport.update({
+  id: '/arrangementer/',
+  path: '/arrangementer/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoEsafHelgenIndexRoute = KontoEsafHelgenIndexRouteImport.update({
+  id: '/esaf-helgen/',
+  path: '/esaf-helgen/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoEsafHelgenWeekendIdRoute =
+  KontoEsafHelgenWeekendIdRouteImport.update({
+    id: '/esaf-helgen/$weekendId',
+    path: '/esaf-helgen/$weekendId',
+    getParentRoute: () => KontoRoute,
+  } as any)
+const KontoFeedIndexRoute = KontoFeedIndexRouteImport.update({
+  id: '/feed/',
+  path: '/feed/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoFeedPostIdRoute = KontoFeedPostIdRouteImport.update({
+  id: '/feed/$postId',
+  path: '/feed/$postId',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoFeedNyRoute = KontoFeedNyRouteImport.update({
+  id: '/feed/ny',
+  path: '/feed/ny',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoKullIndexRoute = KontoKullIndexRouteImport.update({
+  id: '/kull/',
+  path: '/kull/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoKullYearRoute = KontoKullYearRouteImport.update({
+  id: '/kull/$year',
+  path: '/kull/$year',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoMedlemmerIndexRoute = KontoMedlemmerIndexRouteImport.update({
+  id: '/medlemmer/',
+  path: '/medlemmer/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoSelskaperIndexRoute = KontoSelskaperIndexRouteImport.update({
+  id: '/selskaper/',
+  path: '/selskaper/',
+  getParentRoute: () => KontoRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBilderKeyRoute = ApiBilderKeyRouteImport.update({
+  id: '/api/bilder/$key',
+  path: '/api/bilder/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImportDeltakelseRoute = ApiImportDeltakelseRouteImport.update({
+  id: '/api/import/deltakelse',
+  path: '/api/import/deltakelse',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImportKullrepresentanterRoute =
+  ApiImportKullrepresentanterRouteImport.update({
+    id: '/api/import/kullrepresentanter',
+    path: '/api/import/kullrepresentanter',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiLogoerKeyRoute = ApiLogoerKeyRouteImport.update({
+  id: '/api/logoer/$key',
+  path: '/api/logoer/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KontoAdminArrangementerImportRoute =
+  KontoAdminArrangementerImportRouteImport.update({
+    id: '/arrangementer_/import',
+    path: '/arrangementer/import',
+    getParentRoute: () => KontoAdminRouteRoute,
+  } as any)
+const KontoAdminKullrepresentanterImportRoute =
+  KontoAdminKullrepresentanterImportRouteImport.update({
+    id: '/kullrepresentanter_/import',
+    path: '/kullrepresentanter/import',
+    getParentRoute: () => KontoAdminRouteRoute,
+  } as any)
+const KontoArrangementerTypeSlugIndexRoute =
+  KontoArrangementerTypeSlugIndexRouteImport.update({
+    id: '/arrangementer/$typeSlug/',
+    path: '/arrangementer/$typeSlug/',
+    getParentRoute: () => KontoRoute,
+  } as any)
+const KontoArrangementerTypeSlugEventIdRoute =
+  KontoArrangementerTypeSlugEventIdRouteImport.update({
+    id: '/arrangementer/$typeSlug/$eventId',
+    path: '/arrangementer/$typeSlug/$eventId',
+    getParentRoute: () => KontoRoute,
+  } as any)
+const KontoFeedPostIdRedigerRoute = KontoFeedPostIdRedigerRouteImport.update({
+  id: '/feed/$postId_/rediger',
+  path: '/feed/$postId/rediger',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoMedlemmerPersonIdIndexRoute =
+  KontoMedlemmerPersonIdIndexRouteImport.update({
+    id: '/medlemmer/$personId/',
+    path: '/medlemmer/$personId/',
+    getParentRoute: () => KontoRoute,
+  } as any)
+const KontoMedlemmerPersonIdRedigerRoute =
+  KontoMedlemmerPersonIdRedigerRouteImport.update({
+    id: '/medlemmer/$personId/rediger',
+    path: '/medlemmer/$personId/rediger',
+    getParentRoute: () => KontoRoute,
+  } as any)
+const KontoSelskaperSlugIndexRoute = KontoSelskaperSlugIndexRouteImport.update({
+  id: '/selskaper/$slug/',
+  path: '/selskaper/$slug/',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoSelskaperSlugForeslaRoute =
+  KontoSelskaperSlugForeslaRouteImport.update({
+    id: '/selskaper/$slug/foresla',
+    path: '/selskaper/$slug/foresla',
+    getParentRoute: () => KontoRoute,
+  } as any)
+const KontoSelskaperSlugRedigerRoute =
+  KontoSelskaperSlugRedigerRouteImport.update({
+    id: '/selskaper/$slug/rediger',
+    path: '/selskaper/$slug/rediger',
+    getParentRoute: () => KontoRoute,
+  } as any)
+const ApiMedlemmerPersonIdBildeRoute =
+  ApiMedlemmerPersonIdBildeRouteImport.update({
+    id: '/api/medlemmer/$personId/bilde',
+    path: '/api/medlemmer/$personId/bilde',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiSelskaperCompanyIdLogoRoute =
+  ApiSelskaperCompanyIdLogoRouteImport.update({
+    id: '/api/selskaper/$companyId/logo',
+    path: '/api/selskaper/$companyId/logo',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
-  '/admin': typeof KontoAdminRoute
-  '/medlemmer': typeof KontoMedlemmerRoute
+  '/admin': typeof KontoAdminRouteRouteWithChildren
+  '/kom-i-gang': typeof KontoKomIGangRoute
+  '/konto': typeof KontoKontoRoute
+  '/varsler': typeof KontoVarslerRoute
+  '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/nytt-passord/$token': typeof NyttPassordTokenRoute
+  '/admin/arrangementer': typeof KontoAdminArrangementerRoute
+  '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
+  '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
+  '/admin/logg': typeof KontoAdminLoggRoute
+  '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/admin/profiler': typeof KontoAdminProfilerRoute
+  '/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
+  '/feed/$postId': typeof KontoFeedPostIdRoute
+  '/feed/ny': typeof KontoFeedNyRoute
+  '/kull/$year': typeof KontoKullYearRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bilder/$key': typeof ApiBilderKeyRoute
+  '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
+  '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
+  '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/admin/': typeof KontoAdminIndexRoute
+  '/arrangementer/': typeof KontoArrangementerIndexRoute
+  '/esaf-helgen/': typeof KontoEsafHelgenIndexRoute
+  '/feed/': typeof KontoFeedIndexRoute
+  '/kull/': typeof KontoKullIndexRoute
+  '/medlemmer/': typeof KontoMedlemmerIndexRoute
+  '/selskaper/': typeof KontoSelskaperIndexRoute
+  '/admin/arrangementer/import': typeof KontoAdminArrangementerImportRoute
+  '/admin/kullrepresentanter/import': typeof KontoAdminKullrepresentanterImportRoute
+  '/arrangementer/$typeSlug/$eventId': typeof KontoArrangementerTypeSlugEventIdRoute
+  '/feed/$postId/rediger': typeof KontoFeedPostIdRedigerRoute
+  '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
+  '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
+  '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
+  '/arrangementer/$typeSlug/': typeof KontoArrangementerTypeSlugIndexRoute
+  '/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
+  '/selskaper/$slug/': typeof KontoSelskaperSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
-  '/admin': typeof KontoAdminRoute
-  '/medlemmer': typeof KontoMedlemmerRoute
+  '/kom-i-gang': typeof KontoKomIGangRoute
+  '/konto': typeof KontoKontoRoute
+  '/varsler': typeof KontoVarslerRoute
+  '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/nytt-passord/$token': typeof NyttPassordTokenRoute
+  '/admin/arrangementer': typeof KontoAdminArrangementerRoute
+  '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
+  '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
+  '/admin/logg': typeof KontoAdminLoggRoute
+  '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/admin/profiler': typeof KontoAdminProfilerRoute
+  '/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
+  '/feed/$postId': typeof KontoFeedPostIdRoute
+  '/feed/ny': typeof KontoFeedNyRoute
+  '/kull/$year': typeof KontoKullYearRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bilder/$key': typeof ApiBilderKeyRoute
+  '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
+  '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
+  '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/admin': typeof KontoAdminIndexRoute
+  '/arrangementer': typeof KontoArrangementerIndexRoute
+  '/esaf-helgen': typeof KontoEsafHelgenIndexRoute
+  '/feed': typeof KontoFeedIndexRoute
+  '/kull': typeof KontoKullIndexRoute
+  '/medlemmer': typeof KontoMedlemmerIndexRoute
+  '/selskaper': typeof KontoSelskaperIndexRoute
+  '/admin/arrangementer/import': typeof KontoAdminArrangementerImportRoute
+  '/admin/kullrepresentanter/import': typeof KontoAdminKullrepresentanterImportRoute
+  '/arrangementer/$typeSlug/$eventId': typeof KontoArrangementerTypeSlugEventIdRoute
+  '/feed/$postId/rediger': typeof KontoFeedPostIdRedigerRoute
+  '/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
+  '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
+  '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
+  '/arrangementer/$typeSlug': typeof KontoArrangementerTypeSlugIndexRoute
+  '/medlemmer/$personId': typeof KontoMedlemmerPersonIdIndexRoute
+  '/selskaper/$slug': typeof KontoSelskaperSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -90,11 +422,51 @@ export interface FileRoutesById {
   '/_konto': typeof KontoRouteWithChildren
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
-  '/_konto/admin': typeof KontoAdminRoute
-  '/_konto/medlemmer': typeof KontoMedlemmerRoute
+  '/_konto/admin': typeof KontoAdminRouteRouteWithChildren
+  '/_konto/kom-i-gang': typeof KontoKomIGangRoute
+  '/_konto/konto': typeof KontoKontoRoute
+  '/_konto/varsler': typeof KontoVarslerRoute
+  '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/nytt-passord/$token': typeof NyttPassordTokenRoute
+  '/_konto/admin/arrangementer': typeof KontoAdminArrangementerRoute
+  '/_konto/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/_konto/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
+  '/_konto/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
+  '/_konto/admin/logg': typeof KontoAdminLoggRoute
+  '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/_konto/admin/profiler': typeof KontoAdminProfilerRoute
+  '/_konto/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/_konto/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
+  '/_konto/feed/$postId': typeof KontoFeedPostIdRoute
+  '/_konto/feed/ny': typeof KontoFeedNyRoute
+  '/_konto/kull/$year': typeof KontoKullYearRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/bilder/$key': typeof ApiBilderKeyRoute
+  '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
+  '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
+  '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/_konto/admin/': typeof KontoAdminIndexRoute
+  '/_konto/arrangementer/': typeof KontoArrangementerIndexRoute
+  '/_konto/esaf-helgen/': typeof KontoEsafHelgenIndexRoute
+  '/_konto/feed/': typeof KontoFeedIndexRoute
+  '/_konto/kull/': typeof KontoKullIndexRoute
+  '/_konto/medlemmer/': typeof KontoMedlemmerIndexRoute
+  '/_konto/selskaper/': typeof KontoSelskaperIndexRoute
+  '/_konto/admin/arrangementer_/import': typeof KontoAdminArrangementerImportRoute
+  '/_konto/admin/kullrepresentanter_/import': typeof KontoAdminKullrepresentanterImportRoute
+  '/_konto/arrangementer/$typeSlug/$eventId': typeof KontoArrangementerTypeSlugEventIdRoute
+  '/_konto/feed/$postId_/rediger': typeof KontoFeedPostIdRedigerRoute
+  '/_konto/medlemmer/$personId/rediger': typeof KontoMedlemmerPersonIdRedigerRoute
+  '/_konto/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
+  '/_konto/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
+  '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
+  '/_konto/arrangementer/$typeSlug/': typeof KontoArrangementerTypeSlugIndexRoute
+  '/_konto/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
+  '/_konto/selskaper/$slug/': typeof KontoSelskaperSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -103,20 +475,99 @@ export interface FileRouteTypes {
     | '/logg-inn'
     | '/registrer'
     | '/admin'
-    | '/medlemmer'
+    | '/kom-i-gang'
+    | '/konto'
+    | '/varsler'
+    | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/invitasjon/$token'
+    | '/nytt-passord/$token'
+    | '/admin/arrangementer'
+    | '/admin/gjennomgang'
+    | '/admin/invitasjoner'
+    | '/admin/kullrepresentanter'
+    | '/admin/logg'
+    | '/admin/medlemmer'
+    | '/admin/profiler'
+    | '/admin/selskaper'
+    | '/esaf-helgen/$weekendId'
+    | '/feed/$postId'
+    | '/feed/ny'
+    | '/kull/$year'
     | '/api/auth/$'
+    | '/api/bilder/$key'
+    | '/api/import/deltakelse'
+    | '/api/import/kullrepresentanter'
+    | '/api/logoer/$key'
+    | '/admin/'
+    | '/arrangementer/'
+    | '/esaf-helgen/'
+    | '/feed/'
+    | '/kull/'
+    | '/medlemmer/'
+    | '/selskaper/'
+    | '/admin/arrangementer/import'
+    | '/admin/kullrepresentanter/import'
+    | '/arrangementer/$typeSlug/$eventId'
+    | '/feed/$postId/rediger'
+    | '/medlemmer/$personId/rediger'
+    | '/selskaper/$slug/foresla'
+    | '/selskaper/$slug/rediger'
+    | '/api/medlemmer/$personId/bilde'
+    | '/api/selskaper/$companyId/logo'
+    | '/arrangementer/$typeSlug/'
+    | '/medlemmer/$personId/'
+    | '/selskaper/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/logg-inn'
     | '/registrer'
-    | '/admin'
-    | '/medlemmer'
+    | '/kom-i-gang'
+    | '/konto'
+    | '/varsler'
+    | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/invitasjon/$token'
+    | '/nytt-passord/$token'
+    | '/admin/arrangementer'
+    | '/admin/gjennomgang'
+    | '/admin/invitasjoner'
+    | '/admin/kullrepresentanter'
+    | '/admin/logg'
+    | '/admin/medlemmer'
+    | '/admin/profiler'
+    | '/admin/selskaper'
+    | '/esaf-helgen/$weekendId'
+    | '/feed/$postId'
+    | '/feed/ny'
+    | '/kull/$year'
     | '/api/auth/$'
+    | '/api/bilder/$key'
+    | '/api/import/deltakelse'
+    | '/api/import/kullrepresentanter'
+    | '/api/logoer/$key'
+    | '/admin'
+    | '/arrangementer'
+    | '/esaf-helgen'
+    | '/feed'
+    | '/kull'
+    | '/medlemmer'
+    | '/selskaper'
+    | '/admin/arrangementer/import'
+    | '/admin/kullrepresentanter/import'
+    | '/arrangementer/$typeSlug/$eventId'
+    | '/feed/$postId/rediger'
+    | '/medlemmer/$personId/rediger'
+    | '/selskaper/$slug/foresla'
+    | '/selskaper/$slug/rediger'
+    | '/api/medlemmer/$personId/bilde'
+    | '/api/selskaper/$companyId/logo'
+    | '/arrangementer/$typeSlug'
+    | '/medlemmer/$personId'
+    | '/selskaper/$slug'
   id:
     | '__root__'
     | '/'
@@ -124,10 +575,50 @@ export interface FileRouteTypes {
     | '/logg-inn'
     | '/registrer'
     | '/_konto/admin'
-    | '/_konto/medlemmer'
+    | '/_konto/kom-i-gang'
+    | '/_konto/konto'
+    | '/_konto/varsler'
+    | '/_konto/velkommen'
     | '/_konto/venter'
     | '/api/health'
+    | '/invitasjon/$token'
+    | '/nytt-passord/$token'
+    | '/_konto/admin/arrangementer'
+    | '/_konto/admin/gjennomgang'
+    | '/_konto/admin/invitasjoner'
+    | '/_konto/admin/kullrepresentanter'
+    | '/_konto/admin/logg'
+    | '/_konto/admin/medlemmer'
+    | '/_konto/admin/profiler'
+    | '/_konto/admin/selskaper'
+    | '/_konto/esaf-helgen/$weekendId'
+    | '/_konto/feed/$postId'
+    | '/_konto/feed/ny'
+    | '/_konto/kull/$year'
     | '/api/auth/$'
+    | '/api/bilder/$key'
+    | '/api/import/deltakelse'
+    | '/api/import/kullrepresentanter'
+    | '/api/logoer/$key'
+    | '/_konto/admin/'
+    | '/_konto/arrangementer/'
+    | '/_konto/esaf-helgen/'
+    | '/_konto/feed/'
+    | '/_konto/kull/'
+    | '/_konto/medlemmer/'
+    | '/_konto/selskaper/'
+    | '/_konto/admin/arrangementer_/import'
+    | '/_konto/admin/kullrepresentanter_/import'
+    | '/_konto/arrangementer/$typeSlug/$eventId'
+    | '/_konto/feed/$postId_/rediger'
+    | '/_konto/medlemmer/$personId/rediger'
+    | '/_konto/selskaper/$slug/foresla'
+    | '/_konto/selskaper/$slug/rediger'
+    | '/api/medlemmer/$personId/bilde'
+    | '/api/selskaper/$companyId/logo'
+    | '/_konto/arrangementer/$typeSlug/'
+    | '/_konto/medlemmer/$personId/'
+    | '/_konto/selskaper/$slug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -136,7 +627,15 @@ export interface RootRouteChildren {
   LoggInnRoute: typeof LoggInnRoute
   RegistrerRoute: typeof RegistrerRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  InvitasjonTokenRoute: typeof InvitasjonTokenRoute
+  NyttPassordTokenRoute: typeof NyttPassordTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiBilderKeyRoute: typeof ApiBilderKeyRoute
+  ApiImportDeltakelseRoute: typeof ApiImportDeltakelseRoute
+  ApiImportKullrepresentanterRoute: typeof ApiImportKullrepresentanterRoute
+  ApiLogoerKeyRoute: typeof ApiLogoerKeyRoute
+  ApiMedlemmerPersonIdBildeRoute: typeof ApiMedlemmerPersonIdBildeRoute
+  ApiSelskaperCompanyIdLogoRoute: typeof ApiSelskaperCompanyIdLogoRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -173,14 +672,35 @@ declare module '@tanstack/react-router' {
       id: '/_konto/admin'
       path: '/admin'
       fullPath: '/admin'
-      preLoaderRoute: typeof KontoAdminRouteImport
+      preLoaderRoute: typeof KontoAdminRouteRouteImport
       parentRoute: typeof KontoRoute
     }
-    '/_konto/medlemmer': {
-      id: '/_konto/medlemmer'
-      path: '/medlemmer'
-      fullPath: '/medlemmer'
-      preLoaderRoute: typeof KontoMedlemmerRouteImport
+    '/_konto/kom-i-gang': {
+      id: '/_konto/kom-i-gang'
+      path: '/kom-i-gang'
+      fullPath: '/kom-i-gang'
+      preLoaderRoute: typeof KontoKomIGangRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/konto': {
+      id: '/_konto/konto'
+      path: '/konto'
+      fullPath: '/konto'
+      preLoaderRoute: typeof KontoKontoRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/varsler': {
+      id: '/_konto/varsler'
+      path: '/varsler'
+      fullPath: '/varsler'
+      preLoaderRoute: typeof KontoVarslerRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/velkommen': {
+      id: '/_konto/velkommen'
+      path: '/velkommen'
+      fullPath: '/velkommen'
+      preLoaderRoute: typeof KontoVelkommenRouteImport
       parentRoute: typeof KontoRoute
     }
     '/_konto/venter': {
@@ -197,6 +717,153 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invitasjon/$token': {
+      id: '/invitasjon/$token'
+      path: '/invitasjon/$token'
+      fullPath: '/invitasjon/$token'
+      preLoaderRoute: typeof InvitasjonTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nytt-passord/$token': {
+      id: '/nytt-passord/$token'
+      path: '/nytt-passord/$token'
+      fullPath: '/nytt-passord/$token'
+      preLoaderRoute: typeof NyttPassordTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_konto/admin/': {
+      id: '/_konto/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof KontoAdminIndexRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/arrangementer': {
+      id: '/_konto/admin/arrangementer'
+      path: '/arrangementer'
+      fullPath: '/admin/arrangementer'
+      preLoaderRoute: typeof KontoAdminArrangementerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/gjennomgang': {
+      id: '/_konto/admin/gjennomgang'
+      path: '/gjennomgang'
+      fullPath: '/admin/gjennomgang'
+      preLoaderRoute: typeof KontoAdminGjennomgangRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/invitasjoner': {
+      id: '/_konto/admin/invitasjoner'
+      path: '/invitasjoner'
+      fullPath: '/admin/invitasjoner'
+      preLoaderRoute: typeof KontoAdminInvitasjonerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/kullrepresentanter': {
+      id: '/_konto/admin/kullrepresentanter'
+      path: '/kullrepresentanter'
+      fullPath: '/admin/kullrepresentanter'
+      preLoaderRoute: typeof KontoAdminKullrepresentanterRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/logg': {
+      id: '/_konto/admin/logg'
+      path: '/logg'
+      fullPath: '/admin/logg'
+      preLoaderRoute: typeof KontoAdminLoggRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/medlemmer': {
+      id: '/_konto/admin/medlemmer'
+      path: '/medlemmer'
+      fullPath: '/admin/medlemmer'
+      preLoaderRoute: typeof KontoAdminMedlemmerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/profiler': {
+      id: '/_konto/admin/profiler'
+      path: '/profiler'
+      fullPath: '/admin/profiler'
+      preLoaderRoute: typeof KontoAdminProfilerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/selskaper': {
+      id: '/_konto/admin/selskaper'
+      path: '/selskaper'
+      fullPath: '/admin/selskaper'
+      preLoaderRoute: typeof KontoAdminSelskaperRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/arrangementer/': {
+      id: '/_konto/arrangementer/'
+      path: '/arrangementer'
+      fullPath: '/arrangementer/'
+      preLoaderRoute: typeof KontoArrangementerIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/esaf-helgen/': {
+      id: '/_konto/esaf-helgen/'
+      path: '/esaf-helgen'
+      fullPath: '/esaf-helgen/'
+      preLoaderRoute: typeof KontoEsafHelgenIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/esaf-helgen/$weekendId': {
+      id: '/_konto/esaf-helgen/$weekendId'
+      path: '/esaf-helgen/$weekendId'
+      fullPath: '/esaf-helgen/$weekendId'
+      preLoaderRoute: typeof KontoEsafHelgenWeekendIdRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/feed/': {
+      id: '/_konto/feed/'
+      path: '/feed'
+      fullPath: '/feed/'
+      preLoaderRoute: typeof KontoFeedIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/feed/$postId': {
+      id: '/_konto/feed/$postId'
+      path: '/feed/$postId'
+      fullPath: '/feed/$postId'
+      preLoaderRoute: typeof KontoFeedPostIdRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/feed/ny': {
+      id: '/_konto/feed/ny'
+      path: '/feed/ny'
+      fullPath: '/feed/ny'
+      preLoaderRoute: typeof KontoFeedNyRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/kull/': {
+      id: '/_konto/kull/'
+      path: '/kull'
+      fullPath: '/kull/'
+      preLoaderRoute: typeof KontoKullIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/kull/$year': {
+      id: '/_konto/kull/$year'
+      path: '/kull/$year'
+      fullPath: '/kull/$year'
+      preLoaderRoute: typeof KontoKullYearRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/medlemmer/': {
+      id: '/_konto/medlemmer/'
+      path: '/medlemmer'
+      fullPath: '/medlemmer/'
+      preLoaderRoute: typeof KontoMedlemmerIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/selskaper/': {
+      id: '/_konto/selskaper/'
+      path: '/selskaper'
+      fullPath: '/selskaper/'
+      preLoaderRoute: typeof KontoSelskaperIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -204,19 +871,207 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/bilder/$key': {
+      id: '/api/bilder/$key'
+      path: '/api/bilder/$key'
+      fullPath: '/api/bilder/$key'
+      preLoaderRoute: typeof ApiBilderKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/import/deltakelse': {
+      id: '/api/import/deltakelse'
+      path: '/api/import/deltakelse'
+      fullPath: '/api/import/deltakelse'
+      preLoaderRoute: typeof ApiImportDeltakelseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/import/kullrepresentanter': {
+      id: '/api/import/kullrepresentanter'
+      path: '/api/import/kullrepresentanter'
+      fullPath: '/api/import/kullrepresentanter'
+      preLoaderRoute: typeof ApiImportKullrepresentanterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/logoer/$key': {
+      id: '/api/logoer/$key'
+      path: '/api/logoer/$key'
+      fullPath: '/api/logoer/$key'
+      preLoaderRoute: typeof ApiLogoerKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_konto/admin/arrangementer_/import': {
+      id: '/_konto/admin/arrangementer_/import'
+      path: '/arrangementer/import'
+      fullPath: '/admin/arrangementer/import'
+      preLoaderRoute: typeof KontoAdminArrangementerImportRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/kullrepresentanter_/import': {
+      id: '/_konto/admin/kullrepresentanter_/import'
+      path: '/kullrepresentanter/import'
+      fullPath: '/admin/kullrepresentanter/import'
+      preLoaderRoute: typeof KontoAdminKullrepresentanterImportRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/arrangementer/$typeSlug/': {
+      id: '/_konto/arrangementer/$typeSlug/'
+      path: '/arrangementer/$typeSlug'
+      fullPath: '/arrangementer/$typeSlug/'
+      preLoaderRoute: typeof KontoArrangementerTypeSlugIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/arrangementer/$typeSlug/$eventId': {
+      id: '/_konto/arrangementer/$typeSlug/$eventId'
+      path: '/arrangementer/$typeSlug/$eventId'
+      fullPath: '/arrangementer/$typeSlug/$eventId'
+      preLoaderRoute: typeof KontoArrangementerTypeSlugEventIdRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/feed/$postId_/rediger': {
+      id: '/_konto/feed/$postId_/rediger'
+      path: '/feed/$postId/rediger'
+      fullPath: '/feed/$postId/rediger'
+      preLoaderRoute: typeof KontoFeedPostIdRedigerRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/medlemmer/$personId/': {
+      id: '/_konto/medlemmer/$personId/'
+      path: '/medlemmer/$personId'
+      fullPath: '/medlemmer/$personId/'
+      preLoaderRoute: typeof KontoMedlemmerPersonIdIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/medlemmer/$personId/rediger': {
+      id: '/_konto/medlemmer/$personId/rediger'
+      path: '/medlemmer/$personId/rediger'
+      fullPath: '/medlemmer/$personId/rediger'
+      preLoaderRoute: typeof KontoMedlemmerPersonIdRedigerRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/selskaper/$slug/': {
+      id: '/_konto/selskaper/$slug/'
+      path: '/selskaper/$slug'
+      fullPath: '/selskaper/$slug/'
+      preLoaderRoute: typeof KontoSelskaperSlugIndexRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/selskaper/$slug/foresla': {
+      id: '/_konto/selskaper/$slug/foresla'
+      path: '/selskaper/$slug/foresla'
+      fullPath: '/selskaper/$slug/foresla'
+      preLoaderRoute: typeof KontoSelskaperSlugForeslaRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/selskaper/$slug/rediger': {
+      id: '/_konto/selskaper/$slug/rediger'
+      path: '/selskaper/$slug/rediger'
+      fullPath: '/selskaper/$slug/rediger'
+      preLoaderRoute: typeof KontoSelskaperSlugRedigerRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/api/medlemmer/$personId/bilde': {
+      id: '/api/medlemmer/$personId/bilde'
+      path: '/api/medlemmer/$personId/bilde'
+      fullPath: '/api/medlemmer/$personId/bilde'
+      preLoaderRoute: typeof ApiMedlemmerPersonIdBildeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/selskaper/$companyId/logo': {
+      id: '/api/selskaper/$companyId/logo'
+      path: '/api/selskaper/$companyId/logo'
+      fullPath: '/api/selskaper/$companyId/logo'
+      preLoaderRoute: typeof ApiSelskaperCompanyIdLogoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface KontoAdminRouteRouteChildren {
+  KontoAdminArrangementerRoute: typeof KontoAdminArrangementerRoute
+  KontoAdminGjennomgangRoute: typeof KontoAdminGjennomgangRoute
+  KontoAdminInvitasjonerRoute: typeof KontoAdminInvitasjonerRoute
+  KontoAdminKullrepresentanterRoute: typeof KontoAdminKullrepresentanterRoute
+  KontoAdminLoggRoute: typeof KontoAdminLoggRoute
+  KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
+  KontoAdminProfilerRoute: typeof KontoAdminProfilerRoute
+  KontoAdminSelskaperRoute: typeof KontoAdminSelskaperRoute
+  KontoAdminIndexRoute: typeof KontoAdminIndexRoute
+  KontoAdminArrangementerImportRoute: typeof KontoAdminArrangementerImportRoute
+  KontoAdminKullrepresentanterImportRoute: typeof KontoAdminKullrepresentanterImportRoute
+}
+
+const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
+  KontoAdminArrangementerRoute: KontoAdminArrangementerRoute,
+  KontoAdminGjennomgangRoute: KontoAdminGjennomgangRoute,
+  KontoAdminInvitasjonerRoute: KontoAdminInvitasjonerRoute,
+  KontoAdminKullrepresentanterRoute: KontoAdminKullrepresentanterRoute,
+  KontoAdminLoggRoute: KontoAdminLoggRoute,
+  KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
+  KontoAdminProfilerRoute: KontoAdminProfilerRoute,
+  KontoAdminSelskaperRoute: KontoAdminSelskaperRoute,
+  KontoAdminIndexRoute: KontoAdminIndexRoute,
+  KontoAdminArrangementerImportRoute: KontoAdminArrangementerImportRoute,
+  KontoAdminKullrepresentanterImportRoute:
+    KontoAdminKullrepresentanterImportRoute,
+}
+
+const KontoAdminRouteRouteWithChildren = KontoAdminRouteRoute._addFileChildren(
+  KontoAdminRouteRouteChildren,
+)
+
 interface KontoRouteChildren {
-  KontoAdminRoute: typeof KontoAdminRoute
-  KontoMedlemmerRoute: typeof KontoMedlemmerRoute
+  KontoAdminRouteRoute: typeof KontoAdminRouteRouteWithChildren
+  KontoKomIGangRoute: typeof KontoKomIGangRoute
+  KontoKontoRoute: typeof KontoKontoRoute
+  KontoVarslerRoute: typeof KontoVarslerRoute
+  KontoVelkommenRoute: typeof KontoVelkommenRoute
   KontoVenterRoute: typeof KontoVenterRoute
+  KontoEsafHelgenWeekendIdRoute: typeof KontoEsafHelgenWeekendIdRoute
+  KontoFeedPostIdRoute: typeof KontoFeedPostIdRoute
+  KontoFeedNyRoute: typeof KontoFeedNyRoute
+  KontoKullYearRoute: typeof KontoKullYearRoute
+  KontoArrangementerIndexRoute: typeof KontoArrangementerIndexRoute
+  KontoEsafHelgenIndexRoute: typeof KontoEsafHelgenIndexRoute
+  KontoFeedIndexRoute: typeof KontoFeedIndexRoute
+  KontoKullIndexRoute: typeof KontoKullIndexRoute
+  KontoMedlemmerIndexRoute: typeof KontoMedlemmerIndexRoute
+  KontoSelskaperIndexRoute: typeof KontoSelskaperIndexRoute
+  KontoArrangementerTypeSlugEventIdRoute: typeof KontoArrangementerTypeSlugEventIdRoute
+  KontoFeedPostIdRedigerRoute: typeof KontoFeedPostIdRedigerRoute
+  KontoMedlemmerPersonIdRedigerRoute: typeof KontoMedlemmerPersonIdRedigerRoute
+  KontoSelskaperSlugForeslaRoute: typeof KontoSelskaperSlugForeslaRoute
+  KontoSelskaperSlugRedigerRoute: typeof KontoSelskaperSlugRedigerRoute
+  KontoArrangementerTypeSlugIndexRoute: typeof KontoArrangementerTypeSlugIndexRoute
+  KontoMedlemmerPersonIdIndexRoute: typeof KontoMedlemmerPersonIdIndexRoute
+  KontoSelskaperSlugIndexRoute: typeof KontoSelskaperSlugIndexRoute
 }
 
 const KontoRouteChildren: KontoRouteChildren = {
-  KontoAdminRoute: KontoAdminRoute,
-  KontoMedlemmerRoute: KontoMedlemmerRoute,
+  KontoAdminRouteRoute: KontoAdminRouteRouteWithChildren,
+  KontoKomIGangRoute: KontoKomIGangRoute,
+  KontoKontoRoute: KontoKontoRoute,
+  KontoVarslerRoute: KontoVarslerRoute,
+  KontoVelkommenRoute: KontoVelkommenRoute,
   KontoVenterRoute: KontoVenterRoute,
+  KontoEsafHelgenWeekendIdRoute: KontoEsafHelgenWeekendIdRoute,
+  KontoFeedPostIdRoute: KontoFeedPostIdRoute,
+  KontoFeedNyRoute: KontoFeedNyRoute,
+  KontoKullYearRoute: KontoKullYearRoute,
+  KontoArrangementerIndexRoute: KontoArrangementerIndexRoute,
+  KontoEsafHelgenIndexRoute: KontoEsafHelgenIndexRoute,
+  KontoFeedIndexRoute: KontoFeedIndexRoute,
+  KontoKullIndexRoute: KontoKullIndexRoute,
+  KontoMedlemmerIndexRoute: KontoMedlemmerIndexRoute,
+  KontoSelskaperIndexRoute: KontoSelskaperIndexRoute,
+  KontoArrangementerTypeSlugEventIdRoute:
+    KontoArrangementerTypeSlugEventIdRoute,
+  KontoFeedPostIdRedigerRoute: KontoFeedPostIdRedigerRoute,
+  KontoMedlemmerPersonIdRedigerRoute: KontoMedlemmerPersonIdRedigerRoute,
+  KontoSelskaperSlugForeslaRoute: KontoSelskaperSlugForeslaRoute,
+  KontoSelskaperSlugRedigerRoute: KontoSelskaperSlugRedigerRoute,
+  KontoArrangementerTypeSlugIndexRoute: KontoArrangementerTypeSlugIndexRoute,
+  KontoMedlemmerPersonIdIndexRoute: KontoMedlemmerPersonIdIndexRoute,
+  KontoSelskaperSlugIndexRoute: KontoSelskaperSlugIndexRoute,
 }
 
 const KontoRouteWithChildren = KontoRoute._addFileChildren(KontoRouteChildren)
@@ -227,7 +1082,15 @@ const rootRouteChildren: RootRouteChildren = {
   LoggInnRoute: LoggInnRoute,
   RegistrerRoute: RegistrerRoute,
   ApiHealthRoute: ApiHealthRoute,
+  InvitasjonTokenRoute: InvitasjonTokenRoute,
+  NyttPassordTokenRoute: NyttPassordTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiBilderKeyRoute: ApiBilderKeyRoute,
+  ApiImportDeltakelseRoute: ApiImportDeltakelseRoute,
+  ApiImportKullrepresentanterRoute: ApiImportKullrepresentanterRoute,
+  ApiLogoerKeyRoute: ApiLogoerKeyRoute,
+  ApiMedlemmerPersonIdBildeRoute: ApiMedlemmerPersonIdBildeRoute,
+  ApiSelskaperCompanyIdLogoRoute: ApiSelskaperCompanyIdLogoRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

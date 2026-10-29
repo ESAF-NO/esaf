@@ -14,6 +14,8 @@ export default tseslint.config(
       '**/.nitro/**',
       '**/.tanstack/**',
       '**/routeTree.gen.ts',
+      // Lokale data og verktøy (gitignorert), som `.data/uploads`.
+      '.data/**',
     ],
   },
   js.configs.recommended,
@@ -22,7 +24,10 @@ export default tseslint.config(
   {
     languageOptions: { globals: { ...globals.node } },
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },

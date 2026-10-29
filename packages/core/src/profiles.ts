@@ -86,7 +86,7 @@ export const profileInput = z.object({
   /** Selskapet på Entreprenørskolen, koblet til et selskap som erfaringen. */
   esCompany: optionalCompanyName,
   esCompanyId: z.uuid().nullable().optional(),
-  bio: optionalText(1000),
+  bio: optionalText(10_000),
   expertise: tagList('emne', 'emner'),
   industries: tagList('bransjenavn', 'bransjer'),
   experience: z.array(experienceInput).max(30, 'Maks 30 erfaringer.'),

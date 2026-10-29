@@ -337,7 +337,20 @@ describe.skipIf(!url)('tilgangsgrensen mot Postgres', () => {
     const id = await createAccount('Ny')
     const pending = await loadViewer(db, id)
     const [profile] = await searchUnclaimedProfiles(db, admin, 'uten')
-    expect(profile).toMatchObject({ fullName: 'Uten Epost', cohortYears: [2015] })
+    expect(profile).toMatchObject({
+      fullName: 'Uten Epost',
+      cohortYears: [2015],
+      phoneHidden: false,
+    })
+    // Admin ser nummeret fra telefonlista også når det er skjult for medlemmer, men merket.
+    await db
+      .update(schema.person)
+      .set({ phone: '+47 400 00 000', phoneVisible: false })
+      .where(eq(schema.person.id, profile!.personId))
+    expect((await searchUnclaimedProfiles(db, admin, 'uten'))[0]).toMatchObject({
+      phone: '+47 400 00 000',
+      phoneHidden: true,
+    })
 
     const link = (viewer: typeof admin) =>
       linkAccountToProfile(db, viewer, {

@@ -215,12 +215,15 @@ export const person = pgTable(
      */
     photoKey: text(),
 
-    // Kontakt. Vises bare når personen selv har slått det på, og aldri for
-    // profiler ingen har tatt i bruk.
+    // Kontakt, stort sett fra kullisten som alumni fylte ut selv for å dele med
+    // hverandre. Vises for aktive medlemmer som standard, også på profiler ingen
+    // har tatt i bruk. `false` betyr at personen (eller en admin, for en profil
+    // uten konto) har skjult feltet; da ser medlemmer at det er skjult, men ikke
+    // verdien. Importene setter aldri synligheten, så et valg blir stående.
     contactEmail: text(),
-    contactEmailVisible: boolean().notNull().default(false),
+    contactEmailVisible: boolean().notNull().default(true),
     phone: text(),
-    phoneVisible: boolean().notNull().default(false),
+    phoneVisible: boolean().notNull().default(true),
     /** Når personen var gjennom (eller hoppet over) velkomststegene etter godkjenning. */
     onboardedAt: timestamp({ withTimezone: true }),
     ...timestamps,

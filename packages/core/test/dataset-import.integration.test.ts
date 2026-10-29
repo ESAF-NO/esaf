@@ -399,7 +399,7 @@ describe.skipIf(!url)('import av datasettbunten', () => {
     expect(forKari.quotes.map((q) => q.text)).toEqual(['ES lærte oss å teste før vi bygde.'])
     expect(forKari.sources.map((s) => `${s.field}:${s.label}`)).toContain('tagline:solan.example')
 
-    // Ola: ny profil med bilde, erfaring, ES-selskap, kull, e-post og skjult kontaktinfo.
+    // Ola: ny profil med bilde, erfaring, ES-selskap, kull, e-post og kontaktinfo fra kullisten.
     const ola = await personByName('Ola Testesen')
     expect(ola).toMatchObject({
       source: 'import',
@@ -407,14 +407,20 @@ describe.skipIf(!url)('import av datasettbunten', () => {
       bio: 'Lager brus.',
       phone: '+47 400 00 001',
       contactEmail: 'ola@example.test',
-      phoneVisible: false,
-      contactEmailVisible: false,
+      phoneVisible: true,
+      contactEmailVisible: true,
     })
     expect(ola!.photoKey).not.toBeNull()
     expect((await companyPage(admin, 'bolle-as')).people.map((p) => [p.fullName, p.role])).toEqual([
       ['Ola Testesen', 'es'],
     ])
     const profile = await getProfile(db, kari, ola!.id)
+    // Kontaktinfo fra kullisten vises for medlemmer, også før profilen er tatt i bruk.
+    expect(profile).toMatchObject({
+      claimed: false,
+      phone: { value: '+47 400 00 001' },
+      contactEmail: { value: 'ola@example.test' },
+    })
     expect(profile.experience.map((e) => [e.company, e.title, e.founder])).toEqual([
       ['Syrlig', 'Daglig leder', true],
     ])
@@ -546,6 +552,24 @@ describe.skipIf(!url)('import av datasettbunten', () => {
       location: null,
       articles: [],
     })
+  })
+
+  it('skriver aldri over at kontaktinfo er skjult', async () => {
+    await run(await bundleOf(fakeDataset()))
+    const ola = await personByName('Ola Testesen')
+    // En admin skjuler telefonen på profilen uten konto; så kjøres importen igjen.
+    await db.update(schema.person).set({ phoneVisible: false }).where(eq(schema.person.id, ola!.id))
+    await run(await bundleOf(fakeDataset()))
+
+    expect(await personByName('Ola Testesen')).toMatchObject({
+      phone: '+47 400 00 001',
+      phoneVisible: false,
+      contactEmailVisible: true,
+    })
+    const profile = await getProfile(db, kari, ola!.id)
+    expect(profile.phone).toEqual({ hidden: true })
+    expect(profile.contactEmail).toEqual({ value: 'ola@example.test' })
+    expect(JSON.stringify(profile)).not.toContain('400 00 001')
   })
 
   it('oppdaterer felt bare importen har fylt, og bare så lenge ingen har rørt dem', async () => {

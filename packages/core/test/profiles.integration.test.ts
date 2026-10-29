@@ -149,55 +149,187 @@ describe.skipIf(!url)('profiler', () => {
     ).rejects.toThrow('selskapet')
   })
 
-  it('kontaktinfo vises bare når eieren har slått det på', async () => {
+  it('kontaktinfo vises som standard, skjult viser bare at den er skjult, tom viser ingenting', async () => {
     const withContact = {
       ...empty,
       fullName: 'Ola',
       contactEmail: 'ola.privat@example.test',
+      contactEmailVisible: true,
       phone: '+47 900 00 000',
+      phoneVisible: true,
     }
+    // Ny person: synlig som standard.
+    const [fresh] = await db
+      .select({ e: schema.person.contactEmailVisible, p: schema.person.phoneVisible })
+      .from(schema.person)
+      .where(eq(schema.person.id, ola!.personId!))
+    expect(fresh).toEqual({ e: true, p: true })
+
     await updateProfile(db, ola, ola!.personId!, withContact)
+    expect(await getProfile(db, kari, ola!.personId!)).toMatchObject({
+      contactEmail: { value: 'ola.privat@example.test' },
+      phone: { value: '+47 900 00 000' },
+    })
+
+    // Skjult: medlemmer ser at det er skjult, men verdien sendes aldri, heller ikke til eieren eller admin.
+    await updateProfile(db, ola, ola!.personId!, { ...withContact, contactEmailVisible: false })
+    for (const viewer of [kari, ola, admin]) {
+      const profile = await getProfile(db, viewer, ola!.personId!)
+      expect(profile.contactEmail).toEqual({ hidden: true })
+      expect(profile.phone).toEqual({ value: '+47 900 00 000' })
+      expect(JSON.stringify(profile)).not.toContain('ola.privat')
+    }
+    // Katalogen viser ikke kontaktinfo i det hele tatt.
+    expect(JSON.stringify(await listActiveMembers(db, kari))).not.toMatch(/ola\.privat|900 00 000/)
+
+    // Uten verdi vises ingenting, uansett synlighet.
+    await updateProfile(db, ola, ola!.personId!, {
+      ...withContact,
+      contactEmail: '',
+      contactEmailVisible: false,
+      phone: '',
+    })
     expect(await getProfile(db, kari, ola!.personId!)).toMatchObject({
       contactEmail: null,
       phone: null,
     })
-
-    await updateProfile(db, ola, ola!.personId!, { ...withContact, phoneVisible: true })
-    expect(await getProfile(db, kari, ola!.personId!)).toMatchObject({
-      contactEmail: null,
-      phone: '+47 900 00 000',
-    })
   })
 
-  it('admin kan fylle ut profiler, men ikke se eller endre andres kontaktinfo', async () => {
+  it('admin kan fylle ut profiler, men ikke se eller endre kontaktinfoen til en med konto', async () => {
     await updateProfile(db, ola, ola!.personId!, {
       ...empty,
       fullName: 'Ola',
       contactEmail: 'ola.privat@example.test',
       phone: '+47 911 11 111',
+      phoneVisible: false,
     })
-    expect(await getEditableProfile(db, admin, ola!.personId!)).toMatchObject({
+    const forAdmin = await getEditableProfile(db, admin, ola!.personId!)
+    expect(forAdmin).toMatchObject({
       contactEmail: null,
       phone: null,
       isOwn: false,
+      contactAccess: 'none',
     })
+    expect(JSON.stringify(forAdmin)).not.toContain('911')
 
     await updateProfile(db, admin, ola!.personId!, {
       ...empty,
       fullName: 'Ola',
       city: 'Bergen',
+      contactEmail: 'admin@example.test',
       phone: '+47 900 00 000',
       phoneVisible: true,
     })
     const editable = await getEditableProfile(db, ola, ola!.personId!)
-    expect(editable).toMatchObject({ city: 'Bergen', phone: '+47 911 11 111', phoneVisible: false })
-    expect((await getProfile(db, kari, ola!.personId!)).phone).toBeNull()
+    expect(editable).toMatchObject({
+      city: 'Bergen',
+      contactEmail: 'ola.privat@example.test',
+      contactEmailVisible: false,
+      phone: '+47 911 11 111',
+      phoneVisible: false,
+      contactAccess: 'own',
+    })
+    expect((await getProfile(db, kari, ola!.personId!)).phone).toEqual({ hidden: true })
 
     const audit = await db
       .select()
       .from(schema.auditEvent)
       .where(eq(schema.auditEvent.action, 'profile.admin_edit'))
     expect(audit).toHaveLength(1)
+    expect(audit[0]!.details).toEqual({})
+  })
+
+  it('admin kan skjule og vise kontaktinfo fra kullisten på profiler uten konto, og det logges', async () => {
+    const sheet = parseProfileSheet(
+      'navn,kull,epost,telefon\nUten Konto,2015,uten@example.test,412 34 567',
+      { yearKind: 'graduation' },
+    )
+    await applyProfileImport(db, await planProfileImport(db, sheet.rows), {
+      membershipStatus: 'active',
+      sourceLabel: 'test.csv',
+    })
+    const [row] = await db
+      .select({ id: schema.person.id })
+      .from(schema.person)
+      .where(eq(schema.person.fullName, 'Uten Konto'))
+    const id = row!.id
+
+    // Admin ser verdiene fra kullisten i redigeringen; andre medlemmer kan ikke redigere.
+    const editable = await getEditableProfile(db, admin, id)
+    expect(editable).toMatchObject({
+      contactAccess: 'visibility',
+      contactEmail: 'uten@example.test',
+      contactEmailVisible: true,
+      phone: '+47 412 34 567',
+      phoneVisible: true,
+    })
+    await expect(getEditableProfile(db, kari, id)).rejects.toThrow()
+
+    // Admin skjuler e-posten. Verdiene kan ikke endres herfra.
+    const {
+      experience: _e,
+      esCompanyId: _c,
+      photo: _p,
+      isOwn: _o,
+      contactAccess: _a,
+      personId: _i,
+      ...fields
+    } = editable
+    await updateProfile(db, admin, id, {
+      ...fields,
+      city: fields.city ?? '',
+      studyBackground: fields.studyBackground ?? '',
+      esCompany: fields.esCompany ?? '',
+      bio: fields.bio ?? '',
+      linkedinUrl: fields.linkedinUrl ?? '',
+      experience: [],
+      contactEmail: '',
+      contactEmailVisible: false,
+      phone: '',
+      phoneVisible: true,
+    })
+    const [after] = await db.select().from(schema.person).where(eq(schema.person.id, id))
+    expect(after).toMatchObject({
+      contactEmail: 'uten@example.test',
+      contactEmailVisible: false,
+      phone: '+47 412 34 567',
+      phoneVisible: true,
+    })
+    const profile = await getProfile(db, kari, id)
+    expect(profile).toMatchObject({
+      claimed: false,
+      contactEmail: { hidden: true },
+      phone: { value: '+47 412 34 567' },
+    })
+    expect(JSON.stringify(profile)).not.toContain('uten@example')
+    // Admin ser den fortsatt i redigeringen, merket som skjult.
+    expect(await getEditableProfile(db, admin, id)).toMatchObject({
+      contactEmail: 'uten@example.test',
+      contactEmailVisible: false,
+    })
+
+    const audit = await db
+      .select()
+      .from(schema.auditEvent)
+      .where(eq(schema.auditEvent.action, 'profile.admin_edit'))
+    expect(audit).toMatchObject([
+      {
+        actorPersonId: admin!.personId,
+        subjectPersonId: id,
+        details: { visibility: { contactEmailVisible: false } },
+      },
+    ])
+
+    // En ny import med kontaktinfo for samme person overstyrer ikke valget.
+    const again = parseProfileSheet(
+      'navn,kull,epost,telefon\nUten Konto,2015,uten@example.test,412 34 567',
+      { yearKind: 'graduation' },
+    )
+    await applyProfileImport(db, await planProfileImport(db, again.rows), {
+      membershipStatus: 'active',
+      sourceLabel: 'test.csv',
+    })
+    expect((await getProfile(db, kari, id)).contactEmail).toEqual({ hidden: true })
   })
 
   it('ugyldige felt avvises', async () => {
@@ -209,9 +341,9 @@ describe.skipIf(!url)('profiler', () => {
     ).rejects.toThrow('Navn')
   })
 
-  it('profiler fra kullisten viser aldri kontaktinfo, og ventende personer er skjult', async () => {
+  it('profiler fra kullisten viser kontaktinfoen for medlemmer, og ventende personer er skjult', async () => {
     const sheet = parseProfileSheet(
-      'navn,kull,by,epost,telefon\nFra Arket,2015,Oslo,arket@example.test,412 34 567',
+      'navn,kull,by,epost,telefon\nFra Arket,2015,Oslo,arket@example.test,412 34 567\nUten Tlf,2015,Oslo,,',
       { yearKind: 'graduation' },
     )
     await applyProfileImport(db, await planProfileImport(db, sheet.rows), {
@@ -222,22 +354,26 @@ describe.skipIf(!url)('profiler', () => {
       .select()
       .from(schema.person)
       .where(eq(schema.person.fullName, 'Fra Arket'))
-    // Telefon og e-post fra arket lagres skjult, klare til at personen selv slår dem på.
+    // Telefon og e-post fra arket er det alumni fylte ut for å dele, og vises som standard.
     expect(imported).toMatchObject({
       phone: '+47 412 34 567',
-      phoneVisible: false,
+      phoneVisible: true,
       contactEmail: 'arket@example.test',
-      contactEmailVisible: false,
+      contactEmailVisible: true,
     })
-    // Selv om noen skulle ha satt synlighet direkte i databasen, vises ingenting før profilen er tatt i bruk.
-    await db
-      .update(schema.person)
-      .set({ phone: '123456', phoneVisible: true })
-      .where(eq(schema.person.id, imported!.id))
     expect(await getProfile(db, kari, imported!.id)).toMatchObject({
       city: 'Oslo',
       claimed: false,
+      phone: { value: '+47 412 34 567' },
+      contactEmail: { value: 'arket@example.test' },
+    })
+    const [without] = await db
+      .select({ id: schema.person.id })
+      .from(schema.person)
+      .where(eq(schema.person.fullName, 'Uten Tlf'))
+    expect(await getProfile(db, kari, without!.id)).toMatchObject({
       phone: null,
+      contactEmail: null,
     })
 
     const pending = await loadViewer(db, await account('Ventende'))

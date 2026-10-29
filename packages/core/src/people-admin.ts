@@ -505,8 +505,13 @@ const personColumns = {
   linkedinUrl: person.linkedinUrl,
   photoKey: person.photoKey,
   contactEmail: person.contactEmail,
+  contactEmailVisible: person.contactEmailVisible,
   phone: person.phone,
+  phoneVisible: person.phoneVisible,
 }
+
+/** Et kontaktfelt som har en verdi, men er skjult for medlemmer. */
+const hiddenContact = (value: string | null, visible: boolean) => value !== null && !visible
 
 /**
  * Slår sammen to profiler for samme person. Alt fra `sourceId` flyttes til
@@ -722,11 +727,21 @@ export async function mergePeople(
       industries: target.industries.length ? target.industries : source.industries,
       photoKey: target.photoKey ?? source.photoKey,
       // Kontaktinfo bestemmer personen selv over når profilen er tatt i bruk.
+      // Ellers fylles tomme felt fra duplikatet, og er feltet skjult på en av
+      // profilene, blir det skjult på den som beholdes.
       ...(target.userId
         ? {}
         : {
             contactEmail: target.contactEmail ?? source.contactEmail,
+            contactEmailVisible: !(
+              hiddenContact(target.contactEmail, target.contactEmailVisible) ||
+              hiddenContact(source.contactEmail, source.contactEmailVisible)
+            ),
             phone: target.phone ?? source.phone,
+            phoneVisible: !(
+              hiddenContact(target.phone, target.phoneVisible) ||
+              hiddenContact(source.phone, source.phoneVisible)
+            ),
           }),
     }
     if (!target.esCompanyId && source.esCompanyId) filled.push('esCompany')

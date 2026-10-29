@@ -370,9 +370,7 @@ export function Switch({
     <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl bg-stone-50 px-3.5 py-3 ring-1 ring-stone-200 ring-inset">
       <span className="min-w-0">
         <span className="block text-sm font-medium text-stone-800">{label}</span>
-        {description && (
-          <span className="block truncate text-xs text-stone-500">{description}</span>
-        )}
+        {description && <span className="block text-xs text-stone-500">{description}</span>}
       </span>
       <input
         type="checkbox"

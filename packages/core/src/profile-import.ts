@@ -103,7 +103,7 @@ export type ProfileRow = {
   emails: string[]
   /** Kullene personen hører til, som uteksamineringsår. Tom når arket ikke sier det. */
   years: number[]
-  /** Normalisert, f.eks. «+47 412 34 567». Vises ikke før personen selv slår det på. */
+  /** Normalisert, f.eks. «+47 412 34 567». Vises for medlemmer med mindre det skjules. */
   phone: string | null
   fields: Partial<Record<ProfileFieldKey, string>>
   expertise: string[]
@@ -593,8 +593,10 @@ export type ImportResult = { created: number; existing: number; cohortsCreated: 
  * Eksisterende personer får kulltilknytning og nye adresser hvis de mangler.
  * Profilfelt, stikkord, telefon og stilling fylles bare inn der de er tomme, og
  * bare på profiler ingen har tatt i bruk; navn og alt en person selv har skrevet
- * overskrives aldri. Telefon og e-post fra arket lagres som skjult kontaktinfo,
- * som personen selv kan velge å vise. Nye profiler får `membershipStatus`
+ * overskrives aldri. Telefon og e-post fra arket er kontaktinfo alumni fylte ut
+ * for å dele med hverandre, og vises for medlemmer som standard. Synligheten
+ * settes aldri her, så det en person (eller admin) har skjult, forblir skjult.
+ * Nye profiler får `membershipStatus`
  * (standard `active`, fordi kullisten er ESAFs egen oversikt). Rolle er alltid `member`.
  */
 export async function applyProfileImport(

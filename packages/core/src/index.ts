@@ -71,6 +71,7 @@ export {
   type YearKind,
 } from './profile-import.ts'
 export {
+  contactDetail,
   experienceInput,
   getEditableProfile,
   getProfile,
@@ -78,6 +79,8 @@ export {
   ownPersonId,
   profileInput,
   updateProfile,
+  type ContactAccess,
+  type ContactDetail,
   type EditableProfile,
   type ExperienceInput,
   type Profile,

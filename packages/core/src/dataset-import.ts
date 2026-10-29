@@ -680,7 +680,8 @@ function personValues(p: DatasetPerson): Record<PersonField, FieldValue> {
     studyBackground: p.studyBackground,
     expertise: p.expertise.slice(0, 10),
     industries: p.industries.slice(0, 10),
-    // Kontaktinfo lagres skjult; den vises ikke før personen selv slår den på.
+    // Kontaktinfo fra kullisten vises for medlemmer som standard. Synligheten
+    // settes aldri her, så det personen (eller admin) har skjult, forblir skjult.
     phone: p.phone,
     contactEmail: p.emails[0] ?? null,
   }

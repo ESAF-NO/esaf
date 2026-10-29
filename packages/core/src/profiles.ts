@@ -135,6 +135,19 @@ const profileColumns = {
   photoKey: person.photoKey,
 }
 
+/**
+ * Kontaktinfo slik medlemmer ser den: verdien når den vises, `hidden` når
+ * personen (eller en admin, for en profil uten konto) har skjult den, og `null`
+ * når det ikke finnes noe. Verdien til et skjult felt sendes aldri.
+ */
+export type ContactDetail = { value: string } | { hidden: true }
+
+/** Lager det medlemmer får se av ett kontaktfelt. */
+export function contactDetail(value: string | null, visible: boolean): ContactDetail | null {
+  if (value === null || !value.trim()) return null
+  return visible ? { value } : { hidden: true }
+}
+
 export type Profile = {
   personId: string
   fullName: string
@@ -154,10 +167,9 @@ export type Profile = {
   /** Nåværende først, så tidligere. */
   experience: Experience[]
   linkedinUrl: string | null
-  /** Bare satt når personen selv har valgt å vise den. */
-  contactEmail: string | null
-  /** Bare satt når personen selv har valgt å vise det. */
-  phone: string | null
+  /** Fra kullisten eller personen selv. Se `ContactDetail`. */
+  contactEmail: ContactDetail | null
+  phone: ContactDetail | null
   cohorts: { graduationYear: number; relation: schema.CohortRelation }[]
   /** Kullrepresentant nå og tidligere, slik det vises på profilen. */
   representative: RepresentativeBadge[]
@@ -176,7 +188,8 @@ export type Profile = {
 
 /**
  * Profilen til et aktivt medlem, slik andre medlemmer ser den. Kontaktinfo
- * filtreres her på serveren og sendes aldri til klienten når den er skjult.
+ * filtreres her på serveren og sendes aldri til klienten når den er skjult,
+ * heller ikke til eieren eller en admin; de ser verdiene i redigeringen.
  */
 export async function getProfile(db: Db, viewer: Viewer, personId: string): Promise<Profile> {
   assertMember(viewer)
@@ -240,8 +253,8 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     industries: row.industries,
     experience: roles,
     linkedinUrl: row.linkedinUrl,
-    contactEmail: claimed && row.contactEmailVisible ? row.contactEmail : null,
-    phone: claimed && row.phoneVisible ? row.phone : null,
+    contactEmail: contactDetail(row.contactEmail, row.contactEmailVisible),
+    phone: contactDetail(row.phone, row.phoneVisible),
     cohorts,
     representative: representativeBadges(terms.get(personId) ?? []),
     events,
@@ -259,17 +272,26 @@ function assertCanEdit(viewer: Viewer, personId: string) {
   return isOwn
 }
 
+/**
+ * Hva den som redigerer kan gjøre med kontaktinfoen: `own` er eieren (alt),
+ * `visibility` er en admin på en profil uten konto (ser verdiene og kan skjule
+ * eller vise dem, men ikke endre dem), `none` er en admin på en profil med konto.
+ */
+export type ContactAccess = 'own' | 'visibility' | 'none'
+
 export type EditableProfile = Omit<z.output<typeof profileInput>, 'experience' | 'esCompanyId'> & {
   personId: string
   esCompanyId: string | null
   isOwn: boolean
+  contactAccess: ContactAccess
   experience: Experience[]
   photo: ProfilePhoto | null
 }
 
 /**
- * Alle felt for eieren eller en admin som skal redigere. Skjult kontaktinfo får
- * bare eieren; en admin kan ikke endre den og skal heller ikke se den.
+ * Alle felt for eieren eller en admin som skal redigere. Kontaktinfoen til en
+ * med konto får bare eieren. For en profil uten konto ser en admin verdiene fra
+ * kullisten, også skjulte (merket som skjult i skjemaet), og kan skjule dem.
  */
 export async function getEditableProfile(
   db: Db,
@@ -284,29 +306,31 @@ export async function getEditableProfile(
     .where(eq(person.id, personId))
   if (!row) throw new NotFoundError('Fant ikke profilen.')
   const {
-    userId: _userId,
+    userId,
     photoKey,
     esCompanySlug: _esCompanySlug,
     esCompanyLogoKey: _esCompanyLogoKey,
     ...fields
   } = row
   const experiences = await loadExperience(db, [personId])
-  const contact = isOwn
-    ? {}
-    : { contactEmail: null, contactEmailVisible: false, phone: null, phoneVisible: false }
+  const contactAccess: ContactAccess = isOwn ? 'own' : userId === null ? 'visibility' : 'none'
+  const contact = contactAccess === 'none' ? { contactEmail: null, phone: null } : {}
   return {
     ...fields,
     ...contact,
     experience: experiences.get(personId) ?? [],
     photo: photoUrls(photoKey),
     isOwn,
+    contactAccess,
   }
 }
 
 /**
  * Lagrer en profil. Eieren kan endre alt. En admin kan fylle ut og rette
  * profilfelt for andre (f.eks. profiler fra kullisten), men aldri endre andres
- * kontaktinfo eller hva som vises av den; det er personens eget valg.
+ * kontaktinfo. På en profil ingen har tatt i bruk kan en admin skjule eller vise
+ * kontaktinfoen fra kullisten; det logges. Når profilen er tatt i bruk, er det
+ * personens eget valg.
  */
 export async function updateProfile(
   db: Db,
@@ -332,6 +356,9 @@ export async function updateProfile(
   await db.transaction(async (tx) => {
     const [before] = await tx
       .select({
+        userId: person.userId,
+        contactEmailVisible: person.contactEmailVisible,
+        phoneVisible: person.phoneVisible,
         esCompanyId: person.esCompanyId,
         bio: person.bio,
         city: person.city,
@@ -363,9 +390,17 @@ export async function updateProfile(
     ])
     const esId = esCompany ? companyIds.at(-1)! : null
 
+    // Admin på en profil uten konto: bare synligheten, og bare det som er endret.
+    const visibility: { contactEmailVisible?: boolean; phoneVisible?: boolean } = {}
+    if (!isOwn && before.userId === null) {
+      if (contactEmailVisible !== before.contactEmailVisible) {
+        visibility.contactEmailVisible = contactEmailVisible
+      }
+      if (phoneVisible !== before.phoneVisible) visibility.phoneVisible = phoneVisible
+    }
     await tx
       .update(person)
-      .set({ ...(isOwn ? { ...fields, ...contact } : fields), esCompanyId: esId })
+      .set({ ...fields, ...(isOwn ? contact : visibility), esCompanyId: esId })
       .where(eq(person.id, personId))
     // Listen lagres som en helhet, i rekkefølgen personen satte opp.
     await tx.delete(experience).where(eq(experience.personId, personId))
@@ -411,6 +446,7 @@ export async function updateProfile(
         actorPersonId: viewer!.personId,
         action: 'profile.admin_edit',
         subjectPersonId: personId,
+        details: Object.keys(visibility).length ? { visibility } : {},
       })
     }
   })

@@ -1,4 +1,4 @@
-import type { CompanyLogoUrls, Experience } from '@esaf/core'
+import type { CompanyLogoUrls, EditableProfile, Experience } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, BriefcaseBusiness, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
@@ -84,17 +84,126 @@ function Toggle({
   name,
   defaultChecked,
   label,
+  description,
 }: {
   name: string
   defaultChecked: boolean
   label: string
+  description?: string
 }) {
   return (
     <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl bg-stone-50 px-3 py-2.5 ring-1 ring-stone-200 ring-inset">
-      <span className="text-sm text-stone-700">{label}</span>
+      <span className="min-w-0">
+        <span className="block text-sm text-stone-700">{label}</span>
+        {description && <span className="block text-xs text-stone-500">{description}</span>}
+      </span>
       <input type="checkbox" name={name} defaultChecked={defaultChecked} className="peer sr-only" />
       <span className="relative h-6 w-10 shrink-0 rounded-full bg-stone-300 transition peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2 after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-4" />
     </label>
+  )
+}
+
+const VISIBLE_TO_MEMBERS = 'Vis for medlemmer'
+const WHO_SEES = 'Bare godkjente medlemmer som er logget inn, ser det.'
+
+/**
+ * Kontaktinfo i skjemaet. Eieren endrer alt. En admin på en profil uten konto
+ * ser verdiene fra kullisten (også skjulte) og kan skjule eller vise dem; på en
+ * profil med konto ser admin ingenting. Synlighet som ikke vises som bryter,
+ * sendes uendret med, så den ikke slås av ved et uhell.
+ */
+function ContactSection({ profile }: { profile: EditableProfile }) {
+  if (profile.contactAccess === 'own') {
+    return (
+      <Section
+        title="Kontakt"
+        description="Står du i kullisten, har vi fylt inn e-posten og telefonen du skrev der. De vises for medlemmer med mindre du slår det av. Skjuler du noe, ser medlemmer bare at det er skjult."
+      >
+        <Field label="E-post for kontakt">
+          <Input name="contactEmail" type="email" defaultValue={profile.contactEmail ?? ''} />
+        </Field>
+        <Toggle
+          name="contactEmailVisible"
+          defaultChecked={profile.contactEmailVisible}
+          label={VISIBLE_TO_MEMBERS}
+          description={WHO_SEES}
+        />
+        <Field label="Telefon">
+          <Input name="phone" type="tel" defaultValue={profile.phone ?? ''} />
+        </Field>
+        <Toggle
+          name="phoneVisible"
+          defaultChecked={profile.phoneVisible}
+          label={VISIBLE_TO_MEMBERS}
+          description={WHO_SEES}
+        />
+      </Section>
+    )
+  }
+
+  const keep = (name: string, visible: boolean) => (
+    <input type="hidden" name={name} value={visible ? 'on' : ''} />
+  )
+  const blanks = (
+    <>
+      <input type="hidden" name="contactEmail" value="" />
+      <input type="hidden" name="phone" value="" />
+    </>
+  )
+  if (profile.contactAccess === 'none' || (!profile.contactEmail && !profile.phone)) {
+    return (
+      <Card className="flex items-center gap-3 p-5 text-sm text-stone-500">
+        <Lock className="size-4" aria-hidden />
+        {profile.contactAccess === 'none'
+          ? 'Kontaktinfo kan bare personen selv se og endre.'
+          : 'Kullisten har ingen e-post eller telefon for denne personen.'}
+        {blanks}
+        {keep('contactEmailVisible', profile.contactEmailVisible)}
+        {keep('phoneVisible', profile.phoneVisible)}
+      </Card>
+    )
+  }
+  const fields = [
+    {
+      label: 'E-post',
+      name: 'contactEmailVisible',
+      value: profile.contactEmail,
+      visible: profile.contactEmailVisible,
+    },
+    { label: 'Telefon', name: 'phoneVisible', value: profile.phone, visible: profile.phoneVisible },
+  ]
+  return (
+    <Section
+      title="Kontakt"
+      description="Fra kullisten, som alumni fylte ut selv for å dele med hverandre. Profilen er ikke tatt i bruk, så du kan skjule eller vise det. Endringen logges, og når personen tar i bruk profilen, bestemmer de selv."
+    >
+      {blanks}
+      {fields.map((f) =>
+        f.value ? (
+          <div key={f.name} className="space-y-2">
+            <p className="text-sm">
+              <span className="block text-xs text-stone-500">{f.label}</span>
+              <span className="inline-flex items-center gap-1.5 break-all text-stone-900">
+                {f.value}
+                {!f.visible && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-1.5 py-px text-[11px] font-medium text-stone-600">
+                    <Lock className="size-3" aria-hidden /> Skjult for medlemmer
+                  </span>
+                )}
+              </span>
+            </p>
+            <Toggle
+              name={f.name}
+              defaultChecked={f.visible}
+              label={VISIBLE_TO_MEMBERS}
+              description={WHO_SEES}
+            />
+          </div>
+        ) : (
+          <input key={f.name} type="hidden" name={f.name} value={f.visible ? 'on' : ''} />
+        ),
+      )}
+    </Section>
   )
 }
 
@@ -346,8 +455,10 @@ function EditProfile() {
         <div className="mb-4 flex gap-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p>
-            Du redigerer som admin, og endringen logges. Kontaktinfo kan bare personen selv se og
-            endre.
+            Du redigerer som admin, og endringen logges.{' '}
+            {profile.contactAccess === 'visibility'
+              ? 'Kontaktinfoen fra kullisten kan du skjule eller vise, men ikke endre.'
+              : 'Kontaktinfo kan bare personen selv se og endre.'}
           </p>
         </div>
       )}
@@ -468,35 +579,7 @@ function EditProfile() {
           </Field>
         </Section>
 
-        {profile.isOwn ? (
-          <Section
-            title="Kontakt"
-            description="Vises bare for godkjente medlemmer, og bare det du slår på. Kom du fra telefonlista, er nummeret og e-posten derfra fylt inn, men skjult."
-          >
-            <Field label="E-post for kontakt">
-              <Input name="contactEmail" type="email" defaultValue={profile.contactEmail ?? ''} />
-            </Field>
-            <Toggle
-              name="contactEmailVisible"
-              defaultChecked={profile.contactEmailVisible}
-              label="Vis e-posten for andre medlemmer"
-            />
-            <Field label="Telefon">
-              <Input name="phone" type="tel" defaultValue={profile.phone ?? ''} />
-            </Field>
-            <Toggle
-              name="phoneVisible"
-              defaultChecked={profile.phoneVisible}
-              label="Vis telefonnummeret for andre medlemmer"
-            />
-          </Section>
-        ) : (
-          <Card className="flex items-center gap-3 p-5 text-sm text-stone-500">
-            <Lock className="size-4" aria-hidden /> Kontaktinfo kan bare personen selv se og endre.
-            <input type="hidden" name="contactEmail" value="" />
-            <input type="hidden" name="phone" value="" />
-          </Card>
-        )}
+        <ContactSection profile={profile} />
 
         {error && <ErrorText>{error}</ErrorText>}
         <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t border-stone-200 bg-stone-50/90 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:px-4">

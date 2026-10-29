@@ -66,7 +66,10 @@ async function profilesWithEmail(db: Db | Tx, email: string) {
 async function profileRefs(db: Db | Tx, ids: string[]) {
   const unique = [...new Set(ids)]
   if (!unique.length)
-    return new Map<string, ProfileRef & { claimed: boolean; phone: string | null }>()
+    return new Map<
+      string,
+      ProfileRef & { claimed: boolean; phone: string | null; phoneHidden: boolean }
+    >()
   const [people, years] = await Promise.all([
     db
       .select({
@@ -74,6 +77,7 @@ async function profileRefs(db: Db | Tx, ids: string[]) {
         fullName: person.fullName,
         userId: person.userId,
         phone: person.phone,
+        phoneVisible: person.phoneVisible,
       })
       .from(person)
       .where(inArray(person.id, unique)),
@@ -95,6 +99,7 @@ async function profileRefs(db: Db | Tx, ids: string[]) {
           .sort(),
         claimed: p.userId !== null,
         phone: p.phone,
+        phoneHidden: p.phone !== null && !p.phoneVisible,
       },
     ]),
   )
@@ -208,8 +213,12 @@ export async function submitAccessRequest(
 /** En profil fra kullisten slik admin ser den når en forespørsel vurderes. */
 export type CandidateProfile = ProfileRef & {
   claimed: boolean
-  /** Fra telefonlista, så admin kan ringe og sjekke at det er personen selv. */
+  /**
+   * Fra telefonlista, så admin kan ringe og sjekke at det er personen selv.
+   * Admin ser nummeret også når det er skjult for medlemmer (`phoneHidden`).
+   */
   phone: string | null
+  phoneHidden: boolean
 }
 
 export type AccessRequestView = {

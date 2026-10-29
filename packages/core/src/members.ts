@@ -264,8 +264,12 @@ export type UnclaimedProfile = {
   personId: string
   fullName: string
   cohortYears: number[]
-  /** Fra telefonlista, så admin kan ringe og sjekke at en søker er den de sier. */
+  /**
+   * Fra telefonlista, så admin kan ringe og sjekke at en søker er den de sier.
+   * Admin ser nummeret også når det er skjult for medlemmer (`phoneHidden`).
+   */
   phone: string | null
+  phoneHidden: boolean
 }
 
 /** Søk blant profiler ingen har tatt i bruk, for å koble en konto manuelt. */
@@ -282,6 +286,7 @@ export async function searchUnclaimedProfiles(
       personId: person.id,
       fullName: person.fullName,
       phone: person.phone,
+      phoneVisible: person.phoneVisible,
       year: cohort.graduationYear,
     })
     .from(person)
@@ -298,6 +303,7 @@ export async function searchUnclaimedProfiles(
       fullName: row.fullName,
       cohortYears: [],
       phone: row.phone,
+      phoneHidden: row.phone !== null && !row.phoneVisible,
     }
     if (row.year !== null) item.cohortYears.push(row.year)
     byPerson.set(row.personId, item)

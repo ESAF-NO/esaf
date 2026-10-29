@@ -143,7 +143,9 @@ Hver person har en profilside (`/medlemmer/:id`) med erfaring (nåværende og ti
 
 - **Katalogen** (`/medlemmer`) kan søkes på navn, nåværende og tidligere selskaper og stillinger, bransjer, by, ES-selskap og ekspertise, og filtreres på kull. Søket ligger i URL-en (`?q=…&kull=…`), så det kan deles. Hele katalogen hentes én gang, og filtreringen skjer i nettleseren. Det holder fint for noen tusen personer.
 - **Redigering:** Eieren redigerer sin egen profil. Admin kan fylle ut og rette profilfelt for andre, for eksempel profiler fra kullisten. Slike endringer logges som `profile.admin_edit`.
-- **Kontaktinfo:** LinkedIn vises når den er fylt ut. E-post og telefon vises bare når personen selv har krysset av for det, og aldri på profiler ingen har tatt i bruk. Admin kan verken se eller endre andres skjulte kontaktinfo. Skjult kontaktinfo filtreres bort på serveren og sendes aldri til nettleseren.
+- **Kontaktinfo:** LinkedIn vises når den er fylt ut. E-post og telefon kommer stort sett fra kullisten (telefonlista) som alumni fylte ut selv for å dele med hverandre, og vises derfor for aktive medlemmer som standard, også på profiler ingen har tatt i bruk, med `mailto:`- og `tel:`-lenker og en kopieringsknapp. Hver person kan skjule e-post og telefon hver for seg («Vis for medlemmer» på profilen og i `/kom-i-gang`). Er et felt skjult, ser medlemmer «E-post skjult» eller «Telefon skjult» med en lås, men aldri verdien; finnes det ingen verdi, vises ingenting. Skjult kontaktinfo filtreres bort på serveren (`contactDetail` i `packages/core/src/profiles.ts`) og sendes aldri til nettleseren, heller ikke på profilsiden til eieren eller en admin. Katalogen, kullsidene og søket viser ikke kontaktinfo.
+- **Admin og kontaktinfo:** Admin endrer aldri andres e-post eller telefon. På en profil ingen har tatt i bruk, ser admin verdiene fra kullisten i redigeringen (også skjulte, merket som skjult) og kan skjule eller vise dem; det logges som `profile.admin_edit` med `details.visibility`. Når profilen er tatt i bruk, bestemmer bare personen selv, og admin ser ikke kontaktinfoen der. Under forespørsler om tilgang ser admin nummeret fra telefonlista for å ringe og sjekke, med en lås når det er skjult for medlemmer.
+- **Synlighet i databasen:** `person.contact_email_visible` og `person.phone_visible` er `true` som standard, så `false` betyr alltid at feltet er skjult med vilje. Importene setter aldri synligheten, så et valg blir stående. Migrering `0022_contact_visible_by_default` gjorde feltene synlige på alle profiler uten konto og på profiler med konto som kom fra importen (det fantes ingen registrering av om noen hadde valgt å skjule); profiler fra egen registrering ble ikke endret.
 - **Stikkord** (emner og bransjer) med bare små bokstaver får stor forbokstav, så «strategi» og «Strategi» blir samme emne.
 - **Validering** ligger i `profileInput` i `@esaf/core`, så MCP senere kan bruke den samme.
 - **Profilbilder:** se under. Uten bilde vises initialer.
@@ -200,7 +202,7 @@ Krever `profiles.edit` (admins, sterkt innlogget). Alt som endrer noe, logges. F
 - **Selskaper** (`/admin/selskaper`): alle selskaper, også dem ingen er knyttet til, med søk, filter (status med ukjent, uten logo, beskrivelse, personer eller historikk, ES-selskap, kull), sortering og snarveier til redigering og sammenslåing. «Nytt selskap» oppretter for hånd (`company.create`); navn som finnes, også som tidligere navn, avvises. Sletting (`company.delete`) av et selskap noen er knyttet til, krever at admin krysser av for at koblingene fjernes fra profilene og skriver en begrunnelse; historikk, saker i media, kilder, forslag og logo slettes, og sitater beholdes uten selskap. Reglene ligger i `packages/core/src/company-admin.ts`.
 - **Profiler** (`/admin/profiler`): alle personer, med og uten konto, også ventende og deaktiverte, med søk og filter. «Ny profil» lager en profil som fra kullisten, med navn, kull og kjente e-postadresser, og viser personer med samme navn og nære kull før den lages (`profile.create`, `person.source = admin`). Det gir aldri tilgang til noen konto.
 - **Redigering av en person** (`/medlemmer/:id/rediger`): admins ser i tillegg «Bare for admins» med kull og tilknytning (student, ansatt, mentor; `profile.admin_cohorts`), kjente e-postadresser (`person_email`; `profile.admin_email_add`, `profile.admin_email_remove`; adressen kontoen logger inn med kan ikke fjernes, og adressene vises aldri for andre medlemmer) og «Slå sammen duplikat». Erfaring og ES-selskap rettes i skjemaet over, som før.
-- **Sammenslåing av personer** (`person.merge`) flytter erfaring (like rader én gang), kull, e-post, verv som kullrepresentant, deltakelse på arrangementer (rollen og notatet fra duplikatet tas med når den som beholdes ikke har noen), sitater, kilder for feltene som hentes, innlegg, kommentarer, stemmer, varsler, forslag, forespørsler og pekere i forespørsler om tilgang, og fyller tomme felt fra duplikatet. Har én av dem konto, er det den som beholdes, og kontaktinfoen dens røres ikke. To kontoer slås aldri sammen. Revisjonsloggen peker etterpå på personen som ble beholdt, og hendelsen `person.merge` sier hvem som ble slått sammen. Reglene ligger i `packages/core/src/people-admin.ts`.
+- **Sammenslåing av personer** (`person.merge`) flytter erfaring (like rader én gang), kull, e-post, verv som kullrepresentant, deltakelse på arrangementer (rollen og notatet fra duplikatet tas med når den som beholdes ikke har noen), sitater, kilder for feltene som hentes, innlegg, kommentarer, stemmer, varsler, forslag, forespørsler og pekere i forespørsler om tilgang, og fyller tomme felt fra duplikatet. Har én av dem konto, er det den som beholdes, og kontaktinfoen dens røres ikke. Ellers fylles tom e-post og telefon fra duplikatet, og er feltet skjult på én av dem, blir det skjult på den som beholdes. To kontoer slås aldri sammen. Revisjonsloggen peker etterpå på personen som ble beholdt, og hendelsen `person.merge` sier hvem som ble slått sammen. Reglene ligger i `packages/core/src/people-admin.ts`.
 
 ## Kullrepresentanter og arrangementer
 
@@ -269,7 +271,7 @@ Ingen får tilgang automatisk. Veien inn er fire steg:
 
 Ved godkjenning med profil kobles kontoen til profilen. Personen arver kull, og navnet fra kullisten beholdes. Den tomme personen fra registreringen slettes. Alt logges (`access.request`, `access.approve`, `access.reject`).
 
-**Velkomst etter godkjenning** (`/kom-i-gang`): første gang et nytt medlem kommer inn, får de tre korte steg. Først hva de jobber med, så hva de kan hjelpe med og hvilke bransjer de kjenner. Til slutt om e-post og telefon fra telefonlista skal vises for andre. Alt kan hoppes over.
+**Velkomst etter godkjenning** (`/kom-i-gang`): første gang et nytt medlem kommer inn, får de fire korte steg. Først hva de jobber med, så hva de kan hjelpe med og hvilke bransjer de kjenner. Så e-post og telefon fra kullisten, med «Vis for medlemmer» slått på; personen kan rette dem eller slå av visningen. Til slutt et bilde. Alt kan hoppes over.
 
 ### Import
 
@@ -282,7 +284,7 @@ pnpm profiles:import --fil ~/Downloads/telefonliste.xlsx --apply  # skriver til 
 
 - **Excel:** Hver fane som heter «ES 2024», «ES 2013» osv. er ett kull. Faner som dekker flere år, for eksempel «ES 2005-2009», må ha en kolonne «ES-kull» eller «Kull». Andre faner, som «Mailliste - alle», «Støtteark» og «Klasserepresentanter», hoppes over, og det samme gjelder skjulte faner.
 - **Overskrifter:** Overskriftene varierer mellom kullene, og vanlige varianter kjennes igjen: Fornavn/Etternavn/Navn/Name, «E-post (den du bruker!)», «Gmail-adresse», «Primær e-post», «E-mail Address», «NTNU-mail» (lagres som ekstra adresse), Telefon/Mobil/Mobilnr/Mobile Phone, Studieretning/Studiebakgrunn/Profession, LinkedIn, «Spør meg gjerne om» eller «Kompetanseområder» (blir «Kan hjelpe med») og «Bransjer». Mangler første kolonne en gyldig overskrift, tolkes den ut fra nabokolonnene, og forhåndsvisningen sier fra om det.
-- **Telefon og e-post** lagres som skjult kontaktinfo på profilen. Ingen andre ser dem før personen selv har tatt i bruk profilen og slått dem på; da er de allerede fylt inn. Numrene ryddes («41234567», «0047 …», «M: +47…» blir «+47 412 34 567»). Står det flere, brukes det første.
+- **Telefon og e-post** lagres som kontaktinfo på profilen og vises for aktive medlemmer (se «Kontaktinfo» over). Det er det alumni selv fylte ut i lista for å dele med hverandre. Importen setter aldri synligheten, så det en person eller admin har skjult, forblir skjult. Numrene ryddes («41234567», «0047 …», «M: +47…» blir «+47 412 34 567»). Står det flere, brukes det første.
 - **Importeres aldri:** Facebook, adresse, postnummer, poststed og andre kolonner som ikke er nevnt over. Forhåndsvisningen lister dem per fane.
 - **E-post:** Alle gyldige adresser på raden lagres. En konto gjør krav på profilen hvis den registreres med hvilken som helst av dem.
 - **LinkedIn:** Delingslenker blir ryddet opp (`?utm_…` og undersider fjernes). Lenker som ikke går til en profil, hoppes over med et varsel.
@@ -381,19 +383,21 @@ Kjør steg 2–5 på nytt uten `--bare-selskaper` når persondataene kan tas inn
 
 Regelen ligger i én funksjon, `accessLevel` i `packages/core/src/access.ts`. Den håndheves **på serveren**: alle private data hentes gjennom serverfunksjoner (`apps/app/src/lib/*.functions.ts`). De slår opp sesjonen og kaller `@esaf/core`, som sjekker tilgang ved hvert kall, også etter klientnavigasjon og ved direkte RPC-kall. Rutevaktene i UI-et er bare for brukervennligheten. Den som mangler rettigheten, får 404 på adminsider.
 
+**Kontaktinfo er bare for medlemmer.** E-post og telefon fra kullisten, som alumni fylte ut selv for å dele med hverandre, vises bare for godkjente, innloggede medlemmer (`member`), aldri for `pending` eller `anonymous`, og aldri på esaf.no. Hver person kan skjule dem; da sendes verdien aldri fra serveren, og medlemmer ser bare at feltet er skjult. Se «Kontaktinfo» under «Profiler og katalog».
+
 ### Roller og rettigheter
 
 Et aktivt medlem har én rolle. En rolle har alt rollene under den har. Hva hver rolle får, står i `permissions` i `packages/core/src/access.ts`, og hver handling sjekker rettigheten på serveren.
 
-| Rettighet          | Hva den gir                                                                      | Moderator | Admin | Hovedadmin |
-| ------------------ | -------------------------------------------------------------------------------- | :-------: | :---: | :--------: |
-| `content.moderate` | Fjerne andres innlegg og kommentarer                                             |     ✓     |   ✓   |     ✓      |
-| `members.review`   | Behandle forespørsler om tilgang og koble kontoer til profiler                   |           |   ✓   |     ✓      |
-| `members.manage`   | Deaktivere og gjenopprette medlemmer, og sette kullrepresentanter                |           |   ✓   |     ✓      |
-| `profiles.edit`    | Rette andres profiler (aldri kontaktinfo), selskaper, Gjennomgang, arrangementer |           |   ✓   |     ✓      |
-| `audit.read`       | Lese revisjonsloggen                                                             |           |   ✓   |     ✓      |
-| `roles.manage`     | Gi og fjerne roller, og endre tilgangen til admins og hovedadmins                |           |       |     ✓      |
-| Sterk innlogging   | Passkey-økt eller tofaktor; ellers sender adminsidene til `/konto`               |           |   ✓   |     ✓      |
+| Rettighet          | Hva den gir                                                                                    | Moderator | Admin | Hovedadmin |
+| ------------------ | ---------------------------------------------------------------------------------------------- | :-------: | :---: | :--------: |
+| `content.moderate` | Fjerne andres innlegg og kommentarer                                                           |     ✓     |   ✓   |     ✓      |
+| `members.review`   | Behandle forespørsler om tilgang og koble kontoer til profiler                                 |           |   ✓   |     ✓      |
+| `members.manage`   | Deaktivere og gjenopprette medlemmer, og sette kullrepresentanter                              |           |   ✓   |     ✓      |
+| `profiles.edit`    | Rette andres profiler (ikke kontaktinfo, se «Profiler»), selskaper, Gjennomgang, arrangementer |           |   ✓   |     ✓      |
+| `audit.read`       | Lese revisjonsloggen                                                                           |           |   ✓   |     ✓      |
+| `roles.manage`     | Gi og fjerne roller, og endre tilgangen til admins og hovedadmins                              |           |       |     ✓      |
+| Sterk innlogging   | Passkey-økt eller tofaktor; ellers sender adminsidene til `/konto`                             |           |   ✓   |     ✓      |
 
 Vanlige medlemmer (`member`) har ingen av rettighetene. `owner` heter «hovedadmin» i appen.
 
@@ -531,9 +535,8 @@ Repoet er privat. CI er laget for å være trygt også som offentlig repo: PR-er
 
 - **Tekst og kontakt på esaf.no:** Teksten bygger på ESAFs partnerpresentasjon fra 2025 og NTNUs studieside. Kontaktadressen er `styret@esaf.no`, som videresendes til foreningens Gmail. Styret må godkjenne formuleringene og bekrefte at aktivitetene fortsatt arrangeres. Se `apps/site/KILDER.md`. Logo og bilder fra Drive er ikke tatt i bruk før rettigheter og samtykke er avklart.
 - **Hvem skal få medlemsinnsyn:** Alumni, nåværende studenter, ansatte og/eller mentorer? Datamodellen støtter alle fire via `person_cohort.relation`, men godkjenningen skiller ikke mellom dem ennå.
-- **Telefonnumrene fra lista:** De er importert, men vises ikke før personen selv slår dem på. Lista ble delt for at ES-ere skulle kunne ringe hverandre, så styret kan velge å vise numrene for godkjente medlemmer fra start, med mulighet til å skjule dem. Det er én endring i `getProfile`.
 - **Medlemsstatus for importerte profiler:** `active` (standard) eller `venter`, se sikkerhetsavveiingen over.
-- **Hva medlemmer ser om hverandre:** Alle profilfelt er synlige for aktive medlemmer. E-post og telefon vises bare når personen selv slår det på.
+- **Hva medlemmer ser om hverandre:** Alle profilfelt er synlige for aktive medlemmer. E-post og telefon fra kullisten vises også som standard, og hver person kan skjule dem (bestemt oktober 2026, se «Kontaktinfo»).
 - **Hosting for appen:** Ikke valgt. Repoet er `ESAF-NO/esaf` og er privat.
 - **Innlogging:** E-post og passord med e-postbekreftelse, passkeys og tofaktor. Magisk lenke eller Google-innlogging kan legges til når e-post er på plass.
 - **MCP:** Ikke implementert. Bygg på `@esaf/core` med den offisielle MCP TypeScript SDK. Better Auths MCP-plugin er i beta og bør testes i en egen integrasjonstest før den velges.

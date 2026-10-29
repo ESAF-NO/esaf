@@ -49,7 +49,8 @@ const STEPS = 4
 
 /**
  * Fire korte steg første gang et nytt medlem kommer inn: hva de jobber med, hva
- * de kan hjelpe med, om kontaktinfo fra telefonlista skal vises, og et bilde.
+ * de kan hjelpe med, kontaktinfo fra kullisten (vises for medlemmer med mindre
+ * de skjuler den), og et bilde.
  * Alt kan hoppes over og endres senere på profilen.
  */
 function GetStarted() {
@@ -214,7 +215,7 @@ function GetStarted() {
     {
       title: 'Hvordan kan andre ES-ere nå deg?',
       subtitle:
-        'Står du i telefonlista, har vi fylt inn det du skrev der. Ingen ser det før du slår det på.',
+        'Står du i kullisten, har vi fylt inn e-posten og telefonen du skrev der. De vises for medlemmer med mindre du slår det av.',
       body: (
         <div className="space-y-4">
           <Field label="E-post">
@@ -227,7 +228,8 @@ function GetStarted() {
           <Switch
             checked={emailVisible}
             onChange={setEmailVisible}
-            label="Vis e-posten for andre medlemmer"
+            label="Vis for medlemmer"
+            description="Bare godkjente medlemmer som er logget inn, ser det."
           />
           <Field label="Telefon">
             <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
@@ -235,7 +237,8 @@ function GetStarted() {
           <Switch
             checked={phoneVisible}
             onChange={setPhoneVisible}
-            label="Vis telefonnummeret for andre medlemmer"
+            label="Vis for medlemmer"
+            description="Bare godkjente medlemmer som er logget inn, ser det."
           />
           <Field label="LinkedIn">
             <Input

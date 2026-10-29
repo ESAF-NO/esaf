@@ -733,5 +733,36 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       expect(people.find((p) => p.personId === a.personId)!.status).toBe('active')
       expect(people.find((p) => p.personId === b.personId)).toBeUndefined()
     })
+
+    it('kontaktinfo fylles fra duplikatet, og det som er skjult på en av dem, forblir skjult', async () => {
+      const a = await createProfile(db, admin, {
+        fullName: 'Berit',
+        cohorts: [],
+        emails: [],
+        status: 'active',
+      })
+      const b = await createProfile(db, admin, {
+        fullName: 'Berit',
+        cohorts: [],
+        emails: [],
+        status: 'active',
+      })
+      await db
+        .update(schema.person)
+        .set({ phone: '+47 400 00 001', contactEmail: 'berit@example.test' })
+        .where(eq(schema.person.id, a.personId))
+      await db
+        .update(schema.person)
+        .set({ phone: '+47 400 00 002', phoneVisible: false })
+        .where(eq(schema.person.id, b.personId))
+      await mergePeople(db, storage, admin, { sourceId: b.personId, targetId: a.personId })
+      const [row] = await db.select().from(schema.person).where(eq(schema.person.id, a.personId))
+      expect(row).toMatchObject({
+        phone: '+47 400 00 001',
+        phoneVisible: false,
+        contactEmail: 'berit@example.test',
+        contactEmailVisible: true,
+      })
+    })
   })
 })

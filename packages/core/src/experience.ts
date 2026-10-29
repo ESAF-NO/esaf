@@ -1,5 +1,6 @@
 import { schema, type Db } from '@esaf/db'
 import { asc, eq, inArray } from 'drizzle-orm'
+import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 
 const { company, experience } = schema
 
@@ -9,6 +10,7 @@ export type Experience = {
   /** Navnet på selskapet, slik det står på selskapssiden. */
   company: string
   companySlug: string
+  companyLogo: CompanyLogoUrls | null
   title: string | null
   startYear: number | null
   /** Null betyr at personen fortsatt er der. */
@@ -55,6 +57,7 @@ export async function loadExperience(
       companyId: experience.companyId,
       company: company.name,
       companySlug: company.slug,
+      logoKey: company.logoKey,
       title: experience.title,
       startYear: experience.startYear,
       endYear: experience.endYear,
@@ -64,8 +67,9 @@ export async function loadExperience(
     .innerJoin(company, eq(company.id, experience.companyId))
     .where(inArray(experience.personId, ids))
     .orderBy(asc(experience.position))
-  for (const { personId, ...row } of rows) {
-    byPerson.set(personId, [...(byPerson.get(personId) ?? []), row])
+  for (const { personId, logoKey, ...row } of rows) {
+    const entry = { ...row, companyLogo: logoUrls(logoKey) }
+    byPerson.set(personId, [...(byPerson.get(personId) ?? []), entry])
   }
   for (const [personId, list] of byPerson) byPerson.set(personId, sortExperience(list))
   return byPerson

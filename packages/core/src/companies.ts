@@ -5,9 +5,11 @@ import { and, arrayOverlaps, asc, eq, inArray, isNotNull, isNull, ne, or, sql } 
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
+import { deleteLogoFiles, logoUrls, type CompanyLogoUrls } from './logos.ts'
 import type { Tx } from './members.ts'
 import { optionalText, tagList, yearInput } from './validation.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
+import type { ObjectStorage } from './storage.ts'
 
 const { auditEvent, cohort, company, experience, membership, person, personCohort } = schema
 
@@ -122,6 +124,8 @@ export type Company = {
   id: string
   slug: string
   name: string
+  /** `null` når selskapet ikke har logo; da vises en bokstavflis. */
+  logo: CompanyLogoUrls | null
   tagline: string | null
   status: CompanyStatus
   location: string | null
@@ -296,6 +300,7 @@ export async function listCompanies(db: Db, viewer: Viewer): Promise<Company[]> 
         id: company.id,
         slug: company.slug,
         name: company.name,
+        logoKey: company.logoKey,
         tagline: company.tagline,
         status: company.status,
         location: company.location,
@@ -310,9 +315,11 @@ export async function listCompanies(db: Db, viewer: Viewer): Promise<Company[]> 
     [...peopleByCompany.values()].flatMap((people) => people.filter(isTeam).map((p) => p.personId)),
   )
   return rows
-    .flatMap((row) => {
+    .flatMap(({ logoKey, ...row }) => {
       const people = peopleByCompany.get(row.id)
-      return people ? [{ ...row, ...summarize(people, years), people }] : []
+      return people
+        ? [{ ...row, logo: logoUrls(logoKey), ...summarize(people, years), people }]
+        : []
     })
     .sort(
       (a, b) =>
@@ -334,6 +341,7 @@ const editableColumns = {
   location: company.location,
   industries: company.industries,
   status: company.status,
+  logoKey: company.logoKey,
   editedAt: company.editedAt,
 }
 
@@ -349,8 +357,11 @@ async function findCompany(db: Db | Tx, slug: string) {
   throw new NotFoundError('Fant ikke selskapet.')
 }
 
-/** Gründer (også tidligere), i ES-teamet eller ansatt nå. Tidligere ansatte regnes ikke med. */
-async function isConnected(db: Db | Tx, personId: string, companyId: string) {
+/**
+ * Gründer (også tidligere), i ES-teamet eller ansatt nå. Tidligere ansatte regnes
+ * ikke med. Avgjør hvem som kan redigere selskapet, også logoen (logos.ts).
+ */
+export async function isConnected(db: Db | Tx, personId: string, companyId: string) {
   const [[role], [es]] = await Promise.all([
     db
       .select({ id: experience.id })
@@ -390,7 +401,7 @@ export async function getCompany(
   assertMember(viewer)
   const found = await findCompany(db, slug)
   if ('movedTo' in found) return found
-  const { aliasSlugs: _aliasSlugs, ...row } = found
+  const { aliasSlugs: _aliasSlugs, logoKey, ...row } = found
   const people = groupPeople(await loadLinks(db, [row.id])).get(row.id) ?? []
   const years = await cohortYears(
     db,
@@ -399,6 +410,7 @@ export async function getCompany(
   const connected = people.some((p) => p.personId === viewer.personId && p.role !== 'past')
   return {
     ...row,
+    logo: logoUrls(logoKey),
     ...summarize(people, years),
     websiteLabel: websiteLabel(row.website),
     people: people.map((p) => ({ ...p, cohortYears: years.get(p.personId) ?? [] })),
@@ -410,6 +422,8 @@ export async function getCompany(
 export type EditableCompany = z.output<typeof companyInput> & {
   id: string
   slug: string
+  /** Endres for seg, med `setCompanyLogo` og `removeCompanyLogo`. */
+  logo: CompanyLogoUrls | null
   /** Redigerer med adminrettighet, uten å være knyttet til selskapet. Endringen logges. */
   adminEdit: boolean
   /** Kan slå sammen duplikater. */
@@ -427,8 +441,13 @@ export async function getEditableCompany(
   if ('movedTo' in found) return found
   const connected = await isConnected(db, viewer.personId, found.id)
   if (!connected) assertCan(viewer, 'profiles.edit')
-  const { aliasSlugs: _aliasSlugs, editedAt: _editedAt, ...fields } = found
-  return { ...fields, adminEdit: !connected, canMerge: can(viewer, 'profiles.edit') }
+  const { aliasSlugs: _aliasSlugs, editedAt: _editedAt, logoKey, ...fields } = found
+  return {
+    ...fields,
+    logo: logoUrls(logoKey),
+    adminEdit: !connected,
+    canMerge: can(viewer, 'profiles.edit'),
+  }
 }
 
 const pgCode = (error: unknown): string | undefined => {
@@ -617,6 +636,7 @@ export async function deleteOrphanCompanies(tx: Tx, companyIds: (string | null)[
           and(
             inArray(company.id, ids),
             isNull(company.editedAt),
+            isNull(company.logoKey),
             sql`not exists (select 1 from ${experience} where ${experience.companyId} = ${company.id})`,
             sql`not exists (select 1 from ${person} where ${person.esCompanyId} = ${company.id})`,
           ),
@@ -632,6 +652,7 @@ export type CompanyHit = {
   id: string
   slug: string
   name: string
+  logo: CompanyLogoUrls | null
   tagline: string | null
   /** Aktive medlemmer knyttet til selskapet. */
   people: number
@@ -668,11 +689,12 @@ export async function searchCompanies(
       where p.es_company_id = ${sql.raw('"company"."id"')}
   ) as linked)`
   const escaped = q.replace(/[%_\\]/g, '\\$&')
-  return db
+  const rows = await db
     .select({
       id: company.id,
       slug: company.slug,
       name: company.name,
+      logoKey: company.logoKey,
       tagline: company.tagline,
       people,
       exact,
@@ -693,23 +715,26 @@ export async function searchCompanies(
       asc(company.name),
     )
     .limit(Math.min(limit, 20))
+  return rows.map(({ logoKey, ...row }) => ({ ...row, logo: logoUrls(logoKey) }))
 }
 
 /**
  * Slår sammen to skrivemåter av samme selskap. Erfaring og ES-team flyttes til
  * `targetId`, tomme felt fylles fra duplikatet, og duplikatets slug blir et alias,
- * så gamle lenker og den gamle skrivemåten finner fram. Krever `profiles.edit`,
- * siden det endrer erfaringen på andres profiler. Logges.
+ * så gamle lenker og den gamle skrivemåten finner fram. Har bare duplikatet logo,
+ * flyttes den; har begge, beholdes logoen hit og duplikatets slettes. Krever
+ * `profiles.edit`, siden det endrer erfaringen på andres profiler. Logges.
  */
 export async function mergeCompanies(
   db: Db,
+  storage: ObjectStorage,
   viewer: Viewer,
   input: { sourceId: string; targetId: string },
 ): Promise<{ slug: string }> {
   assertCan(viewer, 'profiles.edit')
   if (input.sourceId === input.targetId) throw new DomainError('Velg et annet selskap.')
 
-  return db.transaction(async (tx) => {
+  const { slug, unusedLogo } = await db.transaction(async (tx) => {
     // Låses i fast rekkefølge, så to samtidige sammenslåinger ikke venter på hverandre.
     const rows = await tx
       .select(editableColumns)
@@ -748,6 +773,8 @@ export async function mergeCompanies(
         website: target.website ?? source.website,
         foundedYear: target.foundedYear ?? source.foundedYear,
         location: target.location ?? source.location,
+        // Duplikatet er slettet over, så nøkkelen er ledig.
+        logoKey: target.logoKey ?? source.logoKey,
         industries,
         aliasSlugs: [...new Set([...target.aliasSlugs, source.slug, ...source.aliasSlugs])].filter(
           (s) => s !== target.slug,
@@ -766,6 +793,11 @@ export async function mergeCompanies(
         esTeam: team.length,
       },
     })
-    return { slug: target.slug }
+    return {
+      slug: target.slug,
+      unusedLogo: target.logoKey && source.logoKey ? source.logoKey : null,
+    }
   })
+  if (unusedLogo) await deleteLogoFiles(storage, unusedLogo)
+  return { slug }
 }

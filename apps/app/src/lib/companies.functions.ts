@@ -11,6 +11,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
+import { storage } from '#/server/photos.server.ts'
 
 // Tilgang og full validering skjer i @esaf/core (companyInput). Her sjekkes bare formen.
 const companyFields = z.object({
@@ -51,4 +52,4 @@ export const findCompanies = createServerFn({ method: 'GET' })
 
 export const mergeCompany = createServerFn({ method: 'POST' })
   .validator(z.object({ sourceId: z.uuid(), targetId: z.uuid() }))
-  .handler(({ data }) => run((viewer) => mergeCompanies(db, viewer, data)))
+  .handler(({ data }) => run((viewer) => mergeCompanies(db, storage, viewer, data)))

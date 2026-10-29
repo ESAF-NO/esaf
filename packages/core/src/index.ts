@@ -92,6 +92,19 @@ export {
   type ProfilePhoto,
 } from './photos.ts'
 export {
+  assertCanChangeLogo,
+  LOGO_CONTENT_TYPE,
+  LOGO_MAX_BYTES,
+  LOGO_SIZES,
+  logoUrls,
+  processCompanyLogo,
+  readCompanyLogo,
+  removeCompanyLogo,
+  setCompanyLogo,
+  type CompanyLogoUrls,
+  type ProcessedLogo,
+} from './logos.ts'
+export {
   createDiskStorage,
   createS3Storage,
   type ObjectStorage,

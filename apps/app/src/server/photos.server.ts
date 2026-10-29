@@ -72,6 +72,22 @@ export async function readUpload(request: Request): Promise<Uint8Array> {
   return Buffer.concat(chunks, size)
 }
 
+/**
+ * Svaret med et bilde (profilbilde eller logo). Hvert bilde har sin egen adresse
+ * og endres aldri, så nettleseren kan beholde det lenge. `private` hindrer at
+ * delte mellomlagre (CDN, proxy) tar vare på det.
+ */
+export function imageHeaders(contentType: string, body: Uint8Array): HeadersInit {
+  return {
+    'content-type': contentType,
+    'content-length': String(body.byteLength),
+    'cache-control': 'private, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+    // Kan ikke bygges inn på andre nettsteder, selv med innloggingscookien.
+    'cross-origin-resource-policy': 'same-origin',
+  }
+}
+
 const noStore = { 'cache-control': 'no-store' }
 
 /** Domenefeil som JSON med en melding brukeren kan lese, uten å lekke detaljer. */

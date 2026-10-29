@@ -10,6 +10,7 @@ import {
 } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
+import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import { optionalText, tagList, yearInput } from './validation.ts'
 
@@ -108,6 +109,7 @@ const profileColumns = {
   esCompanyId: person.esCompanyId,
   esCompany: company.name,
   esCompanySlug: company.slug,
+  esCompanyLogoKey: company.logoKey,
   bio: person.bio,
   expertise: person.expertise,
   industries: person.industries,
@@ -131,6 +133,7 @@ export type Profile = {
   studyBackground: string | null
   esCompany: string | null
   esCompanySlug: string | null
+  esCompanyLogo: CompanyLogoUrls | null
   bio: string | null
   expertise: string[]
   industries: string[]
@@ -183,6 +186,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     studyBackground: row.studyBackground,
     esCompany: row.esCompany,
     esCompanySlug: row.esCompanySlug,
+    esCompanyLogo: logoUrls(row.esCompanyLogoKey),
     bio: row.bio,
     expertise: row.expertise,
     industries: row.industries,
@@ -227,7 +231,13 @@ export async function getEditableProfile(
     .leftJoin(company, eq(company.id, person.esCompanyId))
     .where(eq(person.id, personId))
   if (!row) throw new NotFoundError('Fant ikke profilen.')
-  const { userId: _userId, photoKey, esCompanySlug: _esCompanySlug, ...fields } = row
+  const {
+    userId: _userId,
+    photoKey,
+    esCompanySlug: _esCompanySlug,
+    esCompanyLogoKey: _esCompanyLogoKey,
+    ...fields
+  } = row
   const experiences = await loadExperience(db, [personId])
   const contact = isOwn
     ? {}

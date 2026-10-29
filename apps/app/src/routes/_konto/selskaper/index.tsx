@@ -8,7 +8,7 @@ import {
   Button,
   buttonClass,
   Card,
-  CompanyMark,
+  CompanyLogo,
   cx,
   EmptyState,
   Input,
@@ -204,7 +204,7 @@ function CompanyCard({ company: c }: { company: Company }) {
   return (
     <Card className="relative flex h-full flex-col p-5 transition hover:-translate-y-px hover:shadow-lift hover:ring-stone-300">
       <div className="flex items-center gap-3">
-        <CompanyMark name={c.name} size="lg" />
+        <CompanyLogo name={c.name} logo={c.logo} size="lg" />
         <div className="min-w-0">
           <h2 className="truncate font-semibold text-stone-950">
             <Link

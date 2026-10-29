@@ -1,4 +1,4 @@
-import type { Experience } from '@esaf/core'
+import type { CompanyLogoUrls, Experience } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, BriefcaseBusiness, Lock, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
@@ -8,7 +8,7 @@ import { TagInput } from '#/components/TagInput.tsx'
 import {
   Button,
   Card,
-  CompanyMark,
+  CompanyLogo,
   cx,
   ErrorText,
   Field,
@@ -93,6 +93,8 @@ type Role = {
   company: string
   /** Selskapet som ble valgt i forslagslisten. */
   companyId: string | null
+  /** Logoen til det valgte selskapet. */
+  logo: CompanyLogoUrls | null
   title: string
   startYear: string
   endYear: string
@@ -104,6 +106,7 @@ const toRole = (e: Experience): Role => ({
   key: e.id,
   company: e.company,
   companyId: e.companyId,
+  logo: e.companyLogo,
   title: e.title ?? '',
   startYear: e.startYear ? String(e.startYear) : '',
   endYear: e.endYear ? String(e.endYear) : '',
@@ -115,6 +118,7 @@ const blankRole = (): Role => ({
   key: crypto.randomUUID(),
   company: '',
   companyId: null,
+  logo: null,
   title: '',
   startYear: '',
   endYear: '',
@@ -159,7 +163,12 @@ function RoleEditor({
     <div className="rounded-xl bg-stone-50/70 p-4 ring-1 ring-stone-200 ring-inset">
       <div className="flex items-start gap-3">
         {role.company.trim() ? (
-          <CompanyMark name={role.company} size="sm" className="mt-6 hidden sm:inline-grid" />
+          <CompanyLogo
+            name={role.company}
+            logo={role.companyId ? role.logo : null}
+            size="sm"
+            className="mt-6 hidden sm:inline-grid"
+          />
         ) : (
           <span className="mt-6 hidden size-9 shrink-0 place-items-center rounded-lg bg-white text-stone-400 ring-1 ring-stone-200 ring-inset sm:grid">
             <BriefcaseBusiness className="size-4" aria-hidden />
@@ -170,7 +179,9 @@ function RoleEditor({
             <CompanyInput
               label="Selskap"
               value={{ name: role.company, companyId: role.companyId }}
-              onChange={({ name, companyId }) => onChange({ company: name, companyId })}
+              onChange={({ name, companyId, logo }) =>
+                onChange({ company: name, companyId, logo: logo ?? null })
+              }
               placeholder="Equinor"
               autoFocus={!role.company && !role.title}
             />

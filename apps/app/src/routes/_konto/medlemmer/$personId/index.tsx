@@ -18,7 +18,7 @@ import {
   Avatar,
   buttonClass,
   Card,
-  CompanyMark,
+  CompanyLogo,
   LinkedInIcon,
   ProfileStatus,
   Verified,
@@ -41,20 +41,25 @@ export const Route = createFileRoute('/_konto/medlemmer/$personId/')({
   component: ProfilePage,
 })
 
+/** `mark` erstatter ikonet, for eksempel med logoen til selskapet. */
 function Fact({
   icon: Icon,
+  mark,
   label,
   children,
 }: {
   icon: typeof MapPin
+  mark?: ReactNode
   label: string
   children: ReactNode
 }) {
   return (
     <div className="flex gap-3">
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-500">
-        <Icon className="size-4" aria-hidden />
-      </span>
+      {mark ?? (
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-500">
+          <Icon className="size-4" aria-hidden />
+        </span>
+      )}
       <div className="min-w-0">
         <dt className="text-xs text-stone-500">{label}</dt>
         <dd className="text-sm font-medium text-stone-900">{children}</dd>
@@ -93,7 +98,7 @@ function ExperienceList({ items }: { items: Experience[] }) {
             aria-hidden
             className="shrink-0"
           >
-            <CompanyMark name={e.company} />
+            <CompanyLogo name={e.company} logo={e.companyLogo} />
           </Link>
           <div className="min-w-0 flex-1">
             <p className="font-medium text-stone-950">
@@ -322,7 +327,18 @@ function ProfilePage() {
                 </Fact>
               ))}
               {p.esCompany && p.esCompanySlug && (
-                <Fact icon={Rocket} label="Selskap på ES">
+                <Fact
+                  icon={Rocket}
+                  mark={
+                    <CompanyLogo
+                      name={p.esCompany}
+                      logo={p.esCompanyLogo}
+                      size="sm"
+                      className="size-8 text-xs"
+                    />
+                  }
+                  label="Selskap på ES"
+                >
                   <Link
                     to="/selskaper/$slug"
                     params={{ slug: p.esCompanySlug }}

@@ -3,7 +3,7 @@ import { Building2, CornerDownLeft, FileText, Search, Users } from 'lucide-react
 import { useEffect, useMemo, useState } from 'react'
 import { channels, type ChannelKey } from '#/lib/channels.ts'
 import { quickSearch } from '#/lib/search.functions.ts'
-import { Avatar, CompanyMark, cx, Verified } from './ui.tsx'
+import { Avatar, CompanyLogo, cx, Verified } from './ui.tsx'
 
 type Results = Awaited<ReturnType<typeof quickSearch>>
 type Item = {
@@ -94,7 +94,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       go: go(() => router.navigate({ to: '/selskaper/$slug', params: { slug: c.slug } })),
       render: () => (
         <>
-          <CompanyMark name={c.name} size="sm" className="size-8 text-xs" />
+          <CompanyLogo name={c.name} logo={c.logo} size="sm" className="size-8 text-xs" />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-stone-900">{c.name}</span>
             <span className="block truncate text-xs text-stone-500">

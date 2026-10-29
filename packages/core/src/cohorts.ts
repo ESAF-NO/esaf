@@ -1,13 +1,14 @@
 import { schema, type Db } from '@esaf/db'
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, arrayOverlaps, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { assertMember, type Viewer } from './access.ts'
 import { companySlug } from './companies.ts'
 import { NotFoundError } from './errors.ts'
 import { listPosts, type PostSummary } from './feed.ts'
+import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { listActiveMembers, type MemberListItem } from './members.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 
-const { cohort, membership, person, personCohort } = schema
+const { cohort, company, membership, person, personCohort } = schema
 
 export type CohortPerson = {
   personId: string
@@ -105,6 +106,7 @@ export type CohortCompany = {
   /** Samme nøkkel som i selskapskatalogen. */
   slug: string
   name: string
+  logo: CompanyLogoUrls | null
   /** Noen i kullet hadde det som selskapet sitt på Entreprenørskolen. */
   esCompany: boolean
   /** Gründerne og ES-teamet fra kullet, gründerne først. */
@@ -154,9 +156,24 @@ export async function getCohortPage(
     claimed: people.filter((p) => p.claimed).length,
     isOwn: people.some((p) => p.personId === viewer.personId),
     people,
-    companies: companiesStartedBy(people),
+    companies: await withLogos(db, companiesStartedBy(people)),
     posts,
   }
+}
+
+/** Logoene fra selskapskatalogen, slått opp på slug (også tidligere navn). */
+async function withLogos(db: Db, companies: CohortCompany[]): Promise<CohortCompany[]> {
+  const slugs = companies.map((c) => c.slug)
+  if (!slugs.length) return companies
+  const rows = await db
+    .select({ slug: company.slug, aliasSlugs: company.aliasSlugs, logoKey: company.logoKey })
+    .from(company)
+    .where(or(inArray(company.slug, slugs), arrayOverlaps(company.aliasSlugs, slugs)))
+  const bySlug = new Map<string, string | null>()
+  // Et selskap som har slugen som navn, går foran et som har den som alias.
+  for (const r of rows) for (const alias of r.aliasSlugs) bySlug.set(alias, r.logoKey)
+  for (const r of rows) bySlug.set(r.slug, r.logoKey)
+  return companies.map((c) => ({ ...c, logo: logoUrls(bySlug.get(c.slug) ?? null) }))
 }
 
 /**
@@ -173,6 +190,7 @@ function companiesStartedBy(people: MemberListItem[]): CohortCompany[] {
     const company: Draft = bySlug.get(slug) ?? {
       slug,
       name,
+      logo: null,
       esCompany: false,
       people: [],
       names: new Map(),

@@ -2,11 +2,12 @@ import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-rout
 import { ArrowLeft, GitMerge, ShieldAlert } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { CompanyInput, type CompanyValue } from '#/components/CompanyInput.tsx'
+import { LogoUpload } from '#/components/LogoUpload.tsx'
 import { TagInput } from '#/components/TagInput.tsx'
 import {
   Button,
   Card,
-  CompanyMark,
+  CompanyLogo,
   cx,
   ErrorText,
   Field,
@@ -107,7 +108,7 @@ function EditCompany() {
         <ArrowLeft className="size-4" aria-hidden /> Tilbake til selskapet
       </Link>
       <div className="mb-6 flex items-center gap-4">
-        <CompanyMark name={company.name} size="lg" />
+        <CompanyLogo name={company.name} logo={company.logo} size="lg" />
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold tracking-tight text-stone-950">
             Rediger {company.name}
@@ -122,6 +123,13 @@ function EditCompany() {
           <p>Du redigerer som admin, og endringen logges.</p>
         </div>
       )}
+
+      {/* Utenfor skjemaet: logoen lagres med en gang, ikke med «Lagre endringer». */}
+      <div className="mb-4">
+        <Section title="Logo" description="Endringer i logoen lagres med en gang.">
+          <LogoUpload companyId={company.id} name={company.name} logo={company.logo} />
+        </Section>
+      </div>
 
       <form onSubmit={onSubmit} className="space-y-4">
         <Section title="Om selskapet" description="Det andre ser først på selskapssiden.">

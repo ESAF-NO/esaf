@@ -20,9 +20,10 @@ export const quickSearch = createServerFn({ method: 'GET' })
       ])
       return {
         people,
-        companies: companies.map(({ slug, name, tagline, people }) => ({
+        companies: companies.map(({ slug, name, logo, tagline, people }) => ({
           slug,
           name,
+          logo,
           tagline,
           people,
         })),

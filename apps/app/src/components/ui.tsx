@@ -1,4 +1,4 @@
-import type { ProfilePhoto } from '@esaf/core'
+import type { CompanyLogoUrls, ProfilePhoto } from '@esaf/core'
 import { clsx } from 'clsx'
 import { BadgeCheck } from 'lucide-react'
 import { useState, type ComponentProps, type ReactNode } from 'react'
@@ -189,7 +189,7 @@ const markSizes = {
   xl: 'size-16 rounded-2xl text-2xl sm:size-20 sm:text-3xl',
 }
 
-/** Initial på en farge avledet av navnet, til selskaper får logo. */
+/** Initial på en farge avledet av navnet, for selskaper uten logo. Bruk `CompanyLogo`. */
 export function CompanyMark({
   name,
   size = 'md',
@@ -210,6 +210,67 @@ export function CompanyMark({
       )}
     >
       {name.trim()[0]?.toLocaleUpperCase('nb')}
+    </span>
+  )
+}
+
+/** Hvor bred logoen vises, så nettleseren henter den minste størrelsen som holder. */
+const markWidths = {
+  sm: '36px',
+  md: '44px',
+  lg: '48px',
+  xl: '(min-width: 640px) 80px, 64px',
+}
+const logoPadding = { sm: 'p-1', md: 'p-1', lg: 'p-1.5', xl: 'p-2 sm:p-2.5' }
+
+/**
+ * Logoen, eller bokstavflisen når selskapet ikke har logo eller den ikke lar seg
+ * laste. Logoen står på hvit bakgrunn med en tynn kant, så gjennomsiktige logoer
+ * ser like ut på kort og på den grå sidebakgrunnen. Navnet står alltid ved siden
+ * av, så logoen er pynt for skjermlesere.
+ */
+export function CompanyLogo({
+  name,
+  logo,
+  size = 'md',
+  className,
+}: {
+  name: string
+  logo?: CompanyLogoUrls | null
+  size?: keyof typeof markSizes
+  className?: string
+}) {
+  // Logoen som ikke lot seg laste, f.eks. en som nettopp ble fjernet. En ny logo prøves.
+  const [broken, setBroken] = useState<string | null>(null)
+  if (!logo || broken === logo.small) {
+    return <CompanyMark name={name} size={size} className={className} />
+  }
+  return (
+    <span
+      aria-hidden
+      className={clsx(
+        'inline-grid shrink-0 place-items-center bg-white ring-1 ring-stone-200 ring-inset select-none',
+        markSizes[size],
+        logoPadding[size],
+        className,
+      )}
+    >
+      <img
+        // Størrelsene er de samme som LOGO_SIZES i @esaf/core.
+        src={logo.small}
+        srcSet={`${logo.small} 64w, ${logo.large} 256w`}
+        sizes={markWidths[size]}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        onError={() => setBroken(logo.small)}
+        // Feilet logoen før siden ble interaktiv, kommer det ingen error-hendelse.
+        ref={(img) => {
+          if (img?.complete && img.naturalWidth === 0) setBroken(logo.small)
+        }}
+        className="size-full object-contain"
+      />
     </span>
   )
 }

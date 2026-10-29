@@ -391,6 +391,25 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       </>
     )
   },
+  'operator.import_dataset': ({ actor, details }) => {
+    const source = text(details.source)
+    const counts = (details.counts ?? {}) as Record<
+      string,
+      { created?: unknown; updated?: unknown }
+    >
+    const sum = (key: 'created' | 'updated') =>
+      Object.values(counts).reduce((n, c) => n + count(c?.[key]), 0)
+    const options = Array.isArray(details.options) ? details.options.map(String) : []
+    return (
+      <>
+        {actor} importerte {source ? `datasettet «${source}»` : 'et datasett'} fra kommandolinjen:{' '}
+        {count(counts.companies?.created)} nye og {count(counts.companies?.updated)} endrede
+        selskaper, {plural(count(counts.people?.created), 'ny profil', 'nye profiler')} og{' '}
+        {count(counts.articles?.created)} saker i media ({sum('created')} nye og {sum('updated')}{' '}
+        endrede rader i alt{options.length > 0 && `, ${options.join(', ')}`}).
+      </>
+    )
+  },
   'profile.admin_edit': ({ actor, subject }) => (
     <>
       {actor} redigerte profilen til {subject}.

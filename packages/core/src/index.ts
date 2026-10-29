@@ -112,8 +112,14 @@ export {
 export {
   createDiskStorage,
   createS3Storage,
+  createStorage,
+  describeStorage,
+  S3_VARIABLES,
+  storageConfigFromEnv,
+  storageEnvIssues,
   type ObjectStorage,
   type S3StorageConfig,
+  type StorageConfig,
 } from './storage.ts'
 export { currentRole, sortExperience, type Experience } from './experience.ts'
 export {
@@ -420,3 +426,37 @@ export {
   type RepresentativePreview,
   type RepresentativeRow,
 } from './rep-import.ts'
+export {
+  allDatasetOptions,
+  countDataset,
+  DATASET_FORMAT,
+  DATASET_SCHEMA_VERSION,
+  DatasetError,
+  describeDatasetOptions,
+  filterDataset,
+  readDatasetBundle,
+  writeDatasetBundle,
+  type Dataset,
+  type DatasetBundle,
+  type DatasetCompany,
+  type DatasetManifest,
+  type DatasetOptions,
+  type DatasetPerson,
+  type DatasetQuote,
+  type DatasetSource,
+} from './dataset.ts'
+export {
+  applyDatasetImport,
+  changesIn,
+  countImportRecords,
+  datasetEntities,
+  previewDatasetImport,
+  type DatasetEntity,
+  type DatasetImportReport,
+  type DatasetPreview,
+  type EntityCounts,
+  type PreparedImages,
+} from './dataset-import.ts'
+export { createTarGz, readTarGz, type TarEntry } from './tar.ts'
+export { putProcessedPhoto } from './photos.ts'
+export { putProcessedLogo } from './logos.ts'

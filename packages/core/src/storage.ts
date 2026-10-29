@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { AwsClient } from 'aws4fetch'
 
 /**
- * Lagring av filer (foreløpig bare profilbilder) bak et lite grensesnitt, så
+ * Lagring av filer (profilbilder og logoer) bak et lite grensesnitt, så
  * domenet ikke bryr seg om hvor de ligger. Disk brukes i utvikling og
  * S3-kompatibel lagring (Cloudflare R2) i produksjon. Hvilken som brukes, avgjør
  * appen ut fra miljøet (se `env.server.ts`).
@@ -131,4 +131,107 @@ export function createS3Storage(config: S3StorageConfig): ObjectStorage {
       await response.body?.cancel()
     },
   }
+}
+
+/** Hvor bildene lagres: S3-kompatibel lagring, eller en mappe på disk (bare utenfor produksjon). */
+export type StorageConfig = ({ driver: 's3' } & S3StorageConfig) | { driver: 'disk'; dir: string }
+
+/** Alle må være satt for S3-lagring. `S3_REGION` er valgfri (`auto`, som R2 bruker). */
+export const S3_VARIABLES = [
+  'S3_ENDPOINT',
+  'S3_BUCKET',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
+] as const
+
+type StorageEnv = Partial<
+  Record<(typeof S3_VARIABLES)[number] | 'S3_REGION' | 'UPLOAD_DIR', string>
+>
+
+/** Tomme verdier (`S3_BUCKET=` i .env) betyr ikke satt. */
+const setValue = (value: string | undefined) =>
+  value === undefined || value === '' ? undefined : value
+
+/**
+ * Det som er feil med lagringsvariablene, med samme regler i appen og i
+ * verktøyene på kommandolinjen: S3 er påkrevd i produksjon, alle S3_-variablene
+ * eller ingen, https i produksjon, og `UPLOAD_DIR` bare i utvikling.
+ */
+export function storageEnvIssues(
+  env: StorageEnv,
+  { production }: { production: boolean },
+): { variable: string; message: string }[] {
+  const issues: { variable: string; message: string }[] = []
+  const missing = S3_VARIABLES.filter((key) => setValue(env[key]) === undefined)
+  // Halvveis satt opp er en feil også i utvikling, ellers havner bildene stille på disk.
+  if (production || missing.length < S3_VARIABLES.length) {
+    for (const variable of missing) {
+      issues.push({
+        variable,
+        message: production
+          ? 'påkrevd i produksjon, for lagring av profilbilder og logoer (se README)'
+          : 'mangler; sett alle S3_-variablene, eller ingen for å lagre bilder på disk',
+      })
+    }
+  }
+  const endpoint = setValue(env.S3_ENDPOINT)
+  if (endpoint) {
+    let protocol: string | null = null
+    try {
+      protocol = new URL(endpoint).protocol
+    } catch {
+      issues.push({ variable: 'S3_ENDPOINT', message: 'er ikke en gyldig URL' })
+    }
+    if (protocol && protocol !== 'https:' && (production || protocol !== 'http:')) {
+      issues.push({
+        variable: 'S3_ENDPOINT',
+        message: production ? 'må bruke https i produksjon' : 'må være en http- eller https-URL',
+      })
+    }
+  }
+  if (production && setValue(env.UPLOAD_DIR)) {
+    issues.push({
+      variable: 'UPLOAD_DIR',
+      message: 'brukes bare i utvikling; i produksjon lagres bildene i S3/R2',
+    })
+  }
+  return issues
+}
+
+/**
+ * Lagringen miljøet beskriver. Sjekk `storageEnvIssues` først; her antas det at
+ * variablene er gyldige. Uten S3 brukes `UPLOAD_DIR`, ellers `defaultDir`.
+ */
+export function storageConfigFromEnv(env: StorageEnv, defaultDir: string): StorageConfig {
+  const endpoint = setValue(env.S3_ENDPOINT)
+  const bucket = setValue(env.S3_BUCKET)
+  const accessKeyId = setValue(env.S3_ACCESS_KEY_ID)
+  const secretAccessKey = setValue(env.S3_SECRET_ACCESS_KEY)
+  if (endpoint && bucket && accessKeyId && secretAccessKey) {
+    return {
+      driver: 's3',
+      endpoint,
+      bucket,
+      region: setValue(env.S3_REGION) ?? 'auto',
+      accessKeyId,
+      secretAccessKey,
+    }
+  }
+  return { driver: 'disk', dir: resolve(setValue(env.UPLOAD_DIR) ?? defaultDir) }
+}
+
+export function createStorage(config: StorageConfig): ObjectStorage {
+  return config.driver === 's3' ? createS3Storage(config) : createDiskStorage(config.dir)
+}
+
+/** Hvor lagringen er, uten hemmeligheter: til utskrift før noe skrives. */
+export function describeStorage(config: StorageConfig): string {
+  if (config.driver === 'disk') return `disk (${config.dir})`
+  let host = config.endpoint
+  try {
+    host = new URL(config.endpoint).host
+  } catch {
+    // Vises som den er.
+  }
+  return `S3-bøtta «${config.bucket}» på ${host}`
 }

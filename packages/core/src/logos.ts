@@ -130,6 +130,20 @@ export const deleteLogoFiles = (storage: ObjectStorage, logoKey: string) =>
     `logoen ${logoKey}`,
   )
 
+/**
+ * Lagrer en ferdig behandlet logo (fra `processCompanyLogo`) under en ny nøkkel
+ * og gir nøkkelen. Brukes av importen, som laster opp logoene før databasen skrives.
+ */
+export async function putProcessedLogo(storage: ObjectStorage, images: ProcessedLogo) {
+  const logoKey = newImageKey()
+  await putImageFiles(
+    storage,
+    sizes.map((s) => ({ key: objectKey(logoKey, s), body: images[s] })),
+    `logoen ${logoKey}`,
+  )
+  return logoKey
+}
+
 /** Laster opp eller bytter logoen og gir adressene til den nye. */
 export async function setCompanyLogo(
   db: Db,

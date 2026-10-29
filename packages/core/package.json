@@ -9,7 +9,9 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "admin:grant": "tsx scripts/grant-admin.ts",
-    "profiles:import": "tsx scripts/import-profiles.ts"
+    "profiles:import": "tsx scripts/import-profiles.ts",
+    "data:bundle": "tsx scripts/bundle-dataset.ts",
+    "data:import": "tsx scripts/import-dataset.ts"
   },
   "dependencies": {
     "@esaf/db": "workspace:*",

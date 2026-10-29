@@ -144,6 +144,24 @@ export const deletePhotoFiles = (storage: ObjectStorage, photoKey: string) =>
     `profilbildet ${photoKey}`,
   )
 
+/**
+ * Lagrer et ferdig behandlet profilbilde (fra `processProfilePhoto`) under en ny
+ * nøkkel og gir nøkkelen. Ingen person peker på det ennå; det gjør den som kaller.
+ * Brukes av importen, som laster opp bildene før databasen skrives.
+ */
+export async function putProcessedPhoto(
+  storage: ObjectStorage,
+  images: ProcessedPhoto,
+): Promise<string> {
+  const photoKey = newImageKey()
+  await putImageFiles(
+    storage,
+    sizes.map((s) => ({ key: objectKey(photoKey, s), body: images[s] })),
+    `profilbildet ${photoKey}`,
+  )
+  return photoKey
+}
+
 /** Laster opp eller bytter profilbildet og gir adressene til det nye bildet. */
 export async function setProfilePhoto(
   db: Db,

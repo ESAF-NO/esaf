@@ -23,6 +23,8 @@
     "db:studio": "pnpm --filter @esaf/db studio",
     "admin:grant": "pnpm --filter @esaf/core admin:grant",
     "profiles:import": "pnpm --filter @esaf/core profiles:import",
+    "data:bundle": "pnpm --filter @esaf/core data:bundle",
+    "data:import": "pnpm --filter @esaf/core data:import",
     "verify:site": "node scripts/verify-site-build.mjs"
   },
   "devDependencies": {

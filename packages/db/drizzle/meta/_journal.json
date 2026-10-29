@@ -15,6 +15,160 @@
       "when": 1793219477744,
       "tag": "0001_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793220433216,
+      "tag": "0002_profile_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793221119314,
+      "tag": "0003_person_emails",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793221124340,
+      "tag": "0004_drop_person_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793221513584,
+      "tag": "0005_feed",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793223093206,
+      "tag": "0006_cohort_graduation_year",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793223175834,
+      "tag": "0007_experience",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793224648580,
+      "tag": "0008_access_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793226000526,
+      "tag": "0009_roles_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793227540223,
+      "tag": "0010_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793228667528,
+      "tag": "0011_posts_edited_pinned",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793228764454,
+      "tag": "0012_profile_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793229061766,
+      "tag": "0013_companies",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793283035360,
+      "tag": "0014_company_logos",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793284012161,
+      "tag": "0015_company_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793285553760,
+      "tag": "0016_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793286652999,
+      "tag": "0017_contributions",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793288427171,
+      "tag": "0018_cohort_reps_weekends",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793289778888,
+      "tag": "0019_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793292703700,
+      "tag": "0020_media_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793294186308,
+      "tag": "0021_event_date_precision",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793294545944,
+      "tag": "0022_contact_visible_by_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793296128665,
+      "tag": "0023_invitations",
+      "breakpoints": true
     }
   ]
 }

@@ -34,20 +34,25 @@ Bare én av dem: `pnpm dev:site` (krever ingen database) eller `pnpm dev:app`.
 
 ### Kommandoer
 
-| Kommando                      | Hva den gjør                                                                                    |
-| ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| `pnpm dev`                    | Starter site og app i utviklingsmodus                                                           |
-| `pnpm build`                  | Produksjonsbygg av begge appene                                                                 |
-| `pnpm typecheck`              | `tsc` i alle pakker og `astro check` for siden                                                  |
-| `pnpm lint`                   | ESLint og Prettier-sjekk (`pnpm format` retter formatering)                                     |
-| `pnpm test`                   | Enhetstester og integrasjonstester mot `TEST_DATABASE_URL`                                      |
-| `pnpm verify:site`            | Sjekker at `apps/site/dist` ikke inneholder hemmeligheter, appkode eller ukjente e-postadresser |
-| `pnpm db:up` / `pnpm db:down` | Starter eller stopper lokal Postgres                                                            |
-| `pnpm db:generate`            | Lager en ny SQL-migrering fra endringer i `packages/db/src/schema.ts`                           |
-| `pnpm db:migrate`             | Kjører migreringer mot `DATABASE_URL`                                                           |
-| `pnpm db:studio`              | Drizzle Studio mot lokal database                                                               |
-| `pnpm admin:grant`            | Gir adminrolle, se «Første admin» under                                                         |
-| `pnpm profiles:import`        | Importerer profiler fra kullisten (CSV), se «Profiler og import av kullisten» under             |
+| Kommando                      | Hva den gjør                                                                                                                                                                                                                                                    |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                    | Starter site og app i utviklingsmodus                                                                                                                                                                                                                           |
+| `pnpm build`                  | Produksjonsbygg av begge appene                                                                                                                                                                                                                                 |
+| `pnpm typecheck`              | `tsc` i alle pakker og `astro check` for siden                                                                                                                                                                                                                  |
+| `pnpm lint`                   | ESLint og Prettier-sjekk (`pnpm format` retter formatering)                                                                                                                                                                                                     |
+| `pnpm test`                   | Enhetstester og integrasjonstester mot `TEST_DATABASE_URL`                                                                                                                                                                                                      |
+| `pnpm verify:site`            | Sjekker at `apps/site/dist` ikke inneholder hemmeligheter, appkode eller ukjente e-postadresser                                                                                                                                                                 |
+| `pnpm db:up` / `pnpm db:down` | Starter eller stopper lokal Postgres                                                                                                                                                                                                                            |
+| `pnpm db:generate`            | Lager en ny SQL-migrering fra endringer i `packages/db/src/schema.ts`                                                                                                                                                                                           |
+| `pnpm db:migrate`             | Kjører migreringer mot `DATABASE_URL`                                                                                                                                                                                                                           |
+| `pnpm db:seed`                | Fyller en **lokal** database med oppdiktede alumni, selskaper og innlegg. Sletter alt først, og nekter å kjøre mot noe annet enn localhost. Logg inn som `admin@example.test` / `korrekt-hest-batteri`. Med den ekte lista, se «Lokalt med den ekte kullisten». |
+| `pnpm db:studio`              | Drizzle Studio mot lokal database                                                                                                                                                                                                                               |
+| `pnpm admin:grant`            | Gir en rolle fra kommandolinjen (standard hovedadmin), se «Første hovedadmin» under                                                                                                                                                                             |
+| `pnpm admin:invite`           | Lager en invitasjonslenke fra kommandolinjen (standard hovedadmin) og skriver den ut, se «Første hovedadmin»                                                                                                                                                    |
+| `pnpm admin:password-link`    | Lager en lenke for nytt passord fra kommandolinjen, for når ingen admin kan gjøre det i appen                                                                                                                                                                   |
+| `pnpm profiles:import`        | Importerer profiler fra kullisten (Excel eller CSV), se «Profiler og import av kullisten» under                                                                                                                                                                 |
+| `pnpm data:bundle`            | Lager en datasettbunt fra berikelsen i `.data/enrichment` (lokalt), se «Fylle produksjon med datasettet»                                                                                                                                                        |
+| `pnpm data:import`            | Importerer en datasettbunt: forhåndsvisning, og med `--apply` lagring, se «Fylle produksjon med datasettet»                                                                                                                                                     |
 
 Integrasjonstestene hoppes over lokalt hvis `TEST_DATABASE_URL` mangler. I CI må de kjøre. Testene migrerer og tømmer `esaf_test` selv, aldri utviklingsdatabasen.
 
@@ -59,22 +64,197 @@ Skjemaet ligger i `packages/db/src/schema.ts`. Arbeidsflyt for endringer:
 2. `pnpm db:generate` lager en SQL-fil i `packages/db/drizzle/`. Les den før du committer den.
 3. `pnpm db:migrate` kjører den lokalt.
 
-Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produksjon kjøres `pnpm db:migrate` med produksjonens `DATABASE_URL` som et eget steg før en ny versjon startes. CI feiler hvis skjema og migreringer ikke er i synk.
+Appen gjør aldri `drizzle-kit push` eller endrer skjema ved oppstart. I produksjon kjører containeren migreringene før serveren starter (se «Appen med Coolify»). CI feiler hvis skjema og migreringer ikke er i synk.
 
 ### Datamodell
 
-| Tabell                                       | Innhold                                                                                                                                                                                                       |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`, `session`, `account`, `verification` | Better Auth: innloggingsidentitet. Gir ingen tilgang alene.                                                                                                                                                   |
-| `person`                                     | En person ESAF kjenner til. Uten `user_id` er det en _profil_ (f.eks. fra kullisten). Med `user_id` har personen selv tatt den i bruk (`claimed_at`). `source` sier om den kom fra registrering eller import. |
-| `cohort`                                     | Et kull, identifisert ved opptaksår.                                                                                                                                                                          |
-| `person_cohort`                              | Tilknytning mellom person og kull, med type: `student`, `staff` eller `mentor`.                                                                                                                               |
-| `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`admin`).                                                                                                          |
-| `audit_event`                                | Revisjonslogg for godkjenninger, admintildelinger, importer og krav på profiler.                                                                                                                              |
+| Tabell                                       | Innhold                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user`, `session`, `account`, `verification` | Better Auth: innloggingsidentitet. Gir ingen tilgang alene. `session.signed_in_with_passkey` sier om økten ble startet med passkey (se «Sterk innlogging»).                                                                                                                                                                                                                                  |
+| `two_factor`, `passkey`                      | Tofaktor (TOTP-hemmelighet og reservekoder) og passkeys (bare den offentlige nøkkelen, med navn, dato og om den synkroniseres).                                                                                                                                                                                                                                                              |
+| `person`                                     | En person ESAF kjenner til. Uten `user_id` er det en _profil_ (f.eks. fra kullisten). Med `user_id` har personen selv tatt den i bruk (`claimed_at`). `source` sier om den kom fra registrering eller import.                                                                                                                                                                                |
+| `experience`                                 | Hvor personen jobber og har jobbet: selskap (`company_id`), stilling, fra- og til-år og om personen grunnla selskapet. Uten til-år er det nåværende. Den nyeste nåværende vises som stilling under navnet.                                                                                                                                                                                   |
+| `company`                                    | Et selskap: unik `slug` (følger navnet), navn, kort beskrivelse, «om selskapet», nettside, grunnlagt, sted, bransjer og status (`active`/`acquired`/`closed`/`unknown`). `alias_slugs` er tidligere slugger og sammenslåtte duplikater. `last_seen_on_es_site` er sist selskapet sto på ES-siden (fra import). `person.es_company_id` peker også hit.                                        |
+| `company_event`                              | Historikken til et selskap: dato med presisjon (`year`/`month`/`day`), type (`founded`, `funding`, `award`, `launch`, `acquired`, `bankrupt`, `dissolved`, `closed`, `other`), tekst, kilde og `confidence` (`high`/`medium`/`low`).                                                                                                                                                         |
+| `company_article`                            | «I media»: saker om et selskap. Lenke (normalisert, unik per selskap), tittel, utgiver, dato med presisjon (`published_at`, `published_precision`; uten dato sorteres saken sist), `paywall`, `mentions_es`, `source` (`import`/`member`/`admin`) og hvem som la den inn. Aldri teksten i saken.                                                                                             |
+| `quote`                                      | Sitater: tekst, taleren (`person_id`, og alltid navnet slik kilden skriver det i `speaker_name`), rolle, selskap, dato, kilde og `confidence` for hvem som sa det.                                                                                                                                                                                                                           |
+| `field_source`                               | Hvor et importert felt på en profil eller et selskap kom fra (`entity_type` + `entity_id`, felt, kilde, lenke, hentet, `confidence`), når eieren bekreftet det (`confirmed_at`) og når en admin så over det under Gjennomgang (`reviewed_at`). Uten fremmednøkkel; `@esaf/core` flytter og sletter radene ved sammenslåing og opprydding.                                                    |
+| `company_suggestion`                         | Forslag fra medlemmer til et selskap: `kind` `info` (bare feltene som endres, med verdien før og etter, i `changes`), `event` (en ny hendelse) eller `article` (en sak i media), valgfri kommentar, og status (`pending`/`accepted`/`rejected`/`withdrawn`) med hvem som behandlet det.                                                                                                      |
+| `company_link_request`                       | «Denne personen var med i selskapet»: personen, rollen (`founder`/`es`/`employee`), stilling og år, hvem som sa det, og status. Bare én åpen per person, selskap og rolle. Blir erfaring eller ES-selskap når personen bekrefter.                                                                                                                                                            |
+| `review_dismissal`                           | Mulige duplikater (selskaper eller personer) en admin har sagt at ikke er det samme, så de ikke foreslås igjen.                                                                                                                                                                                                                                                                              |
+| `cohort`                                     | Et kull, identifisert ved uteksamineringsåret, slik ES selv navngir kull: «ES 2024» startet høsten 2022.                                                                                                                                                                                                                                                                                     |
+| `person_cohort`                              | Tilknytning mellom person og kull, med type: `student`, `staff` eller `mentor`.                                                                                                                                                                                                                                                                                                              |
+| `cohort_representative`                      | Kullrepresentanter: kull, person, `start_year`, `end_year` (null betyr nåværende) og et notat som bare admins ser. Et kull kan ha flere samtidig, og vervene blir stående som historikk. Høyst ett nåværende verv per person og kull.                                                                                                                                                        |
+| `event_type`                                 | Typer arrangementer: `slug` (adressen, endres ikke), navn, flertall, beskrivelse og rekkefølge. ESAF-helgen (`esaf-helgen`) legges inn av migreringen og kan ikke slettes.                                                                                                                                                                                                                   |
+| `event`                                      | Arrangementene: type, navn («ESAF-helgen høst 2018»), `start_date`, valgfri `end_date`, `date_precision` (`day`, `semester` eller `year`), sted og beskrivelse. En type med arrangementer kan ikke slettes.                                                                                                                                                                                  |
+| `event_participation`                        | Hvem som var på hvilket arrangement, én rad per person og arrangement, med valgfri `role` (`organizer`, `speaker`, `volunteer`; null betyr deltaker, og `attended` lagres aldri), `source` (`self`, `admin` eller `import`) og et notat som bare admins ser.                                                                                                                                 |
+| `person_email`                               | Alle kjente e-postadresser for en person (registrering, kulliste, NTNU-mail, senere andre kilder). Brukes til å koble en konto til riktig profil. Vises aldri for andre medlemmer.                                                                                                                                                                                                           |
+| `membership`                                 | ESAFs avgjørelse om personen: `status` (`pending`/`active`/`inactive`) og `role` (`member`/`moderator`/`admin`/`owner`).                                                                                                                                                                                                                                                                     |
+| `invitation`                                 | Invitasjoner (`kind = invite`) og lenker for nytt passord (`password_reset`): e-postadressen lenken er bundet til, SHA-256 av tokenet (aldri tokenet selv), profilen den kobler til (eller personen den gjelder), rollen, hvem som laget den (null betyr operatør), `expires_at` (sju dager), `used_at` og `used_by_user_id`, og `revoked_at`. Se «Invitasjoner og lenker for nytt passord». |
+| `access_request`                             | Forespørsel om tilgang fra en konto med bekreftet e-post: navn, kull, valgfri LinkedIn og melding, og eventuelt profilen fra kullisten personen sier er dem. Status `open`, `approved` eller `rejected`.                                                                                                                                                                                     |
+| `import_record`                              | Hva `pnpm data:import` har tatt inn: type (selskap, felt, logo, hendelse, sak, person, bilde, sitat), SHA-256 av nøkkelen i datasettet (aldri navn i klartekst) og raden det ble. Gjør importen idempotent, også når noe er rettet eller slettet i appen etterpå.                                                                                                                            |
+| `audit_event`                                | Revisjonslogg: forespørsler, godkjenninger, roller, deaktiveringer, importer, adminredigering og moderering. Skrives aldri over.                                                                                                                                                                                                                                                             |
+| `post`, `comment`, `post_vote`               | Feeden. Tekst i Markdown. `edited_at` settes når forfatteren endrer innholdet, `pinned_at` når en moderator fester et innlegg, og `deleted_at` skjuler innhold uten å slette det.                                                                                                                                                                                                            |
+| `notification`                               | Varsler til ett medlem: type, hvem som utløste det, innlegget, kommentaren eller selskapet det gjelder, `read_at` og `emailed_at`. Unik `event_key` per mottaker hindrer doble varsler.                                                                                                                                                                                                      |
 
-**Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (opptaksår, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
+**Hvorfor kull er en egen enhet:** Et kull har egne egenskaper (årstall, senere kallenavn, syretester, kontaktperson). En person kan ha flere tilknytninger, for eksempel student i ett kull og mentor for et annet. Import, invitasjoner og oversikter skjer dessuten per kull. Et årstall på personen ville ikke dekket noe av dette.
 
-**Hvorfor innlogging ikke gir medlemsinnsyn:** Hvem som helst kan opprette en konto med en vilkårlig e-postadresse. At kontoen finnes, beviser ikke at personen er alumn. Medlemsinnsyn krever derfor bekreftet e-post **og** et aktivt medlemskap som ESAF har godkjent. Det holder rollene og medlemskapet i ESAFs eget domene, ikke i innloggingsleverandøren.
+**Hvorfor uteksamineringsår:** Kullistene, fanene i telefonlista og folk selv bruker uteksamineringsåret. ES 2024 gikk 2022–2024. Profilen viser begge («ES 2024 (2022–2024)»). Migrering `0006` flyttet eksisterende kull fra opptaksår til uteksamineringsår (+2).
+
+**Hvorfor selskap er en egen tabell:** Med selskapet som fritekst ble «Kahoot!» og «kahoot» to ting, og det fantes ikke noe sted å skrive hva selskapet gjør. Nå peker erfaring og ES-selskap på et `company`, så info skrives én gang og vises for alle. Migrering `0010` laget selskapene fra navnene som fantes: navn med samme slug ble ett selskap, og skrivemåten som var brukt flest ganger ble navnet. SQL-funksjonen `company_slug` i databasen er samme regel som `companySlug` i `@esaf/core`, og en test sjekker at de gir samme svar.
+
+**Hvorfor erfaring er en egen tabell:** Én person har ofte jobbet flere steder og startet flere selskaper. Med en liste kan man søke på tidligere arbeidsgivere, og selskapssiden kan vise både gründerselskaper og hvor alumni jobber. Stilling og selskap lå tidligere som to felt på personen. Migrering `0007` flyttet dem over.
+
+**Hvorfor innlogging ikke gir medlemsinnsyn:** Hvem som helst kan opprette en konto med en vilkårlig e-postadresse (når registrering er åpen). At kontoen finnes, beviser ikke at personen er alumn. Medlemsinnsyn krever derfor bekreftet e-post **og** et aktivt medlemskap som en admin har godkjent, enten ved å godkjenne en forespørsel eller ved å sende en invitasjon. Det gjelder også dem som står i kullisten: å kjenne en adresse fra lista gir ingenting, og selv en bekreftet adresse fra lista er bare et sterkt tegn som en admin vurderer. Det holder rollene og medlemskapet i ESAFs eget domene, ikke i innloggingsleverandøren.
+
+## Appen
+
+Appen er bygget etter mønster fra YC Bookface, med Tailwind CSS v4, Inter og Lucide-ikoner. Komponentene ligger i `apps/app/src/components/ui.tsx`. Appen har ingen egen forside, siden den offentlige siden er esaf.no (`apps/site`). `/` sender folk til innlogging, til steget de står på, eller til feeden.
+
+- **Feed** (`/feed`) med kanalene Spørsmål, Intro-forespørsler, Lanseringer, Jobber, Arrangementer og Generelt. Den kan sorteres på populært (stemmer og kommentarer veid mot alder, som Hacker News) eller nyeste. Innlegg kan få stemmer og kommentarer. Forfatteren kan slette, og moderatorer kan fjerne andres innhold (logges).
+- **Redigering:** Forfatteren kan redigere innlegget sitt (`/feed/:id/rediger`: kanal, tittel, tekst og lenke) og kommentarene sine. Da vises «redigert» med tidspunkt. Ingen andre kan redigere, heller ikke moderatorer og admins. De kan bare fjerne. Lagres uten endringer, merkes ingenting som redigert.
+- **Markdown** i innlegg og kommentarer: avsnitt og linjeskift, **fet**, _kursiv_, lenker (også nakne adresser), lister, kode, kodeblokker og sitater. Skrivefeltene har «Skriv» og «Forhåndsvis» og en linje med formateringshjelp. Teksten vises med `react-markdown` og `remark-gfm` som React-elementer, aldri som HTML-streng: rå HTML vises som tekst, bare `http(s)`- og `mailto`-lenker beholdes (med `rel="noopener noreferrer nofollow ugc"`), og bilder blir lenker, så eksterne bilder aldri lastes. Utdragene i feeden lages som ren tekst i `@esaf/core` (`markdownToPlainText`). Omtaler skrevet som `@[Navn](personId)` vises som lenke til profilen; `Markdown` tar `renderMention` for å vise dem annerledes.
+- **Festede innlegg:** Moderatorer og oppover (admins sterkt innlogget) kan feste og løsne innlegg. Festede innlegg står øverst i «Hjem» og i kanalen sin, sist festet først, merket «Festet». I søk, på profiler og på kullsider vises innleggene i vanlig rekkefølge. Festing og løsning logges (`content.pin_post`, `content.unpin_post`).
+- **Varsler og omtaler**, se under.
+- **Personer** (`/medlemmer`) er en katalog med søk, kullfilter, filter for verifiserte og de mest brukte emnene og bransjene som snarveier. Søket treffer også tidligere selskaper og stillinger.
+- **Kull** (`/kull`) viser alle kull med antall personer og hvor mange som har tatt i bruk profilen. Ditt eget kull er merket, og står også i sidekolonnen på forsiden. Hvert kull har en egen side (`/kull/2024` for ES 2024, som gikk 2022–2024) med kullrepresentantene øverst, personene, selskapene folk i kullet har grunnlagt eller hadde på ES, og de nyeste innleggene deres. Mentorer og ansatte vises for seg. Kullet på profiler og «Ditt kull» på forsiden lenker hit, og «Søk i kullet» går til katalogen filtrert på kullet. Ukjente årstall gir 404.
+- **Arrangementer** (`/arrangementer`, med ESAF-helgen som eget punkt under i menyen) viser alle typene med tall, en side per type med grafer over deltakere per arrangement og per kull, og en side per arrangement. Se «Kullrepresentanter og arrangementer».
+- **Selskaper** (`/selskaper`) viser selskaper startet av alumni, både ES-selskaper (fra «Selskap på Entreprenørskolen») og selskaper noen har grunnlagt (fra erfaring). «Alle selskaper» viser også arbeidsgivere. Oversikten kan søkes og filtreres på bransje (`?q=…&bransje=…`). Hvert selskap har en egen side (`/selskaper/:slug`) med historikk og «I media», se «Selskaper» under.
+- **Søk** med ⌘K (eller `/`) finner personer, selskaper og innlegg fra hvor som helst i appen.
+- **Forsiden** viser en velkomst med snarveier til profilen, kullet og første innlegg så lenge feeden er tom. I sidekolonnen står et tilfeldig sitat fra en ES-er (se «Sitater»).
+- **Admin** (`/admin`) med fanene Forespørsler, Invitasjoner, Gjennomgang, Medlemmer, Kullrepresentanter, Profiler, Arrangementer, Selskaper og Logg, se «Roller og rettigheter» og «Adminverktøy for data».
+- **Konto og sikkerhet** (`/konto`): passkeys (legge til, gi nytt navn, fjerne), tofaktor med autentiseringsapp, bytte passord (eller sette et, for kontoer som bare har passkey) og logge ut andre enheter. Innlogging (`/logg-inn`) med e-post og passord, eller med passkey: knappen «Logg inn med passkey», eller nettleserens forslag i e-postfeltet. Har noen glemt passordet, lager en admin en lenke for nytt passord (se «Invitasjoner og lenker for nytt passord»).
+- **Profiler og redigering**, se under.
+
+Ikke bygget ennå: direktemeldinger, varsler på e-post, medlemsfordeler og jobber som egen modul. Jobber er foreløpig en kanal i feeden.
+
+### Varsler og omtaler
+
+Klokka i toppen viser antall uleste varsler og de siste varslene. Et klikk åpner innlegget eller kommentaren og merker varselet som lest. `/varsler` viser alle, delt i i dag og tidligere, med «Merk alle som lest».
+
+- **Hvem får varsel:** forfatteren når noen kommenterer innlegget, alle som har kommentert et innlegg når noen kommenterer det igjen, den som blir nevnt med @ i et innlegg eller en kommentar, den som blir godkjent (velkomst), og de fra samme kull når noen fra kullet blir godkjent. For selskaper: gründerne, ES-teamet og de som jobber der nå når noen foreslår en endring, en hendelse eller en sak i media, den som foreslo når forslaget er godtatt eller avslått, den som er nevnt når noen sier at de var med i et selskap, og den som sa det når personen bekrefter. Selskapsvarsler leder til selskapssiden.
+- **Reglene** ligger i `packages/core/src/notifications.ts`: ingen får varsel om noe de selv gjorde, bare aktive medlemmer med egen konto får varsler, og én hendelse gir høyst ett varsel per person (unik `event_key` per mottaker). Nevner en kommentar forfatteren av innlegget, blir det ett varsel om omtalen. Varslene lages i samme transaksjon som kommentaren, innlegget eller godkjenningen.
+- **Slettet innhold:** varsler om slettede innlegg og kommentarer skjules og telles ikke som uleste. Tittel og utdrag hentes når varselet vises, så de alltid er oppdatert.
+- **Lest:** å åpne et varsel om et innlegg merker alle varslene om det innlegget som lest, siden siden viser alle kommentarene. Man ser og endrer bare sine egne varsler.
+- **Antall uleste** kommer med fra serveren ved hver navigering, og hentes på nytt hvert minutt mens fanen er synlig og når den blir synlig igjen. Ingen websockets.
+- **Omtaler:** skriv @ i et innlegg eller en kommentar for å få forslag. Lista styres med piltastene, Enter eller Tab velger, Esc lukker. Teksten lagres med `@[Kari Nordmann](<personId>)`, og vises som en lenke til profilen (bygget med React, aldri som HTML). Serveren skriver om alle omtaler før lagring: aktive medlemmer med konto får navnet fra profilen, alle andre blir vanlig tekst uten lenke og uten varsel. Maks 20 personer per tekst.
+- **E-post:** `notification.emailed_at` er klar for en senere e-postoppsummering av uleste varsler.
+
+## Profiler og katalog
+
+Hver person har en profilside (`/medlemmer/:id`) med erfaring (nåværende og tidligere selskaper, stilling, år og om personen grunnla selskapet), bransjer, by, kull, studieretning før ES, ES-selskap, kort bio, «kan hjelpe med» (opptil 10 emner) og kontaktinfo. «Min profil» i menyen går til din egen.
+
+- **Katalogen** (`/medlemmer`) kan søkes på navn, nåværende og tidligere selskaper og stillinger, bransjer, by, ES-selskap og ekspertise, og filtreres på kull. Søket ligger i URL-en (`?q=…&kull=…`), så det kan deles. Hele katalogen hentes én gang, og filtreringen skjer i nettleseren. Det holder fint for noen tusen personer.
+- **Redigering:** Eieren redigerer sin egen profil. Admin kan fylle ut og rette profilfelt for andre, for eksempel profiler fra kullisten. Slike endringer logges som `profile.admin_edit`.
+- **Kontaktinfo:** LinkedIn vises når den er fylt ut. E-post og telefon kommer stort sett fra kullisten (telefonlista) som alumni fylte ut selv for å dele med hverandre, og vises derfor for aktive medlemmer som standard, også på profiler ingen har tatt i bruk, med `mailto:`- og `tel:`-lenker og en kopieringsknapp. Hver person kan skjule e-post og telefon hver for seg («Vis for medlemmer» på profilen og i `/kom-i-gang`). Er et felt skjult, ser medlemmer «E-post skjult» eller «Telefon skjult» med en lås, men aldri verdien; finnes det ingen verdi, vises ingenting. Skjult kontaktinfo filtreres bort på serveren (`contactDetail` i `packages/core/src/profiles.ts`) og sendes aldri til nettleseren, heller ikke på profilsiden til eieren eller en admin. Katalogen, kullsidene og søket viser ikke kontaktinfo.
+- **Admin og kontaktinfo:** Admin endrer aldri andres e-post eller telefon. På en profil ingen har tatt i bruk, ser admin verdiene fra kullisten i redigeringen (også skjulte, merket som skjult) og kan skjule eller vise dem; det logges som `profile.admin_edit` med `details.visibility`. Når profilen er tatt i bruk, bestemmer bare personen selv, og admin ser ikke kontaktinfoen der. Under forespørsler om tilgang ser admin nummeret fra telefonlista for å ringe og sjekke, med en lås når det er skjult for medlemmer.
+- **Synlighet i databasen:** `person.contact_email_visible` og `person.phone_visible` er `true` som standard, så `false` betyr alltid at feltet er skjult med vilje. Importene setter aldri synligheten, så et valg blir stående. Migrering `0022_contact_visible_by_default` gjorde feltene synlige på alle profiler uten konto og på profiler med konto som kom fra importen (det fantes ingen registrering av om noen hadde valgt å skjule); profiler fra egen registrering ble ikke endret.
+- **Stikkord** (emner og bransjer) med bare små bokstaver får stor forbokstav, så «strategi» og «Strategi» blir samme emne.
+- **Validering** ligger i `profileInput` i `@esaf/core`, så MCP senere kan bruke den samme.
+- **Profilbilder:** se under. Uten bilde vises initialer.
+- **Sitater** fra personen vises på profilen (se «Selskaper»).
+- **Kilder:** Felt som er importert (f.eks. bio fra entreprenorskolen.no eller studieretning fra kullisten) og som ingen har bekreftet, får et diskret merke under feltet: «Fra entreprenorskolen.no · ikke bekreftet». Eieren ser en stripe øverst med «Stemmer, bekreft alt» og en «Stemmer»-knapp per felt. Skriver eieren om et felt, regnes det også som bekreftet (`confirmed_at`); felt eieren ikke rører, forblir ubekreftet. Retter en admin feltet, gjelder ikke kilden lenger, og den slettes (endringen står i loggen). Medlemmer ser kilden og om den er bekreftet; bare admins ser hvor sikker den er. E-post og telefon har aldri kilder i appen, så kildene kan ikke røpe skjult kontaktinfo. Reglene ligger i `packages/core/src/sources.ts`.
+
+## Profilbilder
+
+Medlemmer laster opp, bytter og fjerner sitt eget bilde under «Rediger profil» (og i siste velkomststeg). Admins med `profiles.edit` kan gjøre det samme for aktive medlemmer og profiler fra kullisten, og fjerne hvem som helst sitt bilde. Det logges som `profile.admin_photo_upload` og `profile.admin_photo_remove`. Reglene ligger i `packages/core/src/photos.ts`.
+
+- **Behandling:** JPEG, PNG og WebP opptil 10 MB. Filtypen avgjøres av innholdet, ikke filnavn eller MIME-type, og bildebiblioteket (sharp) har bare dekoderne for disse tre slått på. Bildet roteres etter EXIF, all metadata fjernes (EXIF med GPS, XMP, IPTC og fargeprofil), det beskjæres til kvadrat fra midten og lagres som WebP i 512 og 192 piksler. Bilder under 128 piksler eller over 100 megapiksler avvises.
+- **Nøkler:** Hvert bilde får en ny tilfeldig nøkkel (`person.photo_key`), og de gamle filene slettes når bildet byttes eller fjernes. Feiler slettingen, logges det, og fila serveres uansett ikke lenger.
+- **Visning:** `GET /api/bilder/<nøkkel>-<størrelse>.webp` krever aktivt medlemskap (401 uten innlogging, 404 for ukjente eller utgåtte nøkler) og svarer med `Cache-Control: private, max-age=31536000, immutable`. Bøtta skal aldri være offentlig.
+- **Opplasting:** `PUT` og `DELETE` på `/api/medlemmer/<personId>/bilde`, med bildet som body. Størrelse og tilgang sjekkes før fila leses inn, og forespørsler fra andre nettsteder avvises.
+
+| Variabel                                                               | Hva                                                                                                                                  |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | S3-kompatibel lagring, f.eks. Cloudflare R2 (`https://<konto-id>.r2.cloudflarestorage.com`). Alle eller ingen. Påkrevd i produksjon. |
+| `S3_REGION`                                                            | Valgfri, standard `auto` (R2).                                                                                                       |
+| `UPLOAD_DIR`                                                           | Bare utvikling: mappe for bildene når S3 ikke er satt. Standard `.data/uploads` i roten av repoet (gitignorert).                     |
+
+Produksjonsserveren starter ikke uten S3-variablene; det er ingen stille overgang til disk. For R2: lag en privat bøtte og et API-token med «Object Read & Write» for bare den bøtta.
+
+## Selskaper
+
+Selskapssiden (`/selskaper/:slug`) viser navn, kort beskrivelse, status (aktiv, oppkjøpt, nedlagt, ukjent status), nettside, grunnlagt, sted, bransjer og «om selskapet». Under «Fra ES» står gründerne, ES-teamet (med kull), de som jobber der nå og de som har jobbet der, med stilling og år, og lenker til profilene. Bare aktive medlemmer vises.
+
+- **Redigering:** Gründere (også tidligere), ES-teamet og de som jobber der nå kan redigere selskapsinfoen, og admins med `profiles.edit`. Tidligere ansatte og andre medlemmer kan ikke, men kan foreslå endringer (se under). Admins som ikke selv er knyttet til selskapet, logges som `company.admin_edit`. Validering ligger i `companyInput` i `@esaf/core`; nettsider må være http eller https.
+- **«Jeg var med her»:** Alle aktive medlemmer kan legge seg selv til i et selskap som gründer, ES-team eller ansatt (stilling og år, nå eller før). Det gjelder dem selv, så det lagres med en gang som erfaring eller ES-selskap, som på profilen, og importerte kilder for feltet regnes som bekreftet. Som gründer, ES-team eller ansatt nå kan de da redigere selskapet. «Fjern meg herfra» fjerner all erfaring der og ES-selskapet; et selskap som bare fantes fra et navn og som ingen lenger er knyttet til, ryddes bort. Har man allerede et annet ES-selskap, må det endres på profilen.
+- **Forslag:** Medlemmer som ikke kan redigere, får «Foreslå endring» (`/selskaper/:slug/foresla`, samme skjema som redigeringen, bare feltene som endres lagres), «Foreslå hendelse» i historikken og «Foreslå sak» under «I media», med valgfri kommentar. De som kan redigere, ser åpne forslag øverst på selskapssiden med verdien nå og den foreslåtte, og godtar eller avslår; admins ser dem også under Gjennomgang. Et godtatt forslag lagres som om den som godtok, hadde gjort endringen selv (navnebytte gir alias, kildene bekreftes eller glemmes); en godtatt sak lagres med den som foreslo den, og står saken der allerede, blir det ingen dobbel. Den som foreslo, ser egne forslag på siden og kan trekke dem, og ingen behandler sine egne. Admins uten tilknytning logges (`company.admin_suggestion_accept`, `company.admin_suggestion_reject`). Grenser: høyst 3 åpne forslag per selskap, 10 åpne totalt og 20 nye i døgnet per medlem.
+- **Andre personer:** «Legg til en person» lar et medlem si at en annen var med (gründer, ES-team eller ansatt). Det blir en forespørsel personen må bekrefte («Stemmer» / «Stemmer ikke») med varsel, på selskapssiden og øverst på egen profil, og den vises ikke for andre før den er bekreftet. Den som spurte, ser forespørselen som «venter på bekreftelse» og kan trekke den. For profiler ingen har tatt i bruk, kan admins bekrefte under Gjennomgang; admins kan avslå alle. Begge logges (`company.admin_link_accept`, `company.admin_link_reject`). Grenser: høyst 20 åpne og 20 nye i døgnet per medlem.
+- Reglene for bidrag ligger i `packages/core/src/contributions.ts`.
+- **Logo:** Lastes opp, byttes og fjernes øverst på redigeringssiden, av de samme som kan redigere selskapsinfoen. Admins som ikke er knyttet til selskapet, logges som `company.admin_logo_upload` og `company.admin_logo_remove`. Samme filtyper og grenser som profilbilder (se «Profilbilder»), men logoen beskjæres aldri: den skaleres inn i et kvadrat, gjennomsiktighet beholdes, og den lagres som WebP i 256 og 64 piksler under `logoer/` (`company.logo_key`, ny nøkkel per opplasting, gamle filer slettes). SVG avvises. `GET /api/logoer/<nøkkel>-<størrelse>.webp` har samme tilgang og caching som bildene; opplasting er `PUT` og `DELETE` på `/api/selskaper/<companyId>/logo`. Uten logo vises en bokstavflis. Reglene ligger i `packages/core/src/logos.ts`.
+- **Nytt navn** gir ny slug. Den gamle blir et alias, så gamle lenker sendes videre og den gamle skrivemåten kobles fortsatt til selskapet. Et navn som tilhører et annet selskap, avvises.
+- **Erfaring:** Selskapsfeltet i profilen og velkomststegene foreslår selskaper som finnes mens man skriver. Et valgt forslag kobles på id. Skriver man et navn, kobles det til selskapet med samme slug («kahoot» blir «Kahoot!»), ellers blir det et nytt selskap. Et selskap som bare ble laget fra et navn og som ingen lenger er knyttet til (for eksempel en rettet skrivefeil), ryddes bort. Importen fra kullisten kobler selskaper på samme måte.
+- **Duplikater:** «Statkraft AS» og «Statkraft» er to slugger. Forslagene viser «Statkraft» når man skriver «Statkraft AS», og en admin kan slå dem sammen nederst på redigeringssiden eller fra Gjennomgang. Erfaring, ES-team, historikk, saker i media (uten doble), sitater, forslag, forespørsler og varsler flyttes, tomme felt fylles fra duplikatet, og duplikatets slug blir et alias. Har bare duplikatet logo, flyttes den; har begge, beholdes logoen til selskapet det slås sammen med. Logges som `company.merge`.
+- **Søk:** ⌘K finner selskaper uansett skrivemåte og går til selskapssiden.
+- **Ukjent status:** Standard i databasen og for selskaper fra import (kullisten, berikelse), der ingen har sagt om selskapet lever. Skriver et medlem inn et nytt selskap under erfaring, blir det `active` som før: de vet at det finnes (`resolveCompanies(…, { status })`). Eksisterende selskaper beholdt statusen sin i migrering `0015`. Har selskapet ukjent status, viser siden «Sist nevnt på ES-siden 2016» fra `last_seen_on_es_site`. Oversikten kan filtreres på status (`?status=unknown`).
+- **Historikk:** Hendelser (grunnlagt, kapital, priser, lanseringer, oppkjøp, konkurs, oppløst, lagt ned), nyeste først, med kildelenke i ny fane. De samme som kan redigere selskapsinfoen, kan legge til, rette og slette dem; admins som ikke er knyttet til selskapet, logges som `company.admin_event_add`, `company.admin_event_edit` og `company.admin_event_remove`. Hendelser med lav sikkerhet fra import (setninger hentet automatisk fra nyhetssaker) vises bare for dem som kan redigere, under «Til gjennomgang»; «Stemmer» eller en redigering gjør dem synlige for alle. Reglene ligger i `packages/core/src/company-events.ts`.
+- **I media:** Saker om selskapet i aviser og på nettsteder, nyeste først og de uten dato sist. Tittelen lenker til saken i ny fane (`rel="noopener noreferrer"`), med utgiver (eller domenet), dato, «Betalingsmur» og et lite «Nevner ES»-merke. De fem første vises, resten med «Vis alle». Bare lenken, tittelen, utgiveren, datoen og merkene lagres, aldri teksten i saken. De samme som kan redigere selskapsinfoen, legger til, retter og fjerner saker; admins som ikke er knyttet til selskapet, logges som `company.admin_article_add`, `company.admin_article_edit` og `company.admin_article_remove`. Andre medlemmer foreslår saker (se «Forslag»). Lenken må være http eller https (uten protokoll blir den https); `#`-del og sporingsparametre (`utm_…`, `fbclid` …) fjernes, og samme sak kan bare stå én gang per selskap, også med eller uten «www.», skråstrek til slutt og parametrene i en annen rekkefølge. Reglene ligger i `packages/core/src/company-articles.ts`; tabellen kom i migrering `0020_media_import`, sammen med `import_record`.
+- **Sitater** om selskapet eller fra folk i det vises på selskapssiden, sitater fra en person på profilen, og et tilfeldig sitat på forsiden (helst sikkert, fra et medlem og kort). Bare aktive medlemmer vises som talere. Sitater der det er usikkert hvem som sa det (`confidence = low`), skjules for medlemmer; admins ser dem merket «Usikker taler». Admins retter og sletter sitater (`quote.edit`, `quote.remove`), og den som er sitert, kan fjerne sine egne. Reglene ligger i `packages/core/src/quotes.ts`.
+- **Kilder:** «Kilder» nederst i sidekolonnen viser hvor hvert importert felt kom fra, når det ble hentet og om det er bekreftet. De som er knyttet til selskapet, bekrefter feltene de endrer; endrer en admin uten tilknytning dem, slettes kilden. Bare admins ser hvor sikker kilden er. Kildelenker som ikke er http eller https, sendes aldri til nettleseren.
+
+## Adminverktøy for data
+
+Krever `profiles.edit` (admins, sterkt innlogget). Alt som endrer noe, logges. Forslag, forespørsler, avviste duplikater og `field_source.reviewed_at` kom i migrering `0017`.
+
+- **Gjennomgang** (`/admin/gjennomgang`): alt som er usikkert, samlet ett sted, med antallet i fanen. Delene er forslag fra medlemmer, tilknytninger til profiler uten konto, hendelser og sitater med lav sikkerhet fra import, importerte felt ingen har bekreftet eller sett over (samlet per person og selskap), og mulige duplikater. Hver sak har godkjenn, rediger (lenke eller dialog) og forkast, med ett klikk der det er trygt, og sider på 20.
+  - Hendelser: «Stemmer» gjør dem synlige (`company.admin_event_confirm`). Sitater: «Riktig taler» (`quote.confirm`).
+  - Importerte felt: «Ser riktig ut» per felt eller for hele personen eller selskapet setter `reviewed_at` (`source.review`). Det er ikke en bekreftelse fra eieren, så profilen viser fortsatt «ikke bekreftet» til personen selv bekrefter. «Fjern» tømmer et felt som er feil, og kildene for det (`profile.admin_clear_field`, `company.admin_clear_field`); bilde, logo, navn og erfaring rettes på redigeringssiden. Kontaktinfo er aldri med.
+  - Like selskaper: samme navn uten selskapsform («Statkraft AS» og «Statkraft»), nesten lik slug (én bokstav, for navn på minst seks tegn) eller samme nettside (ikke delte nettsteder som LinkedIn). Organisasjonsnummer lagres ikke ennå, så det brukes ikke.
+  - Like personer: samme navn (uten aksenter og store bokstaver) og kull innenfor ett år eller uten kull, samme fornavn og etternavn med ulike mellomnavn, samme e-post (også Gmail-varianter og kontaktadressen) eller samme LinkedIn.
+  - Duplikater slås sammen med ett klikk og en bekreftelse, eller avvises med «Ikke samme» (`review.dismiss_duplicate`), og foreslås da ikke igjen. Reglene ligger i `packages/core/src/review.ts`.
+- **Selskaper** (`/admin/selskaper`): alle selskaper, også dem ingen er knyttet til, med søk, filter (status med ukjent, uten logo, beskrivelse, personer eller historikk, ES-selskap, kull), sortering og snarveier til redigering og sammenslåing. «Nytt selskap» oppretter for hånd (`company.create`); navn som finnes, også som tidligere navn, avvises. Sletting (`company.delete`) av et selskap noen er knyttet til, krever at admin krysser av for at koblingene fjernes fra profilene og skriver en begrunnelse; historikk, saker i media, kilder, forslag og logo slettes, og sitater beholdes uten selskap. Reglene ligger i `packages/core/src/company-admin.ts`.
+- **Profiler** (`/admin/profiler`): alle personer, med og uten konto, også ventende og deaktiverte, med søk og filter. «Ny profil» lager en profil som fra kullisten, med navn, kull og kjente e-postadresser, og viser personer med samme navn og nære kull før den lages (`profile.create`, `person.source = admin`). Det gir aldri tilgang til noen konto.
+- **Redigering av en person** (`/medlemmer/:id/rediger`): admins ser i tillegg «Bare for admins» med kull og tilknytning (student, ansatt, mentor; `profile.admin_cohorts`), kjente e-postadresser (`person_email`; `profile.admin_email_add`, `profile.admin_email_remove`; adressen kontoen logger inn med kan ikke fjernes, og adressene vises aldri for andre medlemmer) og «Slå sammen duplikat». Erfaring og ES-selskap rettes i skjemaet over, som før.
+- **Sammenslåing av personer** (`person.merge`) flytter erfaring (like rader én gang), kull, e-post, verv som kullrepresentant, deltakelse på arrangementer (rollen og notatet fra duplikatet tas med når den som beholdes ikke har noen), sitater, kilder for feltene som hentes, innlegg, kommentarer, stemmer, varsler, forslag, forespørsler og pekere i forespørsler om tilgang, og fyller tomme felt fra duplikatet. Har én av dem konto, er det den som beholdes, og kontaktinfoen dens røres ikke. Ellers fylles tom e-post og telefon fra duplikatet, og er feltet skjult på én av dem, blir det skjult på den som beholdes. To kontoer slås aldri sammen. Revisjonsloggen peker etterpå på personen som ble beholdt, og hendelsen `person.merge` sier hvem som ble slått sammen. Reglene ligger i `packages/core/src/people-admin.ts`.
+
+## Kullrepresentanter og arrangementer
+
+Migrering `0018` la til kullrepresentanter og ESAF-helgen; `0019_events` gjorde ESAF-helgen om til generelle arrangementer (se under), og `0021_event_date_precision` la til `event.date_precision`. Reglene ligger i `packages/core/src/cohort-reps.ts`, `events.ts`, `event-history.ts`, `event-import.ts`, `rep-import.ts`, `person-match.ts` og `spreadsheet.ts`.
+
+**Kullrepresentanter** er dem styret snakker med, og som sender videre til kullet sitt. Et kull kan ha flere, og vervet har en historikk (fra- og til-år; uten til-år er det nåværende).
+
+- **Hvor det vises:** øverst på kullsiden (nåværende som kort, «Tidligere kullrepresentanter» med årene under), som merke på profilen («Kullrepresentant ES 2024», og tidligere i en roligere stil: «Kullrepresentant ES 2019, 2019–2022»), og som et lite merke («Kullrep. ES 2024») på personkortene i katalogen og på kullsidene og i ⌘K-søket. Perioder som henger sammen, slås sammen på profilen, og tidligere verv i et kull personen fortsatt representerer, vises ikke der. Bare aktive medlemmer vises.
+- **Admin → Kullrepresentanter** (`/admin/kullrepresentanter`, krever `members.manage`, sterkt innlogget): alle kull, nyeste først, med nåværende og tidligere representanter og filteret «Mangler representant». Legg til (personene i kullet foreslås, eller søk på navn), avslutt (til og med år), rediger år og notat, og slett verv som ble lagt inn ved en feil. Notatet vises bare for admins. Kullsiden har «Endre» for admins.
+- **Fra et annet kull:** vanligvis er representanten fra kullet selv. En person fra et annet kull kan settes når admin krysser av for at det er riktig; serveren avviser det ellers. Det står i loggen og vises som «Annet kull» for admins.
+- **Import fra regneark** (`/admin/kullrepresentanter/import`): se «Import fra regneark» under.
+- **Logges** som `cohort.rep_add`, `cohort.rep_edit`, `cohort.rep_end`, `cohort.rep_remove` og `cohort.rep_import`.
+
+**Arrangementer** er det ESAF har holdt, og hvem som var der. ESAF-helgen (samlingen for alumni, som regel én gang i året, noen år én per semester) er den første typen; admins kan legge til flere, f.eks. «Generalforsamling» eller «Fagkveld».
+
+- **Fra ESAF-helgen:** migrering `0019_events` la til `event_type`, `event` og `event_participation`, la inn typen ESAF-helgen, flyttet helgene og oppmøtet over med samme id-er og kilde, og slettet `esaf_weekend` og `esaf_weekend_attendance`. Gamle adresser sendes videre: `/esaf-helgen` til `/arrangementer/esaf-helgen` og `/esaf-helgen/:id` til arrangementet med samme id. Gamle hendelser i loggen (`weekend.*`) vises fortsatt, med lenke.
+- **Oversikten** (`/arrangementer`) viser alle typene med antall arrangementer og personer, ESAF-helgen først og størst. I menyen står «Arrangementer» med «ESAF-helgen» rett under. Kanalen i feeden heter nå «Arrangementsinnlegg» i menyen, så de to ikke forveksles, og de lenker til hverandre.
+- **Siden for en type** (`/arrangementer/esaf-helgen`) viser en stolpegraf over deltakere per arrangement (eldste til venstre, verdien ved hover og fokus), hvor mange fra hvert kull som har vært med minst én gang, og alle arrangementene med antall deltakere og roller. Grafene er vanlig HTML og CSS, og tallene står også i listen.
+- **Siden for et arrangement** (`/arrangementer/:type/:id`) viser dato, sted, beskrivelse og deltakerne gruppert etter kull (det laveste studentkullet, ellers laveste kull, ellers «Uten kull»), med arrangører, foredragsholdere og frivillige først og merket. Bytter et arrangement type, sendes den gamle adressen videre.
+- **Roller:** alle med en rad var med. Rollen er valgfri: arrangør, foredragsholder eller frivillig; uten rolle er man deltaker.
+- **«Jeg var der»:** et medlem legger til eller fjerner seg selv, med en gang, siden det gjelder dem selv. Det logges ikke, som «Jeg var med her» på selskaper. Deltakelse kan bare registreres når arrangementet har startet; kommende står som «Kommer».
+- **Profilen** viser én linje per type, f.eks. «ESAF-helgen: deltatt 5 ganger, arrangert 2», og arrangementene med rollen og lenke til hvert.
+- **Telling:** bare aktive medlemmer vises og telles for medlemmer. Admins ser også deltakere som ikke er aktive, merket, hvordan de kom på lista og notatet.
+- **Admins** (`profiles.edit`, sterkt innlogget) styrer typene under Admin → Arrangementer (adressen lages fra navnet og endres ikke; en type med arrangementer, og ESAF-helgen, kan ikke slettes), og retter, flytter og sletter arrangementer på siden for arrangementet. «Nytt arrangement» og «Legg inn historikk» står på `/arrangementer`, på siden for hver type (med typen valgt, og i den tomme siden for en type uten arrangementer) og under Admin → Arrangementer. Etter «Opprett» kommer admin til arrangementet, med en grønn boks som forklarer hvordan deltakere og roller legges til.
+- **Datoer for gamle arrangementer:** skjemaet har «Dato», «Semester» og «Bare år». Med semester eller år lagres `start_date` som første dag i perioden (1. januar for vår og år, 1. juli for høst) uten sluttdato, og datoen vises som «Høst 2018» eller «2015» (`eventWhen` i `apps/app/src/lib/events.ts`). Normaliseringen skjer i `eventInput` i `@esaf/core`, og en sjekk i databasen (`event_date_precision`) holder datoene i tråd med presisjonen. Navnet foreslås fra typen og perioden («ESAF-helgen høst 2018») til admin skriver et eget. Fortidige datoer er alltid lov; bare deltakelse krever at arrangementet har startet.
+- **«Legg inn historikk»** (`event-history.ts`): velg type, fra og til år, og hvor ofte (hver høst, hver vår, vår og høst, eller én gang i året uten semester), eventuelt et sted for alle. Forhåndsvisningen viser hver periode som «Lages», «Finnes allerede» (samme navn for typen, uten forskjell på store og små bokstaver; hoppes alltid over), «Et annet i samme periode» (ikke valgt, kan krysses av) eller «Har ikke vært ennå» (kan ikke lages). Opprettingen skjer i én transaksjon som låser typen og sjekker navnene på nytt, så samme valg to ganger gir ingen duplikater. Høyst 100 om gangen, fra 1990.
+- **Uten sterk innlogging** skjules ikke adminverktøyene i stillhet: `/arrangementer`, siden for typen og siden for arrangementet viser en gul boks (`StrongAuthCallout`) med «Logg inn med passkey» (eller lenke for å sette opp passkey eller tofaktor) der verktøyene ellers står.
+- **Importen** lager arrangementer med semester- eller årspresisjon når overskriften bare har det («Høst 2018», «2015»), og et arrangement med bare årstall matcher begge semestrene det året. Deltakere legges til én og én (søk), som et helt kull (alle aktive medlemmer som gikk i kullet som studenter), fra en innlimt liste eller fra et regneark, eventuelt med en rolle. Blyanten på hver deltaker endrer rolle og notat, og krysset fjerner dem.
+- **Innlimt liste:** én person per linje (eller adskilt med semikolon): navn, e-post eller begge, gjerne med årstall («Kari Nordmann 2019», «Nordmann, Kari»). E-post matches mot kjente adresser og kontaktadressen (Gmail-varianter regnes som samme adresse), navn med `normalizePersonName` (uten store bokstaver, aksenter og tegn), og årstallet skiller mellom folk med samme navn. Samme fornavn og etternavn med ulike mellomnavn blir bare et forslag. Forhåndsvisningen viser hver linje som funnet, flere mulige, mulig treff, ikke funnet, allerede registrert eller samme som en linje over; uklare linjer velges for hånd eller med søk, og ingenting lagres før admin trykker «Legg til». Høyst 500 linjer om gangen.
+- **Logges** som `event_type.create`, `event_type.edit`, `event_type.delete`, `event.create`, `event.edit`, `event.delete`, `event.participant_add` (med kilde, rolle, antall og personene), `event.participant_edit` (rolle fra og til), `event.participant_remove`, `event.import` og `event.history` (én per «Legg inn historikk», med type, antall laget og hoppet over og årene; hvert arrangement logges i tillegg som `event.create` med `via: 'history'`).
+
+### Import fra regneark
+
+Under Admin → Arrangementer → Importer (`/admin/arrangementer/import`, `profiles.edit`) og Admin → Kullrepresentanter → Importer fra regneark (`/admin/kullrepresentanter/import`, `members.manage`). Fila (.xlsx eller .csv, høyst 5 MB og 5000 rader per fane) leses på serveren med exceljs eller csv-parse og lagres aldri; den sendes på nytt for hvert steg. CSV kan ha komma, semikolon eller tab, og være UTF-8 eller Windows-1252 (Excel). Gamle .xls avvises med en forklaring.
+
+1. **Forhåndsvisning:** hvordan arket er lest, hvilke kolonner som er brukt, og hver person og hvert arrangement med treffet. Personer matches som i den innlimte lista (e-post, så navn, med kullet fra arket som skiller). Samme person på flere rader står én gang.
+2. **Avklaring:** uklare personer velges fra forslagene eller med søk, eller hoppes over, eller får en ny profil (navn, e-post, kull og status, logget som `profile.create`). Sikre treff er valgt; resten hoppes over til admin velger.
+3. **Se over endringene:** en prøvekjøring i en transaksjon som rulles tilbake, så tallene og endringene er nøyaktig det som blir lagret.
+4. **Lagre:** alt i én transaksjon, med kilde `import`.
+
+**Deltakelse.** Oppsettet gjettes, og admin kan rette det:
+
+- **Matrise:** én rad per person og én kolonne per arrangement, f.eks. `Navn | E-post | Kull | Høst 2018 | Vår 2019`. En celle med innhold betyr at personen var der: «x», «✓», «ja», «1» → deltaker; «arr», «arrangør», «org» → arrangør; «foredrag», «taler» → foredragsholder; «frivillig», «hjelper» → frivillig; «nei», «0», «-» → ikke med. Ukjente verdier regnes som deltaker og merkes; tabellen over verdiene lar admin bestemme hva hver betyr. Kolonner som ser ut som arrangementer (årstall, dato, «H18», eller mest kjente verdier) velges; kjente profilkolonner som telefon og LinkedIn hoppes over, og admin kan krysse av selv.
+- **Én fane per arrangement:** fanenavnet er arrangementet («ESAF-helgen høst 2018»), og hver rad en person, gjerne med `Rolle` og `Notat`. Faner uten overskrifter leses som den innlimte lista. En CSV er én fane med filnavnet.
+- **Én rad per deltakelse:** `Navn | E-post | Arrangement | Dato | Rolle`.
+
+Arrangementene matches mot dem som finnes: navn, så dato (innenfor fra–til), så år og semester («Høst 2018», «V19», «2015») innen den valgte typen (standard ESAF-helgen). Mangler et, kan admin velge et annet, hoppe over, eller opprette det med type, navn og datoer (foreslått fra overskriften; gjettede datoer merkes). Arrangementer som ikke har startet, stopper importen. Samme fil to ganger gir ingen nye rader: kjente deltakere står som uendret, en ny rolle vises som en endring, og en deltakelse uten rolle tar aldri bort en rolle som står. Står samme person flere ganger på samme arrangement, vinner den viktigste rollen (arrangør, foredragsholder, frivillig, deltaker).
+
+**Kullrepresentanter:** `Kull | Navn | E-post | Fra | Til | Notat`. Kullet kan være «2019», «ES 2019» eller fanenavnet («ES 2019»), og `Periode` («2019–2022», «siden 2021», «til 2018») kan erstatte fra og til. Et verv kjennes igjen på kull, person og fra-år (et nåværende verv uten fra-år er det nåværende vervet); finnes det, rettes årene og notatet (et tomt notat i arket fjerner ikke et som står), ellers legges det til. Representanter fra et annet kull merkes «Annet kull» før lagring. Kull som mangler, lages.
 
 ## Profiler og import av kullisten
 
@@ -83,69 +263,229 @@ ESAF kan legge inn alle fra kullisten som **profiler** før de har registrert se
 - **✓ Verifisert:** personen har registrert seg, bekreftet e-postadressen og tatt i bruk profilen.
 - **Profil:** lagt inn av ESAF fra kullisten. Personen har ikke tatt den i bruk ennå.
 
-### Krav på profilen
+### Veien inn: invitasjon, eller forespørsel og godkjenning
 
-Når noen registrerer seg og bekrefter en e-postadresse som står på en profil, kobles kontoen automatisk til profilen. Personen arver da kull og medlemskap, og navnet fra kullisten beholdes. Dette skjer bare etter bekreftet e-post, så å registrere seg med andres adresse er ikke nok. Hvert krav logges som `profile.claim`.
+Ingen får tilgang automatisk. Det finnes to veier inn, og begge krever en avgjørelse fra en admin.
 
-Står personen i arket med en gammel adresse (f.eks. studentadresse), blir kontoen ventende. Admin kan da velge **Koble til eksisterende profil** på `/admin`, søke opp riktig profil og koble kontoen. Den tomme personen fra registreringen slettes, og koblingen logges som `profile.link`.
+**Invitasjon** (alltid tilgjengelig, og den eneste veien uten e-postleverandør). En admin lager en invitasjon under Admin → Invitasjoner: e-postadresse, eventuelt profilen fra kullisten (profiler med samme adresse foreslås), og rolle. Lenken vises én gang, med en ferdig melding å sende, for eksempel på SMS. Personen åpner lenken (`/invitasjon/…`), ser hvem som inviterte og hvilken adresse invitasjonen gjelder, skriver inn navnet (hvis ingen profil er valgt) og velger passord eller passkey. Da lages kontoen med bekreftet e-post, den kobles til profilen, medlemskapet blir aktivt med rollen, og personen er logget inn og havner på velkomststegene (`/kom-i-gang`). Har adressen allerede en konto, logger personen inn og tar imot invitasjonen med den. Se «Invitasjoner og lenker for nytt passord» for reglene.
+
+**Forespørsel og godkjenning** (bare med e-postleverandør, `EMAIL_PROVIDER`). Uten e-postleverandør er registrering stengt på serveren, og `/registrer` sier at tilgang skjer med invitasjon fra styret. Med e-post er veien fire steg:
+
+1. **Opprett konto** (`/registrer`) med bare e-post og passord. Siden svarer likt om adressen allerede har en konto, så den kan ikke brukes til å sjekke hvem som er registrert.
+2. **Bekreft e-posten.** Det beviser at personen leser den innboksen, ikke bare kjenner adressen.
+3. **Hvem er du?** (`/velkommen`). Står kontoens bekreftede adresse på en profil i kullisten, får personen spørsmål om det er dem. Ellers oppgir de navn og kull. Søkere ser aldri andres data, bare profilen med sin egen adresse. LinkedIn og en melding til styret er valgfritt.
+4. **En admin godkjenner** (`/admin`). For hver forespørsel vises hva som faktisk er bekreftet. En bekreftet adresse som står på den valgte profilen i kullisten, er et sterkt tegn. Navn, kull, telefon og LinkedIn kan alle med lista skrive inn, så de vises som informasjon, ikke som bevis. Uten sterkt tegn viser kortet profiler med likt navn og telefonnummeret fra lista, så admin kan ringe og spørre. Admin kan koble kontoen til en annen profil, godkjenne den som ny person i oppgitt kull, eller avslå. Avslåtte kan ikke sende på nytt, men må kontakte styret.
+
+Ved godkjenning med profil kobles kontoen til profilen. Personen arver kull, og navnet fra kullisten beholdes. Den tomme personen fra registreringen slettes. Alt logges (`access.request`, `access.approve`, `access.reject`).
+
+**Velkomst etter godkjenning** (`/kom-i-gang`): første gang et nytt medlem kommer inn, får de fire korte steg. Først hva de jobber med, så hva de kan hjelpe med og hvilke bransjer de kjenner. Så e-post og telefon fra kullisten, med «Vis for medlemmer» slått på; personen kan rette dem eller slå av visningen. Til slutt et bilde. Alt kan hoppes over.
 
 ### Import
 
-Eksporter arket fra Google Sheets (Fil → Last ned → Kommaseparerte verdier). Filen bør ikke ligge i repoet. Deretter:
+Importen leser Excel-fila med telefonlista direkte (`.xlsx`), eller en CSV. Fila inneholder persondata og skal ikke ligge i repoet (`*.csv` er gitignorert; legg `.xlsx` utenfor repoet).
 
 ```sh
-pnpm profiles:import --fil ~/Downloads/kulliste.csv --kull-er opptak          # forhåndsvisning
-pnpm profiles:import --fil ~/Downloads/kulliste.csv --kull-er opptak --apply  # skriver til databasen
+pnpm profiles:import --fil ~/Downloads/telefonliste.xlsx          # forhåndsvisning
+pnpm profiles:import --fil ~/Downloads/telefonliste.xlsx --apply  # skriver til databasen
 ```
 
-- **Kolonner:** Navn (eller fornavn og etternavn) og kull er påkrevd. E-post er valgfri, men trengs for automatisk krav. Vanlige overskrifter som «Navn», «Fullt navn», «E-post» og «Kull» kjennes igjen. Andre kan oppgis med `--kolonne navn="…"`, `--kolonne epost="…"` og `--kolonne kull="…"`. Kolonner som ikke brukes, listes i forhåndsvisningen og importeres ikke.
-- **Kull:** Det første firesifrede årstallet i cellen brukes. `--kull-er` er påkrevd fordi arket kan bruke enten opptaksår eller uteksamineringsår. Med `uteksaminert` trekkes to år fra, siden programmet er toårig.
-- **Forhåndsvisningen** viser antall nye og eksisterende profiler, nye uten e-post, overhoppede rader (manglende navn, ukjent kull, duplikat i filen) og rader å se på (flere e-poster, navneavvik).
-- **Idempotent:** Eksisterende personer kjennes igjen på e-post, ellers på navn og kull. De endres ikke, men får kulltilknytningen hvis den mangler. Importen kan derfor kjøres på nytt når arket oppdateres.
-- **Medlemsstatus:** Nye profiler får standard `active`, fordi kullisten er ESAFs egen oversikt over hvem som er alumni. Med `--status venter` må hver person i stedet godkjennes etter at de har gjort krav på profilen. Importen gir aldri adminrolle.
+- **Excel:** Hver fane som heter «ES 2024», «ES 2013» osv. er ett kull. Faner som dekker flere år, for eksempel «ES 2005-2009», må ha en kolonne «ES-kull» eller «Kull». Andre faner, som «Mailliste - alle», «Støtteark» og «Klasserepresentanter», hoppes over, og det samme gjelder skjulte faner.
+- **Overskrifter:** Overskriftene varierer mellom kullene, og vanlige varianter kjennes igjen: Fornavn/Etternavn/Navn/Name, «E-post (den du bruker!)», «Gmail-adresse», «Primær e-post», «E-mail Address», «NTNU-mail» (lagres som ekstra adresse), Telefon/Mobil/Mobilnr/Mobile Phone, Studieretning/Studiebakgrunn/Profession, LinkedIn, «Spør meg gjerne om» eller «Kompetanseområder» (blir «Kan hjelpe med») og «Bransjer». Mangler første kolonne en gyldig overskrift, tolkes den ut fra nabokolonnene, og forhåndsvisningen sier fra om det.
+- **Telefon og e-post** lagres som kontaktinfo på profilen og vises for aktive medlemmer (se «Kontaktinfo» over). Det er det alumni selv fylte ut i lista for å dele med hverandre. Importen setter aldri synligheten, så det en person eller admin har skjult, forblir skjult. Numrene ryddes («41234567», «0047 …», «M: +47…» blir «+47 412 34 567»). Står det flere, brukes det første.
+- **Importeres aldri:** Facebook, adresse, postnummer, poststed og andre kolonner som ikke er nevnt over. Forhåndsvisningen lister dem per fane.
+- **E-post:** Alle gyldige adresser på raden lagres. En konto gjør krav på profilen hvis den registreres med hvilken som helst av dem.
+- **LinkedIn:** Delingslenker blir ryddet opp (`?utm_…` og undersider fjernes). Lenker som ikke går til en profil, hoppes over med et varsel.
+- **Profilfelt i CSV:** By og LinkedIn kjennes igjen automatisk. Selskap, stilling og ES-selskap må oppgis eksplisitt, fordi «Selskap» kan bety begge deler: `--kolonne selskap="Arbeidsgiver" --kolonne stilling="Jobb" --kolonne es-selskap="ES-selskap"`.
+- **Kull:** Årstallet kommer fra fanenavnet eller kullkolonnen, og er uteksamineringsåret slik ES bruker det. Har en kilde opptaksår i stedet, bruk `--kull-er opptak`; da legges to år til. En kullcelle som «2005/2006» kobler personen til begge kull.
+- **Samme person flere steder:** Står samme navn og e-post i to faner, kobles personen til begge kull. Samme e-post med et annet navn hoppes over. Rader uten kull tas med hvis de har e-post (så de kjennes igjen neste gang), ellers hoppes de over.
+- **Forhåndsvisningen** viser hvilke kolonner som brukes per fane, antall nye og eksisterende profiler, rader som hoppes over (manglende navn, ukjent kull, duplikat på tvers av faner) og rader å se på. Navn vises bare der du må finne raden i arket. `--vis-rader` lister alle rader.
+- **Idempotent og berikbar:** Personer kjennes igjen på hvilken som helst kjent e-post, ellers på navn og kull. Ved ny import eller import fra en annen kilde fylles bare tomme felt, og bare på profiler ingen har tatt i bruk. Det gjelder også telefon, bransjer og stilling. Nye e-postadresser legges til. Navn og alt en person selv har skrevet, overskrives aldri.
+- **Selskaper** fra lista som ikke finnes fra før, får ukjent status.
+- **Medlemsstatus:** Nye profiler får standard `active`, så de vises i katalogen for medlemmer. Med `--status venter` vises de ikke før personen er godkjent. Uansett status gir importen aldri tilgang til noen konto (se «Veien inn»), og aldri adminrolle.
 
-**Sikkerhetsavveiing:** Med `active` får den som kontrollerer en e-postadresse i arket medlemsinnsyn ved første innlogging. Er adressene gamle eller usikre, bruk `--status venter`, eller fjern adressene før import.
+### Lokalt med den ekte kullisten
+
+```sh
+pnpm db:seed --fil ~/Downloads/telefonliste.xlsx --admin deg@example.com
+```
+
+Tømmer den **lokale** databasen og importerer lista med samme kode som `profiles:import`. Med `--admin` får du en innlogging med den e-posten du står med i lista (passord `korrekt-hest-batteri`). Kontoen går samme vei som en ekte bruker: forespørsel om å være profilen med den adressen, som operatøren godkjenner med adminrolle. Første innlogging viser velkomststegene. Det lages ingen innlegg, så ingen ekte personer får tekst de ikke har skrevet. Fila leses bare og havner aldri i repoet.
+
+Uten `--fil` lager `pnpm db:seed` oppdiktede data, inkludert kullrepresentanter (noen kull mangler, noen har hatt flere) og arrangementer (ESAF-helger fra 2010, generalforsamlinger og fagkvelder, med deltakere og noen roller, og noen som kommer), og to åpne forespørsler på `/admin`: Kari Nordmann (adressen står på profilen) og Nils Nyregistrert (ikke funnet i lista). De logger inn med `kari@example.test` og `nils@example.test`. `sara@example.test` er et vanlig medlem, så varsler og omtaler kan prøves med to brukere. Ada har allerede to varsler fra henne.
+
+## Fylle produksjon med datasettet
+
+Berikelsen (selskaper med logo, historikk og saker i media, profiler med bio, bilde og erfaring fra entreprenorskolen.no og registrene, og sitater) ligger lokalt i `.data/enrichment` og kommer aldri i git. Den tas inn i produksjon med to kommandoer: `pnpm data:bundle` lager én fil lokalt, og `pnpm data:import` leser den i app-containeren og skriver til produksjonsdatabasen og bildelagringen (R2). Reglene ligger i `packages/core/src/dataset.ts` (formatet) og `dataset-import.ts` (importen); bunten lages av `packages/core/scripts/bundle-dataset.ts`.
+
+### Personvern
+
+- **Bunten inneholder persondata:** navn, e-post og telefon fra kullisten, bio og profilbilder fra entreprenorskolen.no, erfaring og sitater. Den skal aldri committes (`.data/` og `*.tar.gz` er gitignorert, og `data:bundle` nekter å skrive i repoet utenfor `.data/`), aldri deles, og bare ligge på serveren mens importen kjøres. Slett den etterpå. Fila lages med tilgang bare for deg (`0600`).
+- **Bilder og persondata fra ES-siden bør vente** til Entreprenørskolen har gitt tillatelse. Til da: `--bare-selskaper` (selskaper, logoer, historikk og saker i media), eventuelt `--uten-profilbilder --uten-bio --uten-sitater` når kullisten skal inn.
+- **Informasjonsplikt (GDPR art. 14):** Personene har ikke selv gitt ESAF opplysningene. Invitasjonen til profilene må si hva som er registrert, hvor det kommer fra (kullisten, entreprenorskolen.no, Brønnøysundregistrene, nyhetssaker), hvorfor, og hvordan de retter eller sletter det. Kjør persondelen av importen når invitasjonen er klar til å sendes, ikke lenge før.
+- **Bare det som trengs:** Bunten har bare feltene importen bruker. Fødselsdatoer og fødselsår fra registrene, roller og annet fra berikelsen blir ikke med, og importen leser dem uansett ikke. Profilbildene skaleres ned og lagres uten metadata (også GPS) før de havner i bunten.
+- `import_record` lagrer bare SHA-256 av nøklene i datasettet, ikke navn.
+
+### Hva importen gjør
+
+- **Forhåndsvisning først, alltid.** Uten `--apply` kjøres hele importen i en transaksjon som rulles tilbake, og bildene behandles uten å lastes opp. Tallene er nøyaktig det som blir lagret: nye, endret, uendret og hoppet over per type, hvordan personene ble kjent igjen og hva som bør ses på.
+- **Lagring i én transaksjon.** Med `--apply` lastes bildene opp først (samme behandling som en opplasting i appen, se «Profilbilder»), og så skrives databasen i én transaksjon. Feiler den, slettes bildene igjen og ingenting er lagret. Endrer noen det samme i appen mens importen kjører, feiler importen i stedet for å skrive over; da kjøres den bare på nytt.
+- **Bekreftelse.** Kommandoen skriver ut database (vert og navn) og lagring (disk eller S3-bøtte) før noe skjer. Er ikke databasen lokal, må navnet på databasen skrives inn, eller oppgis med `--bekreft <dbnavn>`. Uten interaktiv terminal og uten `--bekreft` nekter den. Bildene lagres der appen lagrer dem, med de samme reglene: i produksjon (`NODE_ENV=production`) må S3-variablene være satt.
+- **Personene kjennes igjen** som i kullisteimporten: på e-post, så på navn og kull. Nye profiler får aktivt medlemskap, som fra kullisten, men aldri tilgang til noen konto. **Profiler noen har tatt i bruk, røres ikke:** ingen felt, erfaring, e-post, kull eller bilde.
+- **Overskriver aldri det medlemmer har gjort.** Tomme felt fylles. Et felt importen har fylt før, oppdateres bare så lenge ingen har bekreftet, rettet, tømt eller sett over det (kildene i `field_source` sier det). Navn endres aldri. Logo og profilbilde legges bare inn der det ikke finnes et.
+- **Idempotent.** Samme bunt to ganger endrer ingenting. Det som er tatt inn én gang og så rettet eller slettet i appen (en hendelse, en sak, et sitat, en logo, et bilde, et selskap eller en person), tas ikke inn igjen (`import_record`).
+- **Usikre data forblir skjult:** hendelser hentet automatisk fra nyhetssaker og sitater med usikker taler får lav sikkerhet og vises bare for dem som kan rette dem (se «Historikk» og «Sitater»).
+- Alt som lagres, logges som `operator.import_dataset` med tallene og valgene.
+
+Valg: `--bare-selskaper` (bare selskaper, logoer, historikk og saker i media; ingen persondata, ingen koblinger mellom personer og selskaper, ingen sitater), `--uten-profilbilder`, `--uten-sitater`, `--uten-bio`. Personene kan tas inn senere med samme bunt uten valgene.
+
+### Steg for steg
+
+Appen kjører i Coolify fra `apps/app/Dockerfile` (se «Appen med Coolify»), med hele arbeidsområdet i `/repo`, slik at `pnpm`-verktøyene kan kjøres i containeren med produksjonens `DATABASE_URL` og S3-variabler.
+
+1. **Lag bunten lokalt**, fra samme commit som kjører i produksjon (bunten har en skjemaversjon, og importen nekter andre versjoner):
+
+   ```sh
+   pnpm data:bundle --fra .data/enrichment --til ~/esaf-datasett.tar.gz
+   pnpm data:import --fil ~/esaf-datasett.tar.gz          # valgfritt: forhåndsvisning mot lokal database
+   ```
+
+2. **Kopier bunten rett inn i app-containeren**, uten å lagre den på serveren underveis. Finn containeren med `ssh <server> docker ps` (navnet begynner med app-ens id i Coolify):
+
+   ```sh
+   ssh <server> "docker exec -i <container> sh -c 'umask 077 && cat > /tmp/esaf-datasett.tar.gz'" < ~/esaf-datasett.tar.gz
+   ```
+
+3. **Forhåndsvisning i Coolify:** åpne appen → Terminal (containeren, i `/repo`) og kjør
+
+   ```sh
+   pnpm data:import --fil /tmp/esaf-datasett.tar.gz --bare-selskaper
+   ```
+
+   Sjekk at «Database» er produksjonsdatabasen og «Lagring» er R2-bøtta, og se over tallene og «Å se på». Uten tillatelse fra Entreprenørskolen: bruk `--bare-selskaper`.
+
+4. **Lagre:** samme kommando med `--apply`, og skriv navnet på databasen når du blir spurt:
+
+   ```sh
+   pnpm data:import --fil /tmp/esaf-datasett.tar.gz --bare-selskaper --apply
+   ```
+
+5. **Slett bunten** i containeren, og lokalt når du ikke trenger den:
+
+   ```sh
+   rm /tmp/esaf-datasett.tar.gz        # i Coolify-terminalen
+   rm ~/esaf-datasett.tar.gz           # lokalt
+   ```
+
+6. **Se over** i appen: Admin → Logg viser `operator.import_dataset`, og Admin → Gjennomgang viser hendelser, sitater og importerte felt som bør sjekkes.
+
+Kjør steg 2–5 på nytt uten `--bare-selskaper` når persondataene kan tas inn. Importen kan kjøres så ofte man vil.
 
 ## Tilgangsgrensen
 
-| Nivå        | Hvem                                                                                       | Ser                                           |
-| ----------- | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| `anonymous` | Ikke innlogget                                                                             | Offentlige sider, innlogging, registrering    |
-| `pending`   | Innlogget, men e-post ikke bekreftet eller medlemskap ikke godkjent (`pending`/`inactive`) | Egen statusside (`/venter`)                   |
-| `member`    | Bekreftet e-post og `status = active`                                                      | Medlemsoversikt                               |
-| `admin`     | Som `member`, og i tillegg `role = admin`                                                  | Godkjenning av ventende medlemskap (`/admin`) |
+| Nivå        | Hvem                                                                                       | Ser                                                |
+| ----------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `anonymous` | Ikke innlogget                                                                             | Offentlige sider, innlogging, registrering         |
+| `pending`   | Innlogget, men e-post ikke bekreftet eller medlemskap ikke godkjent (`pending`/`inactive`) | «Hvem er du?» (`/velkommen`) og status (`/venter`) |
+| `member`    | Bekreftet e-post og `status = active`                                                      | Appen, og det rollen gir i tillegg (se under)      |
 
-Regelen ligger i én funksjon, `accessLevel` i `packages/core/src/access.ts`. Den håndheves **på serveren**: alle private data hentes gjennom serverfunksjoner (`apps/app/src/lib/members.functions.ts`). De slår opp sesjonen og kaller `@esaf/core`, som sjekker tilgang ved hvert kall, også etter klientnavigasjon og ved direkte RPC-kall. Rutevaktene i UI-et er bare for brukervennligheten. Vanlige medlemmer får 404 på adminsider.
+Regelen ligger i én funksjon, `accessLevel` i `packages/core/src/access.ts`. Den håndheves **på serveren**: alle private data hentes gjennom serverfunksjoner (`apps/app/src/lib/*.functions.ts`). De slår opp sesjonen og kaller `@esaf/core`, som sjekker tilgang ved hvert kall, også etter klientnavigasjon og ved direkte RPC-kall. Rutevaktene i UI-et er bare for brukervennligheten. Den som mangler rettigheten, får 404 på adminsider.
 
-Adminrolle kan **ikke** gis via registrering, godkjenning eller noe web-endepunkt. Godkjenning setter bare `status`. Better Auths admin-plugin er ikke i bruk, og `user`-tabellen har ikke noe rollefelt.
+**Kontaktinfo er bare for medlemmer.** E-post og telefon fra kullisten, som alumni fylte ut selv for å dele med hverandre, vises bare for godkjente, innloggede medlemmer (`member`), aldri for `pending` eller `anonymous`, og aldri på esaf.no. Hver person kan skjule dem; da sendes verdien aldri fra serveren, og medlemmer ser bare at feltet er skjult. Se «Kontaktinfo» under «Profiler og katalog».
 
-Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten adminrett, selvgodkjenning og kobling til person fra kulliste.
+### Roller og rettigheter
 
-### Første admin
+Et aktivt medlem har én rolle. En rolle har alt rollene under den har. Hva hver rolle får, står i `permissions` i `packages/core/src/access.ts`, og hver handling sjekker rettigheten på serveren.
 
-Det finnes ingen standardbruker og ingen automatisk admin basert på e-postdomene. Første (og senere) admin gis av en operatør med direkte databasetilgang:
+| Rettighet          | Hva den gir                                                                                    | Moderator | Admin | Hovedadmin |
+| ------------------ | ---------------------------------------------------------------------------------------------- | :-------: | :---: | :--------: |
+| `content.moderate` | Fjerne andres innlegg og kommentarer                                                           |     ✓     |   ✓   |     ✓      |
+| `members.review`   | Behandle forespørsler om tilgang, invitere og koble kontoer til profiler                       |           |   ✓   |     ✓      |
+| `members.manage`   | Deaktivere og gjenopprette medlemmer, lenker for nytt passord, sette kullrepresentanter        |           |   ✓   |     ✓      |
+| `profiles.edit`    | Rette andres profiler (ikke kontaktinfo, se «Profiler»), selskaper, Gjennomgang, arrangementer |           |   ✓   |     ✓      |
+| `audit.read`       | Lese revisjonsloggen                                                                           |           |   ✓   |     ✓      |
+| `roles.manage`     | Gi og fjerne roller (også i invitasjoner), og endre tilgangen til admins og hovedadmins        |           |       |     ✓      |
+| Sterk innlogging   | Passkey-økt eller tofaktor; ellers sender adminsidene til `/konto`                             |           |   ✓   |     ✓      |
 
-1. Personen registrerer seg i appen og bekrefter e-postadressen.
-2. Operatøren kjører, med `DATABASE_URL` mot riktig database:
+Vanlige medlemmer (`member`) har ingen av rettighetene. `owner` heter «hovedadmin» i appen.
+
+- **Sterk innlogging:** Admins og hovedadmins kan bare bruke rettighetene sine i en sterk økt, se under. Ellers sender `/admin` til `/konto?krav=sterk-innlogging`, og serveren svarer `strong_auth_required`. Moderatorer har ikke noe slikt krav.
+- **Medlemmer som har mistet passkeyene sine:** Under Admin → Medlemmer kan passkeyene til en person fjernes, med begrunnelse. Samme regler som for deaktivering: admins for medlemmer og moderatorer, hovedadmins også for admins, aldri en selv. Personen logges ut overalt og kan legge til nye etter å ha logget inn med passord. Logges som `security.remove_passkeys`.
+- **Roller gis i appen** av en hovedadmin under Admin → Medlemmer, med valgfri begrunnelse, eller i en invitasjon. Bare hovedadmins kan invitere med en annen rolle enn medlem. Ingen kan endre sin egen rolle, og det finnes alltid minst én aktiv hovedadmin. Registrering og godkjenning gir aldri rolle; godkjenning setter bare `status`. Better Auths admin-plugin er ikke i bruk, og `user`-tabellen har ikke noe rollefelt.
+- **Deaktivering** (Admin → Medlemmer) krever begrunnelse. Personen logges ut på alle enheter med en gang (øktene slettes), mister tilgangen og vises ikke lenger i katalogen. Rollen settes tilbake til medlem, så rettigheter må gis på nytt om tilgangen gjenopprettes. Admins kan deaktivere og gjenopprette medlemmer og moderatorer; bare en hovedadmin kan endre tilgangen til admins og hovedadmins. Ingen kan deaktivere seg selv.
+- **Revisjonsloggen** (Admin → Logg) viser hvem som gjorde hva, nyeste først, med begrunnelsen når den finnes. Den dekker forespørsler og godkjenninger (`access.*`, `membership.*`), invitasjoner (`invitation.create`, `invitation.revoke`, `invitation.use`) og lenker for nytt passord (`password_link.*`), roller (`role.change`, `operator.grant_role`), import (`operator.import_profiles`, `operator.import_dataset`), adminredigering, oppretting, sammenslåing og kobling av profiler (`profile.*`, `person.merge`), adminendringer på selskaper (`company.*`), sitater (`quote.*`), Gjennomgang (`source.review`, `review.dismiss_duplicate`), kullrepresentanter (`cohort.rep_*`), arrangementer (`event_type.*`, `event.*`, og `weekend.*` fra før 0019) og moderering (`content.remove_post`, `content.remove_comment`). Hendelser uten utfører kommer fra en operatør på kommandolinjen. Loggen kan ikke endres i appen.
+
+Testene ligger i `packages/core/test/`. Rene enhetstester dekker alle kombinasjoner av status og rolle. `company-articles.integration.test.ts` dekker «I media»: lenkene, valideringen, at bare de som kan redigere selskapet endrer saker, at admins logges, rekkefølgen, duplikater, forslag (godta, også når saken alt står der, avslå, trekke, varsler og Gjennomgang), sammenslåing og sletting. `dataset.test.ts` dekker tar-formatet, lesing og sjekk av bunten (format, skjemaversjon, SHA-256, antall, manglende og ekstra filer, felt utenfor skjemaet som fødselsdatoer) og valgene for importen; `dataset-import.integration.test.ts` importerer en liten, oppdiktet bunt: forhåndsvisningen skriver ingenting, lagring lager alt med bildene i en lagringsmappe på disk, en ny kjøring endrer ingenting, profiler som er tatt i bruk røres ikke, `--bare-selskaper` skriver ingen persondata, det som er rettet eller slettet i appen tas ikke inn igjen, felt importen eier oppdateres, og bildene ryddes bort når databasen feiler. `contributions.integration.test.ts` dekker «Jeg var med her» og fjerning, forslag (godta, avslå, trekke, grenser, varsler), forespørsler om andre (bekrefte, avslå, admin for profiler uten konto) og at sammenslåing av selskaper tar dem med. `reps-events.integration.test.ts` dekker at bare sterkt innloggede admins styrer verv, typer og arrangementer, at alt logges, verv fra et annet kull, visning på kullsiden, profilen, i katalogen og søket, «Jeg var der», roller (endring, telling per type og på profilen), tellingen, innlimte lister og at sammenslåing tar med verv og deltakelse; `event-history.integration.test.ts` dekker at bare sterkt innloggede admins kan legge inn historikk, forhåndsvisningen (lages, finnes, samme periode, ikke vært ennå), at samme valg to ganger ikke gir duplikater, logging, grenser, og at semester og år lagres som første dag i perioden uten sluttdato (også ved redigering, og håndhevet i databasen). `apps/app/test/event-dates.test.ts` dekker visningen («Høst 2018», «2015», datoer) og navneforslaget. `reps-events.test.ts` dekker hvordan verv vises og hvordan lister matches. `event-import.test.ts` tolker regneark bygd i minnet: alle tre oppsettene, verdiene og rollene, overskrifter med år, semester og dato, CSV med semikolon og Windows-tegnsett, perioder og kull for kullrepresentanter.`imports.integration.test.ts`dekker rettigheter, forhåndsvisning, prøvekjøring som ikke lagrer noe, lagring i én transaksjon med nye profiler og arrangementer, logging, at samme fil to ganger ikke gir duplikater, rolleendringer, og importen av kullrepresentanter.`events-migration.integration.test.ts` lager en egen database, kjører migreringene til 0018, legger inn helger og oppmøte og sjekker at 0019 flytter dem. `review.integration.test.ts` dekker at bare sterkt innloggede admins når verktøyene, køen og handlingene i den, duplikatsøket, opprettelse og sletting av selskaper, kull og e-post, sammenslåing av personer og at alt logges. Integrasjonstester mot Postgres dekker uinnlogget og ubekreftet bruker, ventende bruker, medlem uten rettigheter, selvgodkjenning, at en bekreftet adresse fra kullisten ikke gir tilgang alene, at søkere ikke kan velge andres profil, godkjenning med og uten profil, avslag, operatørens rolletildeling, rolleendringer, kravet om sterk innlogging, fjerning av passkeys, deaktivering og revisjonsloggen.
+
+`invitations.integration.test.ts` dekker tokenet (bare hashen lagres, 256 bit, ugyldige og feil slags lenker), at lenker virker én gang, går ut, kan trekkes tilbake og erstattes, at de er bundet til adressen, at bare hovedadmins inviterer med rolle, kobling til profil (med kull, uten ekstra person), at profiler som er tatt i bruk avvises både når invitasjonen lages og når den brukes, navn uten profil, kontoer uten passord, eksisterende kontoer (innlogget, deaktivert, høyere rolle beholdes, ubekreftet konto overtas), reglene for lenker for nytt passord, at alle økter logges ut og tofaktor beholdes, operatørens lenker og loggen. `apps/app/test/invitations.integration.test.ts` kjører de samme endepunktene gjennom Better Auth: registrering er stengt uten e-postleverandør og åpen med, invitasjon med passord og med passkey, passordreglene, at en bekreftet konto ikke kan tas over med en ny invitasjon, og at en lenke for nytt passord logger ut alle økter, virker én gang og ikke kommer forbi tofaktor.
+
+`apps/app/test/passkey.integration.test.ts` kjører Better Auth-oppsettet (`createAuth` i `auth-config.server.ts`) mot testdatabasen med en programvare-autentikator i stedet for nettleseren. Den dekker at passkey-økter merkes og gir sterk innlogging, at passord alene ikke gjør det, at økten ikke kan merkes fra klienten, at passkeyen må bekrefte personen (biometri eller PIN), at svar for en annen opprinnelse avvises, at ubekreftede og deaktiverte kontoer ikke kommer inn, at en passkey-innlogging erstatter passordøkten, registrering, og at en passordøkt ikke kan bytte ut passkeys. Turbo kjører appens tester etter `@esaf/core`, fordi de deler testdatabasen.
+
+### Invitasjoner og lenker for nytt passord
+
+Appen trenger ikke e-post for å ta inn nye medlemmer eller hjelpe dem som har glemt passordet. En admin lager en lenke og sender den selv. Reglene står i `packages/core/src/invitations.ts`, og endepunktene i `apps/app/src/server/invitations-plugin.server.ts` (en Better Auth-plugin, så de får Better Auths passordhashing, økter, cookies, opprinnelsessjekk og rate-grenser).
+
+- **Tokenet** er 256 tilfeldige bit (base64url, 43 tegn). Bare SHA-256 av det lagres; selve lenken vises én gang når den lages, og kan ikke hentes fram igjen. Oppslag skjer på hashen, så tokenet aldri sammenlignes tegn for tegn.
+- **Én adresse, én gang, sju dager.** En lenke er bundet til én e-postadresse, virker én gang og går ut etter sju dager. En ny lenke av samme slag til samme adresse trekker tilbake den forrige. Under Admin → Invitasjoner står alle lenkene med status (venter, brukt, utløpt, trukket tilbake), og ventende lenker kan trekkes tilbake.
+- **Lenken er e-postbekreftelsen.** Kontoen fra en invitasjon får bekreftet e-post uten at det sendes noen e-post: admin har sendt lenken til personen bak adressen, og lenken er bundet til den. Avveiingen er at den som får tak i lenken før personen selv, kommer inn i stedet. Derfor er lenken personlig, kortlivet og engangs, og «brukt» i oversikten viser hvem som tok den i bruk. Å kjenne en e-postadresse gir fortsatt ingenting.
+- **Eksisterende kontoer.** Har adressen en bekreftet konto, kan ikke invitasjonen lage en ny eller sette passord på den: personen må logge inn (siden sender dem tilbake etterpå) og ta imot invitasjonen med kontoen. Da blir kontoen aktivt medlem, kobles til profilen hvis den ikke er koblet fra før, en åpen forespørsel godkjennes, og en høyere rolle beholdes. En konto som aldri ble bekreftet, overtas av den som har lenken (ingen har bevist at de eier den). Aktive medlemmer kan ikke inviteres; rollen deres endres under Medlemmer.
+- **Profiler.** En invitasjon kan kobles til en profil fra kullisten uten konto. Er profilen tatt i bruk når invitasjonen brukes, avvises den, og ingenting skrives.
+- **Roller.** Admins inviterer medlemmer. Bare hovedadmins kan invitere med en rolle (moderator, admin, hovedadmin). Admins og hovedadmins må fortsatt legge til passkey eller slå på tofaktor før rettighetene virker.
+- **Passord eller passkey.** Den inviterte velger passord (minst 12 tegn) eller passkey. Med passkey lages kontoen uten passord og med en økt, og passkeyen legges til med en gang. Feiler det, kan personen prøve igjen eller sette passord. Et passord kan settes senere under «Konto og sikkerhet».
+- **Lenke for nytt passord** (Admin → Medlemmer → «Lenke for nytt passord», med begrunnelse). Samme regler som for deaktivering: admins for medlemmer og moderatorer, hovedadmins også for admins og hovedadmins, aldri en selv. Lenken (`/nytt-passord/…`) setter nytt passord og logger ut alle økter, men logger ikke inn: personen logger inn med det nye passordet, og har kontoen tofaktor, trengs koden fortsatt. Passkeys beholdes. Lenken kan dermed ikke brukes til å komme forbi tofaktor.
+- **Tokenet i adressen.** Sidene med lenkene og `/logg-inn` setter `Referrer-Policy: no-referrer` og `Cache-Control: no-store`, og tokenet sendes til serveren bare i innholdet av POST-forespørsler, aldri i adressen til en serverfunksjon. Appen logger ikke forespørselsadresser. En omvendt proxy foran appen (Coolify/Traefik) bør ikke ha tilgangslogg slått på, siden den ville logget stien.
+- **Logg:** `invitation.create`, `invitation.revoke`, `invitation.use`, `password_link.create`, `password_link.revoke` og `password_link.use`. Lenker fra kommandolinjen logges uten utfører (operatør).
+
+### Sterk innlogging
+
+Regelen står i `strongAuth` i `packages/core/src/access.ts`, og `loadViewer` får økten fra Better Auth (`getRequestViewer` i `apps/app/src/server/viewer.server.ts`). En økt er sterk når:
+
+- **den ble startet med passkey.** Feltet `session.signed_in_with_passkey` settes av en databasehook i `auth-config.server.ts`, bare når økten lages av `/passkey/verify-authentication`. Klienten kan ikke sette det, og det endres aldri etterpå. Passkeyen må ha bekreftet personen med ansikt, fingeravtrykk eller PIN, ellers avvises innloggingen. Den er dermed to faktorer i ett.
+- **eller kontoen har tofaktor.** Da krever innlogging med passord alltid koden, så alle øktene regnes som sterke.
+
+En konto med bare passkey som logger inn med passord, får en vanlig økt. Adminverktøyene sender da til `/konto`, som viser «Logg inn med passkey for å bruke adminverktøyene» og en knapp. Innlogging med passkey fra en innlogget økt gir en ny, sterk økt, og den gamle slettes. Uten verken passkey eller tofaktor viser `/konto` begge valgene.
+
+Har kontoen passkey, må økten være sterk for å legge til eller fjerne passkeys og for å slå på tofaktor (`mayChangeSignInMethods`, håndhevet i en Better Auth-hook). Ellers kunne den som bare kan passordet, bytte ut passkeyen med sin egen. Den første passkeyen kan legges til fra en vanlig økt, slik tofaktor alltid har kunnet slås på med passordet. Å legge til en passkey krever i tillegg en fersk økt (Better Auths `freshAge`, ett døgn), som pluginen anbefaler.
+
+Passkeys er bundet til vertsnavnet i `BETTER_AUTH_URL` (WebAuthn `rpID`), og bare svar fra den opprinnelsen godtas: `localhost` på `http://localhost:3000` i utvikling, `app.esaf.no` i produksjon. Flyttes appen til et annet domene, virker ikke passkeyene lenger, og medlemmene må logge inn med passord og legge til nye. Innlogging med passkey avslører aldri om en konto finnes: den starter uten e-post, og en ukjent passkey får samme melding som en som ikke virket. Den har samme rate-grense som innlogging med passord (tre forsøk per ti sekunder), og deaktiverte medlemmer får samme svar som med passord: ingen tilgang.
+
+### Første hovedadmin
+
+Det finnes ingen standardbruker og ingen automatisk admin basert på e-postdomene. Den første hovedadmin får en invitasjon fra en operatør med direkte databasetilgang. Etter det inviterer admins og gir hovedadmins roller i appen. Ingen e-postleverandør trengs.
+
+1. Operatøren åpner appens terminal i Coolify (eller kjører lokalt med `DATABASE_URL` mot riktig database) og lager en invitasjon. Lenken peker til `BETTER_AUTH_URL`, eller til `--url`:
    ```sh
-   pnpm admin:grant --email navn@example.com --reason "Styreleder 2026"
+   pnpm admin:invite --email navn@example.com --reason "Styreleder 2026"
+   pnpm admin:invite --email navn@example.com --profil <personId>   # kobler til profilen fra kullisten
+   pnpm admin:invite --email navn@example.com --rolle admin          # eller moderator, medlem
    ```
-3. Skriptet viser hvilken database det kobler til og krever at e-postadressen skrives inn på nytt. Det nekter å kjøre uten interaktiv terminal, og nekter kontoer med ubekreftet e-post. Tildelingen havner i `audit_event` med begrunnelsen.
+   Standardrollen er hovedadmin. Skriptet viser hvilken database det kobler til, krever at e-postadressen skrives inn på nytt og nekter å kjøre uten interaktiv terminal. Det skriver ut lenken én gang; lag en ny om den blir borte (den forrige trekkes da tilbake). Invitasjonen logges uten utfører.
+2. Personen åpner lenken innen sju dager, velger passord eller passkey, og er inne som hovedadmin.
+3. Personen legger til en passkey under «Konto og sikkerhet» og logger inn med den, eller slår på tofaktor. Før det virker ikke adminrettighetene.
+4. Har den eneste hovedadmin glemt passordet, lager operatøren en lenke for nytt passord: `pnpm admin:password-link --email navn@example.com --reason "Glemt passord"`.
+
+Har personen allerede en konto med bekreftet e-post (for eksempel fra registrering med e-post), gir `pnpm admin:grant` rollen direkte. Det godkjenner også en åpen forespørsel og kobler kontoen til profilen personen valgte:
+
+```sh
+pnpm admin:grant --email navn@example.com --reason "Styreleder 2026"
+pnpm admin:grant --email navn@example.com --reason "…" --rolle admin   # eller moderator
+```
+
+Skriptet har de samme sikringene, nekter kontoer med ubekreftet e-post, og tildelingen havner i revisjonsloggen med begrunnelsen.
 
 ### Lokal innlogging
 
-Lokalt sendes ingen e-post. Bekreftelseslenken skrives ut i terminalen der `pnpm dev` kjører («Bekreftelseslenke for …»). Åpne den for å bekrefte kontoen. I produksjon kaster samme kode en feil til en e-postleverandør er satt opp (se under). Da kan ingen kontoer bekreftes, og det finnes ingen vei utenom.
+Uten `EMAIL_PROVIDER` oppfører appen seg lokalt som i produksjon: registrering er stengt, og du kommer inn med `pnpm admin:invite --email deg@example.test --url http://localhost:3000` (eller seed-brukeren). Med `EMAIL_PROVIDER=console` i `.env` er registrering åpen, og bekreftelseslenken skrives ut i terminalen der `pnpm dev` kjører («Bekreftelseslenke for …»). Åpne den for å bekrefte kontoen. Da logges du inn og havner på «Hvem er du?». `console` er ikke lov i produksjon; appen nekter å starte med den.
 
 ## Sikkerhet i koden
 
 - **Server-only kode:** `apps/app/vite.config.ts` slår på TanStack Starts import protection med `behavior: 'error'`. Klientbundelen kan ikke importere `@esaf/db`, `@esaf/core`, `pg`, `drizzle-orm`, filer i `src/server/` eller `*.server.*`. ESLint har samme regel for rutefilene.
-- **Miljøvariabler** valideres med zod i `apps/app/src/server/env.server.ts`. En Nitro-plugin kjører valideringen ved oppstart, så produksjonsserveren stopper med en tydelig feilmelding hvis noe mangler. Produksjon avviser eksempelhemmeligheten fra `.env.example` og `http`-URL-er som ikke peker til localhost.
+- **Miljøvariabler** valideres med zod i `apps/app/src/server/env.server.ts`. En Nitro-plugin kjører valideringen ved oppstart, så produksjonsserveren stopper med en tydelig feilmelding hvis noe mangler. Produksjon avviser eksempelhemmeligheten fra `.env.example`, `http`-URL-er som ikke peker til localhost og `EMAIL_PROVIDER=console`. Uten `EMAIL_PROVIDER` starter appen som normalt, med registrering stengt.
 - **Statisk side:** `pnpm verify:site` (kjøres også i CI) leter i `apps/site/dist` etter database-URL-er, navn på servervariabler, kode fra appen, nøkler og faktiske verdier fra `.env`. Den feiler også på e-postadresser som ikke er satt som `contactEmail` i `apps/site/src/site.config.ts`.
 - **Hemmeligheter:** `.env` er gitignorert. `.env.example` inneholder bare ufarlige lokale verdier.
 
 ## Deploy
 
-Nettsiden ligger på https://esaf.no og deployes automatisk til Cloudflare fra GitHub Actions. Appen er ikke deployet. `esaf.no` ligger i ESAFs Cloudflare-konto, der Email Routing også er slått på for å videresende `styret@esaf.no` til foreningens Gmail.
+Nettsiden ligger på https://esaf.no og deployes automatisk til Cloudflare fra GitHub Actions. Appen deployes med Coolify til en egen server (se under). `esaf.no` ligger i ESAFs Cloudflare-konto, der Email Routing også er slått på for å videresende `styret@esaf.no` til foreningens Gmail.
 
 ### Nettsiden til Cloudflare Workers Static Assets
 
@@ -187,30 +527,40 @@ pnpm exec wrangler deploy --dry-run # valgfritt: viser hva som lastes opp
 pnpm exec wrangler deploy
 ```
 
-### Appen på Node
+### Appen med Coolify
 
-`pnpm --filter @esaf/app build` gir en selvstendig Node-server i `apps/app/.output/` (Nitro). Den kjøres slik:
+Appen og Postgres kjører på en Hetzner-server i Tyskland, styrt av Coolify. Coolify bygger `apps/app/Dockerfile` på serveren ved push til `main`.
 
-```sh
-pnpm db:migrate                      # med produksjonens DATABASE_URL, før oppstart
-NODE_ENV=production PORT=3000 \
-DATABASE_URL=postgres://… BETTER_AUTH_SECRET=… BETTER_AUTH_URL=https://app.esaf.no \
-node apps/app/.output/server/index.mjs
-```
+**Flyten.** En endring går via PR. CI («Sjekk og bygg») må være grønn før PR-en kan merges, og `main` er beskyttet mot direkte push. Coolify deployer det som havner på `main`. Testene i Actions stopper ikke en deploy alene; det er kravet om grønn CI før merge som gjør det.
 
-Bare `.output/` trengs på serveren. Den kan kopieres til en VPS eller pakkes i et container-image (`node:24-slim`, `COPY .output`, `CMD node .output/server/index.mjs`). Det finnes ingen Dockerfile ennå. Den bør lages og testes når vertsplattformen er valgt. Helsesjekk: `GET /api/health` gir 200 når databasen svarer og 503 ellers.
+**Ved hver deploy** bygger Coolify bildet og starter en ny container. Containeren kjører migreringene og starter så serveren. Feiler migreringen eller helsesjekken (`GET /api/health`, 200 når databasen svarer), tar ikke den nye containeren over, og den forrige kjører videre. Migreringer rulles ikke tilbake. Lag dem derfor slik at også forrige versjon av appen tåler dem: legg til kolonner og tabeller i én deploy, og fjern gamle i en senere.
+
+**Oppsett i Coolify** (én gang):
+
+1. **Postgres:** ny ressurs, Postgres 18, ikke offentlig tilgjengelig. Databasen nås bare fra appen over Coolifys interne nettverk.
+2. **Appen:** ny ressurs fra GitHub-repoet, gren `main`, byggetype Dockerfile, basemappe `/`, Dockerfile `apps/app/Dockerfile`, port `3000`. Slå på automatisk deploy.
+3. **Miljøvariabler** på appen: `DATABASE_URL` (den interne URL-en fra Postgres-ressursen), `BETTER_AUTH_SECRET` (`openssl rand -base64 32`), `BETTER_AUTH_URL=https://app.esaf.no` og S3-variablene for R2 (se «Profilbilder»). La `EMAIL_PROVIDER` stå tom til en e-postleverandør er på plass; da er registrering stengt, og folk kommer inn med invitasjon. `NODE_ENV` og `PORT` er satt i bildet.
+4. **Domene:** `https://app.esaf.no` på appen, med DNS satt opp på samme måte som de andre domenene på serveren. La tilgangsloggen i proxyen være av, siden stien til invitasjoner inneholder tokenet.
+5. **Backup:** planlagt backup av Postgres-ressursen til S3-lagring utenfor serveren (en egen privat R2-bøtte), daglig. Gjenopprett én gang til en ny database for å se at det virker.
+6. **Første hovedadmin:** når appen kjører, åpne appens terminal i Coolify og kjør `pnpm admin:invite --email <din adresse> --reason "Styreleder 2026"`. Åpne lenken, velg passkey (eller passord og så tofaktor), og inviter resten av styret fra Admin → Invitasjoner. Se «Første hovedadmin».
+
+**Verktøy i produksjon.** Bildet har hele arbeidsområdet, så kommandoene fra «Kommandoer» kan kjøres i appens terminal i Coolify, for eksempel `pnpm admin:invite --email … --reason "…"` for den første hovedadmin. Kullisten lastes aldri opp til repoet eller bildet. Den kopieres inn i containeren bare for importen, og slettes etterpå.
+
+Lokalt kan bildet bygges og prøves med `docker build -f apps/app/Dockerfile .`. Bildebehandlingen (sharp) har native binærfiler for plattformen den installeres på, og derfor bygges bildet på serveren.
 
 ## Før produksjon
 
 Dette gjenstår før appen kan brukes av medlemmer:
 
-1. **E-postleverandør.** Velg leverandør (f.eks. Resend, Postmark eller SES) og implementer `sendVerificationEmail` i `apps/app/src/server/auth.server.ts`. Legg nøkkelen i miljøet og i env-skjemaet. Legg samtidig til tilbakestilling av passord, som også trenger e-post. Sett opp SPF/DKIM for avsenderdomenet.
-2. **Hosting og database.** Velg vert for appen og en administrert eller selvdriftet Postgres. Velg dem samlet, ut fra driftsansvar og kostnad.
-3. **Backup.** Automatisk, kryptert backup av Postgres med testet gjenoppretting og avklart lagringstid.
-4. **Deploy.** Deploy-jobb for appen, med migrering som eget steg. Bestem `app.esaf.no` og DNS i Cloudflare.
+1. **Coolify.** Sett opp appen, Postgres, domenet og backup som beskrevet i «Appen med Coolify». Opprett en privat R2-bøtte for profilbilder (se «Profilbilder») og en for backup.
+2. **Backup.** Test én gjenoppretting, og avklar lagringstid.
+3. **Beskytt `main`.** Krev grønn «Sjekk og bygg» før merge, og ingen direkte push.
+4. **Rate-grenser.** Better Auth holder tellerne i minnet, per prosess. Kjører appen i flere prosesser, må de flyttes til en delt lagring (`rateLimit.storage`).
 5. **Overvåking.** Oppetidssjekk mot `/api/health`, innsamling av feillogger og varsling til en navngitt person.
-6. **Medlemsimport.** Importverktøyet finnes (se over). Det som gjenstår, er å avgjøre hvem som eier og verifiserer kullisten, rydde e-postadressene og kjøre importen mot produksjon.
+6. **Medlemsimport.** Importverktøyene finnes (se over og «Fylle produksjon med datasettet»). Det som gjenstår, er å avgjøre hvem som eier og verifiserer kullisten, rydde e-postadressene, få tillatelse fra Entreprenørskolen til bilder og persondata fra nettsiden deres, og kjøre importen mot produksjon sammen med invitasjonen.
 7. **Personvern.** Behandlingsgrunnlag, personvernerklæring og rutine for sletting.
+
+E-postleverandør er ikke lenger nødvendig for lansering: folk kommer inn med invitasjoner, og glemte passord løses med lenker fra en admin (se «Invitasjoner og lenker for nytt passord»). Når ESAF vil åpne for registrering med e-post eller sende varsler: velg leverandør (f.eks. Resend, Postmark eller SES), legg den til som verdi for `EMAIL_PROVIDER` i `apps/app/src/server/env.server.ts` med nøkkelen i env-skjemaet, send `sendVerificationEmail` i `apps/app/src/server/auth.server.ts`, og sett opp SPF/DKIM for avsenderdomenet. Da er registrering, e-postbekreftelse, «Hvem er du?» og godkjenning tilgjengelig som før, ved siden av invitasjonene.
 
 ## Før repoet gjøres offentlig
 
@@ -226,11 +576,10 @@ Repoet er privat. CI er laget for å være trygt også som offentlig repo: PR-er
 
 - **Tekst og kontakt på esaf.no:** Teksten bygger på ESAFs partnerpresentasjon fra 2025 og NTNUs studieside. Kontaktadressen er `styret@esaf.no`, som videresendes til foreningens Gmail. Styret må godkjenne formuleringene og bekrefte at aktivitetene fortsatt arrangeres. Se `apps/site/KILDER.md`. Logo og bilder fra Drive er ikke tatt i bruk før rettigheter og samtykke er avklart.
 - **Hvem skal få medlemsinnsyn:** Alumni, nåværende studenter, ansatte og/eller mentorer? Datamodellen støtter alle fire via `person_cohort.relation`, men godkjenningen skiller ikke mellom dem ennå.
-- **Hvilke kolonner fra kullisten som skal inn i appen:** Nå importeres bare navn, e-post og kull. Øvrige felt (f.eks. selskap og telefon) krever egne felt i skjemaet og en beslutning om hvem som får se dem.
 - **Medlemsstatus for importerte profiler:** `active` (standard) eller `venter`, se sikkerhetsavveiingen over.
-- **Hva medlemmer ser om hverandre:** Medlemsoversikten viser nå bare navn og kull, ikke e-post. Felttilgang må avgjøres før profiler bygges ut.
+- **Hva medlemmer ser om hverandre:** Alle profilfelt er synlige for aktive medlemmer. E-post og telefon fra kullisten vises også som standard, og hver person kan skjule dem (bestemt oktober 2026, se «Kontaktinfo»).
 - **Hosting for appen:** Ikke valgt. Repoet er `ESAF-NO/esaf` og er privat.
-- **Innlogging:** Nå brukes e-post og passord med e-postbekreftelse. Magisk lenke, passkeys eller Google-innlogging kan legges til når e-post er på plass.
+- **Innlogging:** Invitasjoner fra styret, passord og passkeys, og tofaktor. Registrering med e-postbekreftelse slås på med en e-postleverandør. Magisk lenke eller Google-innlogging kan legges til når e-post er på plass.
 - **MCP:** Ikke implementert. Bygg på `@esaf/core` med den offisielle MCP TypeScript SDK. Better Auths MCP-plugin er i beta og bør testes i en egen integrasjonstest før den velges.
 
 ## Versjoner og begrensninger
@@ -240,4 +589,4 @@ Versjonene er låst i `pnpm-lock.yaml`. Viktige valg per 28. oktober 2026:
 - **TypeScript 6.0**, ikke 7.0. typescript-eslint (`<6.1`) og `@astrojs/check` (`^5 || ^6`) støtter ennå ikke TypeScript 7.
 - **Nitro 3** er fortsatt i beta, men det er det TanStack Starts egen mal bruker for Node-hosting. Versjonen er låst eksakt.
 - **TanStack Start 1.169.** Serverfunksjoner bruker `.validator()`. Rutefilene genererer `src/routeTree.gen.ts`, som committes.
-- **pnpm 12**, **Node 24**, **Postgres 18**, **Astro 7**, **Vite 8**, **Better Auth 1.7**, **Drizzle ORM 0.45**.
+- **pnpm 12**, **Node 24**, **Postgres 18**, **Astro 7**, **Vite 8**, **Better Auth 1.7** (med `@better-auth/passkey` i samme versjon), **Drizzle ORM 0.45**.

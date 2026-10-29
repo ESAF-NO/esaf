@@ -9,14 +9,26 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "admin:grant": "tsx scripts/grant-admin.ts",
-    "profiles:import": "tsx scripts/import-profiles.ts"
+    "admin:invite": "tsx scripts/invite.ts",
+    "admin:password-link": "tsx scripts/password-link.ts",
+    "profiles:import": "tsx scripts/import-profiles.ts",
+    "data:bundle": "tsx scripts/bundle-dataset.ts",
+    "data:import": "tsx scripts/import-dataset.ts"
   },
   "dependencies": {
     "@esaf/db": "workspace:*",
+    "aws4fetch": "^1.0.20",
     "csv-parse": "^7.0.3",
-    "drizzle-orm": "^0.45.4"
+    "drizzle-orm": "^0.45.4",
+    "exceljs": "^4.4.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5",
+    "sharp": "^0.35.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/mdast": "^4.0.4",
     "@types/node": "^24",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",

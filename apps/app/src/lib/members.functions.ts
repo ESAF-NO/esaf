@@ -1,10 +1,17 @@
 import {
   accessLevel,
-  decideMembership,
-  linkAccountToProfile,
+  activeRole,
+  can,
+  countUnreadNotifications,
   listActiveMembers,
-  listPendingMemberships,
+  mayChangeSignInMethods,
+  permissions,
+  roleAtLeast,
   searchUnclaimedProfiles,
+  strongAuth,
+  strongAuthRequired,
+  viewerCard,
+  type Permission,
 } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
@@ -20,10 +27,43 @@ import { getRequestViewer } from '#/server/viewer.server.ts'
 
 export const getViewerSummary = createServerFn({ method: 'GET' }).handler(async () => {
   const viewer = await getRequestViewer()
+  const level = accessLevel(viewer)
+  const [card, unreadNotifications] = await Promise.all([
+    viewerCard(db, viewer),
+    level === 'member' ? countUnreadNotifications(db, viewer) : 0,
+  ])
+  const role = activeRole(viewer)
+  const strong = viewer ? strongAuth(viewer) : false
   return {
-    level: accessLevel(viewer),
+    level,
+    /** Rollen til et aktivt medlem. */
+    role,
+    /** Rettighetene den innloggede kan bruke nå. Bare for visning; serveren sjekker selv. */
+    permissions: (Object.keys(permissions) as Permission[]).filter((p) => can(viewer, p)),
+    /** Har adminrolle (selv om økten kanskje ikke er sterk nok), så adminområdet vises. */
+    adminArea: role !== null && roleAtLeast(role, 'admin'),
+    twoFactorEnabled: viewer?.twoFactorEnabled ?? false,
+    hasPasskey: viewer?.hasPasskey ?? false,
+    /** Denne økten er startet med passkey. */
+    passkeySession: viewer?.passkeySession ?? false,
+    /** Rollen krever sterk innlogging, og denne økten er ikke det. */
+    strongAuthMissing: role !== null && strongAuthRequired(role) && !strong,
+    /** Om økten kan legge til og fjerne passkeys og slå på tofaktor. */
+    mayChangeSignInMethods: viewer ? mayChangeSignInMethods(viewer) : false,
+    fullName: card?.fullName ?? null,
+    photo: card?.photo ?? null,
+    email: card?.email ?? null,
+    jobTitle: card?.jobTitle ?? null,
+    currentCompany: card?.currentCompany ?? null,
+    personId: viewer?.personId ?? null,
     emailVerified: viewer?.emailVerified ?? false,
     status: viewer?.membership?.status ?? null,
+    /** Om personen har vært gjennom velkomststegene etter godkjenning. */
+    onboarded: card?.onboarded ?? false,
+    /** Forespørselen om tilgang, for dem som ikke er medlem ennå. */
+    requestStatus: card?.requestStatus ?? null,
+    /** Uleste varsler. Hentes ved hver navigering, så klokka i toppen alltid er oppdatert. */
+    unreadNotifications,
   }
 })
 
@@ -35,40 +75,11 @@ export const getMembers = createServerFn({ method: 'GET' }).handler(async () => 
   }
 })
 
-export const getPendingMemberships = createServerFn({ method: 'GET' }).handler(async () => {
-  try {
-    const pending = await listPendingMemberships(db, await getRequestViewer())
-    return pending.map((p) => ({ ...p, requestedAt: p.requestedAt.toISOString() }))
-  } catch (error) {
-    return rethrowForClient(error)
-  }
-})
-
-export const decidePendingMembership = createServerFn({ method: 'POST' })
-  .validator(z.object({ personId: z.uuid(), decision: z.enum(['approve', 'reject']) }))
-  .handler(async ({ data }) => {
-    try {
-      await decideMembership(db, await getRequestViewer(), data)
-    } catch (error) {
-      return rethrowForClient(error)
-    }
-  })
-
 export const findUnclaimedProfiles = createServerFn({ method: 'GET' })
   .validator(z.object({ query: z.string().max(100) }))
   .handler(async ({ data }) => {
     try {
       return await searchUnclaimedProfiles(db, await getRequestViewer(), data.query)
-    } catch (error) {
-      return rethrowForClient(error)
-    }
-  })
-
-export const linkPendingToProfile = createServerFn({ method: 'POST' })
-  .validator(z.object({ pendingPersonId: z.uuid(), profilePersonId: z.uuid() }))
-  .handler(async ({ data }) => {
-    try {
-      await linkAccountToProfile(db, await getRequestViewer(), data)
     } catch (error) {
       return rethrowForClient(error)
     }

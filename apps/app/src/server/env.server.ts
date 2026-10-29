@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+import { storageConfigFromEnv, storageEnvIssues, type StorageConfig } from '@esaf/core'
 import { loadRootEnv } from '@esaf/db'
 import { z } from 'zod'
 
@@ -6,15 +8,44 @@ const EXAMPLE_SECRET = 'bytt-meg-ut-med-minst-32-tilfeldige-tegn'
 const isProduction = process.env.NODE_ENV === 'production'
 if (!isProduction) loadRootEnv()
 
+// En tom linje i .env (`S3_BUCKET=`) betyr ikke satt.
+const unsetIfEmpty = (value: unknown) => (value === '' ? undefined : value)
+const optional = <T extends z.ZodType>(type: T) => z.preprocess(unsetIfEmpty, type.optional())
+
 const schema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
     BETTER_AUTH_SECRET: z.string().min(32, 'må være minst 32 tegn (openssl rand -base64 32)'),
     BETTER_AUTH_URL: z.url(),
+    // E-postleverandør. Uten den er appen bare åpen for invitasjoner: registrering
+    // er slått av, og ingen e-post sendes. `console` skriver bekreftelseslenkene i
+    // terminalen og er bare lov utenfor produksjon. Se README, «Veien inn».
+    EMAIL_PROVIDER: optional(z.enum(['console'])),
+    // Profilbilder og logoer: S3-kompatibel lagring (Cloudflare R2) når S3_-variablene
+    // er satt, ellers filer på disk. Disk er bare lov utenfor produksjon. Reglene
+    // ligger i @esaf/core (storageEnvIssues), så importen på kommandolinjen følger dem.
+    S3_ENDPOINT: optional(z.url({ protocol: /^https?$/ })),
+    S3_BUCKET: optional(z.string()),
+    S3_REGION: z.preprocess(unsetIfEmpty, z.string().default('auto')),
+    S3_ACCESS_KEY_ID: optional(z.string()),
+    S3_SECRET_ACCESS_KEY: optional(z.string()),
+    UPLOAD_DIR: optional(z.string()),
   })
   .superRefine((env, ctx) => {
-    if (env.NODE_ENV !== 'production') return
+    const production = env.NODE_ENV === 'production'
+    for (const issue of storageEnvIssues(env, { production })) {
+      ctx.addIssue({ code: 'custom', path: [issue.variable], message: issue.message })
+    }
+    if (!production) return
+    if (env.EMAIL_PROVIDER === 'console') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EMAIL_PROVIDER'],
+        message:
+          'console skriver lenkene i loggen og kan ikke brukes i produksjon. La den stå tom (bare invitasjoner)',
+      })
+    }
     if (env.BETTER_AUTH_SECRET === EXAMPLE_SECRET) {
       ctx.addIssue({
         code: 'custom',
@@ -42,3 +73,18 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data
+
+export type { StorageConfig }
+
+/** Hvor bildene lagres. Valideringen over sørger for S3 i produksjon. */
+export const storageConfig: StorageConfig = storageConfigFromEnv(
+  env,
+  // Standard er .data/uploads i roten av repoet, uansett hvor dev-serveren startes fra.
+  fileURLToPath(new URL('../../../../.data/uploads', import.meta.url)),
+)
+
+/**
+ * Om appen kan sende e-post. Uten det er registrering slått av, og veien inn er
+ * en invitasjon fra en admin (se `invitations.ts` i @esaf/core).
+ */
+export const emailEnabled = env.EMAIL_PROVIDER !== undefined

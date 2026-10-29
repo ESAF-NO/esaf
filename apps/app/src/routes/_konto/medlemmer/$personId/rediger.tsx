@@ -499,7 +499,7 @@ function EditProfile() {
               name="bio"
               defaultValue={profile.bio ?? ''}
               rows={4}
-              maxLength={1000}
+              maxLength={10_000}
               placeholder="Hva jobber du med nå, og hva brenner du for?"
             />
           </Field>

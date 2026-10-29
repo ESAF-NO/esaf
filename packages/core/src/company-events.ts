@@ -88,6 +88,16 @@ function sourceFields(values: z.output<typeof companyEventInput>) {
   }
 }
 
+/** Kolonnene for en validert hendelse (uten selskap og sikkerhet). */
+export function eventValues(values: z.output<typeof companyEventInput>) {
+  return {
+    ...dateFields(values),
+    ...sourceFields(values),
+    type: values.type,
+    text: values.text,
+  }
+}
+
 /**
  * Hendelsene til et selskap, nyeste først. `includeReview` tar med de usikre;
  * det skal bare de som kan redigere selskapet, få.
@@ -141,7 +151,11 @@ async function lockEvent(tx: Tx, eventId: string) {
 async function logAdminChange(
   tx: Tx,
   viewer: Viewer,
-  action: 'company.admin_event_add' | 'company.admin_event_edit' | 'company.admin_event_remove',
+  action:
+    | 'company.admin_event_add'
+    | 'company.admin_event_edit'
+    | 'company.admin_event_confirm'
+    | 'company.admin_event_remove',
   target: { id: string; slug: string; name: string },
   event: { id: string; type: CompanyEventType },
 ) {
@@ -227,6 +241,26 @@ export async function deleteCompanyEvent(db: Db, viewer: Viewer, eventId: string
     await tx.delete(companyEvent).where(eq(companyEvent.id, eventId))
     if (target.adminEdit) {
       await logAdminChange(tx, viewer, 'company.admin_event_remove', target, event)
+    }
+  })
+}
+
+/**
+ * «Stemmer»: en usikker hendelse regnes som bekreftet og vises for alle, uten at
+ * noe annet endres. Samme tilgang som redigering.
+ */
+export async function confirmCompanyEvent(db: Db, viewer: Viewer, eventId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const event = await lockEvent(tx, eventId)
+    const target = await companyForEdit(tx, viewer, event.companyId)
+    const updated = await tx
+      .update(companyEvent)
+      .set({ confidence: 'high' })
+      .where(and(eq(companyEvent.id, eventId), eq(companyEvent.confidence, 'low')))
+      .returning({ id: companyEvent.id })
+    if (!updated.length) throw new DomainError('Hendelsen er allerede bekreftet.')
+    if (target.adminEdit) {
+      await logAdminChange(tx, viewer, 'company.admin_event_confirm', target, event)
     }
   })
 }

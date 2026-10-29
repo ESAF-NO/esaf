@@ -9,6 +9,7 @@ import { Avatar, Button, Card, EmptyState, ErrorText } from '#/components/ui.tsx
 import { auditPageSize, fetchAuditLog } from '#/lib/admin.functions.ts'
 import { clockTime, dayKey, dayLabel, plural, timestamp } from '#/lib/format.ts'
 import { roleNames } from '#/lib/roles.ts'
+import { companyFieldLabels, profileFieldLabels } from '#/lib/sources.ts'
 
 export const Route = createFileRoute('/_konto/admin/logg')({
   beforeLoad: ({ context: { viewer } }) => {
@@ -88,8 +89,8 @@ function AuditLog() {
   return (
     <div className="max-w-3xl">
       <p className="mb-5 text-sm text-stone-500">
-        Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater og andres innhold,
-        nyeste først. Hendelsene kan ikke endres eller slettes i appen.
+        Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater, forslag og andres
+        innhold, nyeste først. Hendelsene kan ikke endres eller slettes i appen.
       </p>
 
       {entries.length === 0 ? (
@@ -243,6 +244,17 @@ const speaker = ({ subject, details, entry }: Parts) =>
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
 const count = (value: unknown) => (typeof value === 'number' ? value : 0)
+const list = (value: unknown) =>
+  Array.isArray(value) && value.length ? value.map(String).join(', ') : 'ingen'
+const linkRole = (value: unknown) =>
+  ({ founder: 'gründer', es: 'ES-team', employee: 'ansatt' })[String(value)] ?? 'med'
+const fieldName = (value: unknown) =>
+  (text(value) &&
+    ({ ...profileFieldLabels, ...companyFieldLabels } as Record<string, string>)[
+      text(value)!
+    ]?.toLocaleLowerCase('nb')) ??
+  text(value) ??
+  'ukjent'
 const role = (value: unknown) =>
   typeof value === 'string' && value in roleNames
     ? roleNames[value as MemberRole]
@@ -379,6 +391,108 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} slettet en hendelse i historikken til <Company details={details} />.
     </>
   ),
+  'company.create': ({ actor, details }) => (
+    <>
+      {actor} opprettet <Company details={details} />.
+    </>
+  ),
+  'company.delete': ({ actor, details }) => {
+    const unlinked = count(details.experience) + count(details.esTeam)
+    return (
+      <>
+        {actor} slettet «{text(details.name) ?? 'et selskap'}»
+        {unlinked > 0 && ` og fjernet det fra ${plural(unlinked, 'profil', 'profiler')}`}.
+      </>
+    )
+  },
+  'company.admin_clear_field': ({ actor, details }) => (
+    <>
+      {actor} fjernet et importert felt ({fieldName(details.field)}) fra{' '}
+      <Company details={details} />.
+    </>
+  ),
+  'company.admin_event_confirm': ({ actor, details }) => (
+    <>
+      {actor} bekreftet en usikker hendelse i historikken til <Company details={details} />.
+    </>
+  ),
+  'company.admin_suggestion_accept': ({ actor, subject, details }) => (
+    <>
+      {actor} godtok et forslag fra {subject} til <Company details={details} />.
+    </>
+  ),
+  'company.admin_suggestion_reject': ({ actor, subject, details }) => (
+    <>
+      {actor} avslo et forslag fra {subject} til <Company details={details} />.
+    </>
+  ),
+  'company.admin_link_accept': ({ actor, subject, details }) => (
+    <>
+      {actor} bekreftet at {subject} var {linkRole(details.role)} i <Company details={details} />.
+    </>
+  ),
+  'company.admin_link_reject': ({ actor, subject, details }) => (
+    <>
+      {actor} avslo at {subject} var {linkRole(details.role)} i <Company details={details} />.
+    </>
+  ),
+  'quote.confirm': (parts) => (
+    <>
+      {parts.actor} bekreftet hvem som sa et sitat fra {speaker(parts)}.
+    </>
+  ),
+  'source.review': ({ actor, subject, details }) => {
+    const fields = Array.isArray(details.fields) ? details.fields.length : 0
+    return (
+      <>
+        {actor} så over {plural(fields, 'importert felt', 'importerte felt')}{' '}
+        {details.entityType === 'person' ? <>på profilen til {subject}</> : 'på et selskap'}.
+      </>
+    )
+  },
+  'profile.create': ({ actor, subject }) => (
+    <>
+      {actor} la inn profilen til {subject}.
+    </>
+  ),
+  'profile.admin_cohorts': ({ actor, subject, details }) => (
+    <>
+      {actor} endret kullene til {subject} fra {list(details.from)} til {list(details.to)}.
+    </>
+  ),
+  'profile.admin_email_add': ({ actor, subject }) => (
+    <>
+      {actor} la til en kjent e-postadresse for {subject}.
+    </>
+  ),
+  'profile.admin_email_remove': ({ actor, subject }) => (
+    <>
+      {actor} fjernet en kjent e-postadresse fra {subject}.
+    </>
+  ),
+  'profile.admin_clear_field': ({ actor, subject, details }) => (
+    <>
+      {actor} fjernet et importert felt ({fieldName(details.field)}) fra profilen til {subject}.
+    </>
+  ),
+  'person.merge': ({ actor, subject, details }) => {
+    const from = (details.from ?? {}) as Entry['details']
+    return (
+      <>
+        {actor} slo sammen «{text(from.fullName) ?? 'en person'}» med {subject}.
+      </>
+    )
+  },
+  'review.dismiss_duplicate': ({ actor, details }) => {
+    const first = (details.first ?? {}) as Entry['details']
+    const second = (details.second ?? {}) as Entry['details']
+    return (
+      <>
+        {actor} sa at «{text(first.name)}» og «{text(second.name)}» ikke er{' '}
+        {details.kind === 'person_duplicate' ? 'samme person' : 'samme selskap'}.
+      </>
+    )
+  },
   'quote.edit': (parts) => (
     <>
       {parts.actor} rettet et sitat fra {speaker(parts)}.

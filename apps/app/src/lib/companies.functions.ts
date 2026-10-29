@@ -1,5 +1,8 @@
 import {
   addCompanyEvent,
+  createCompany,
+  deleteCompany,
+  listAdminCompanies,
   companyEventTypes,
   companyStatuses,
   deleteCompanyEvent,
@@ -89,3 +92,18 @@ export const saveCompanyEvent = createServerFn({ method: 'POST' })
 export const removeCompanyEvent = createServerFn({ method: 'POST' })
   .validator(z.object({ eventId: z.uuid() }))
   .handler(({ data }) => run((viewer) => deleteCompanyEvent(db, viewer, data.eventId)))
+
+/** Alle selskaper for Admin → Selskaper. Krever `profiles.edit`. */
+export const fetchAdminCompanies = createServerFn({ method: 'GET' }).handler(() =>
+  run((viewer) => listAdminCompanies(db, viewer)),
+)
+
+export const newCompany = createServerFn({ method: 'POST' })
+  .validator(companyFields)
+  .handler(({ data }) => run((viewer) => createCompany(db, viewer, data)))
+
+export const removeCompany = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ companyId: z.uuid(), unlink: z.boolean(), reason: z.string().max(1000).optional() }),
+  )
+  .handler(({ data }) => run((viewer) => deleteCompany(db, storage, viewer, data)))

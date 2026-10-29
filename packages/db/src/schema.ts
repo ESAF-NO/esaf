@@ -171,7 +171,8 @@ export const cohort = pgTable(
   (t) => [check('cohort_graduation_year_range', sql`${t.graduationYear} between 1990 and 2100`)],
 )
 
-export const personSource = pgEnum('person_source', ['signup', 'import'])
+/** Hvor personen kom fra: registrering, import (kullisten) eller lagt inn av en admin. */
+export const personSource = pgEnum('person_source', ['signup', 'import', 'admin'])
 
 /**
  * En person ESAF kjenner til. En person uten `userId` er en *profil*: lagt inn
@@ -429,9 +430,160 @@ export const fieldSource = pgTable(
     fetchedAt: timestamp({ withTimezone: true }),
     confidence: sourceConfidence().notNull(),
     confirmedAt: timestamp({ withTimezone: true }),
+    /**
+     * Når en admin så over feltet under Gjennomgang og lot det stå. Er ikke en
+     * bekreftelse fra eieren (`confirmedAt`), men tar feltet ut av køen. Hvem
+     * som gjorde det, står i revisjonsloggen.
+     */
+    reviewedAt: timestamp({ withTimezone: true }),
     createdAt: timestamps.createdAt,
   },
   (t) => [uniqueIndex().on(t.entityType, t.entityId, t.field, t.sourceLabel)],
+)
+
+// ---------------------------------------------------------------------------
+// Bidrag fra medlemmer: forslag til selskapsinfo og historikk, og tilknytninger
+// til selskaper som den som er nevnt, må bekrefte. Reglene står i @esaf/core
+// (contributions.ts).
+// ---------------------------------------------------------------------------
+
+/** Felles livsløp for forslag og tilknytninger. */
+export const contributionStatus = pgEnum('contribution_status', [
+  'pending',
+  /** Godtatt av noen knyttet til selskapet eller en admin, eller bekreftet av personen. */
+  'accepted',
+  /** Avslått, eller personen sa at det ikke stemmer. */
+  'rejected',
+  /** Trukket tilbake av den som foreslo det. */
+  'withdrawn',
+])
+
+/** `info`: endringer i selskapsinfoen. `event`: en ny hendelse i historikken. */
+export const companySuggestionKind = pgEnum('company_suggestion_kind', ['info', 'event'])
+
+/** Et felt i et forslag til selskapsinfo: verdien da forslaget ble laget, og den foreslåtte. */
+export type SuggestedFieldChange = { from: unknown; to: unknown }
+
+/**
+ * Data i et forslag. For `info` bare feltene som endres; for `event` hele
+ * hendelsen, i samme form som `companyEventInput` i @esaf/core.
+ */
+export type CompanySuggestionChanges =
+  | { kind: 'info'; fields: Record<string, SuggestedFieldChange> }
+  | {
+      kind: 'event'
+      event: {
+        year: number
+        month: number | null
+        day: number | null
+        type: CompanyEventType
+        text: string
+        sourceUrl: string | null
+        sourceLabel: string | null
+      }
+    }
+
+/**
+ * Et forslag fra et medlem som ikke er knyttet til selskapet. De som kan
+ * redigere selskapet (og admins), godtar eller avslår, og den som foreslo får
+ * varsel. Endres ikke etter at det er behandlet.
+ */
+export const companySuggestion = pgTable(
+  'company_suggestion',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    companyId: uuid()
+      .notNull()
+      .references(() => company.id, { onDelete: 'cascade' }),
+    suggestedByPersonId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    kind: companySuggestionKind().notNull(),
+    changes: jsonb().$type<CompanySuggestionChanges>().notNull(),
+    /** Valgfri forklaring eller kilde fra den som foreslo. */
+    note: text(),
+    status: contributionStatus().notNull().default('pending'),
+    decidedAt: timestamp({ withTimezone: true }),
+    decidedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.companyId, t.status),
+    index().on(t.suggestedByPersonId, t.status, t.createdAt),
+  ],
+)
+
+/** Hva personen var i selskapet: gründer, ES-team eller ansatt (nå eller før). */
+export const companyLinkRole = pgEnum('company_link_role', ['founder', 'es', 'employee'])
+
+/**
+ * Et medlem sier at en annen person var med i et selskap. Det vises ikke før
+ * personen selv har bekreftet (eller en admin, for profiler ingen har tatt i
+ * bruk). Ved bekreftelse blir det erfaring eller ES-selskap på profilen.
+ */
+export const companyLinkRequest = pgTable(
+  'company_link_request',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    companyId: uuid()
+      .notNull()
+      .references(() => company.id, { onDelete: 'cascade' }),
+    /** Personen som er nevnt, og som må bekrefte. */
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    requestedByPersonId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    role: companyLinkRole().notNull(),
+    title: text(),
+    startYear: integer(),
+    /** Null betyr at personen fortsatt er der. Brukes ikke for ES-team. */
+    endYear: integer(),
+    status: contributionStatus().notNull().default('pending'),
+    decidedAt: timestamp({ withTimezone: true }),
+    decidedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.personId, t.status),
+    index().on(t.requestedByPersonId, t.status, t.createdAt),
+    index().on(t.companyId),
+    // Samme person kan bare ha én åpen forespørsel per selskap og rolle.
+    uniqueIndex('company_link_request_pending_index')
+      .on(t.companyId, t.personId, t.role)
+      .where(sql`${t.status} = 'pending'`),
+    check(
+      'company_link_request_years',
+      sql`(${t.startYear} is null or ${t.startYear} between 1950 and 2100) and (${t.endYear} is null or ${t.endYear} between 1950 and 2100) and (${t.startYear} is null or ${t.endYear} is null or ${t.endYear} >= ${t.startYear})`,
+    ),
+  ],
+)
+
+export const reviewDismissalKind = pgEnum('review_dismissal_kind', [
+  'company_duplicate',
+  'person_duplicate',
+])
+
+/**
+ * Mulige duplikater en admin har sett på og sagt at ikke er det samme. Paret
+ * lagres med den minste id-en først, så det ikke foreslås igjen. Uten
+ * fremmednøkkel, siden paret kan være selskaper eller personer; rader for noe
+ * som er slettet eller slått sammen, gjør ingen skade.
+ */
+export const reviewDismissal = pgTable(
+  'review_dismissal',
+  {
+    kind: reviewDismissalKind().notNull(),
+    firstId: uuid().notNull(),
+    secondId: uuid().notNull(),
+    dismissedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.kind, t.firstId, t.secondId] }),
+    check('review_dismissal_order', sql`${t.firstId} < ${t.secondId}`),
+  ],
 )
 
 export const emailSource = pgEnum('email_source', ['signup', 'import', 'admin'])
@@ -556,6 +708,10 @@ export type SourceConfidence = (typeof sourceConfidence.enumValues)[number]
 export type DatePrecision = (typeof datePrecision.enumValues)[number]
 export type CompanyEventType = (typeof companyEventType.enumValues)[number]
 export type FieldSourceEntity = (typeof fieldSourceEntity.enumValues)[number]
+export type ContributionStatus = (typeof contributionStatus.enumValues)[number]
+export type CompanySuggestionKind = (typeof companySuggestionKind.enumValues)[number]
+export type CompanyLinkRole = (typeof companyLinkRole.enumValues)[number]
+export type ReviewDismissalKind = (typeof reviewDismissalKind.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)
@@ -646,11 +802,28 @@ export const notificationType = pgEnum('notification_type', [
   'welcome',
   /** Noen fra mottakerens kull ble godkjent som medlem. */
   'cohort_joined',
+  /** Noen foreslo en endring i et selskap mottakeren er knyttet til. */
+  'company_suggestion',
+  /** Forslaget mottakeren sendte, ble godtatt. */
+  'suggestion_accepted',
+  /** Forslaget mottakeren sendte, ble avslått. */
+  'suggestion_rejected',
+  /** Noen sier at mottakeren var med i et selskap; mottakeren må bekrefte. */
+  'company_link_request',
+  /** Personen mottakeren la til i et selskap, bekreftet det. */
+  'company_link_confirmed',
 ])
 
 export type NotificationPayload = {
   /** Kullet varselet gjelder, for velkomst og nye fra kullet. */
   graduationYear?: number
+  /** Forslaget varselet gjelder. */
+  suggestionId?: string
+  /** Hva forslaget gjaldt: selskapsinfo eller en hendelse. */
+  suggestionKind?: CompanySuggestionKind
+  /** Tilknytningen varselet gjelder. */
+  linkRequestId?: string
+  linkRole?: CompanyLinkRole
 }
 
 /**
@@ -670,6 +843,8 @@ export const notification = pgTable(
     actorPersonId: uuid().references(() => person.id, { onDelete: 'cascade' }),
     postId: uuid().references(() => post.id, { onDelete: 'cascade' }),
     commentId: uuid().references(() => comment.id, { onDelete: 'cascade' }),
+    /** Selskapet varselet gjelder, for forslag og tilknytninger. Navnet hentes ved visning. */
+    companyId: uuid().references(() => company.id, { onDelete: 'cascade' }),
     /**
      * Hendelsen varselet gjelder, for eksempel `comment:<id>`. Unik per mottaker:
      * én hendelse gir aldri mer enn ett varsel til samme person, heller ikke når
@@ -685,6 +860,7 @@ export const notification = pgTable(
   (t) => [
     uniqueIndex().on(t.recipientPersonId, t.eventKey),
     index().on(t.recipientPersonId, t.createdAt),
+    index().on(t.companyId),
     // Antall uleste hentes ved hver navigering, så de har sin egen lille indeks.
     index('notification_unread_index')
       .on(t.recipientPersonId, t.createdAt)

@@ -1,22 +1,11 @@
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, GitMerge, ShieldAlert } from 'lucide-react'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useState } from 'react'
+import { CompanyForm, companyFormValues, Section } from '#/components/CompanyForm.tsx'
 import { CompanyInput, type CompanyValue } from '#/components/CompanyInput.tsx'
 import { LogoUpload } from '#/components/LogoUpload.tsx'
-import { TagInput } from '#/components/TagInput.tsx'
-import {
-  Button,
-  Card,
-  CompanyLogo,
-  cx,
-  ErrorText,
-  Field,
-  Input,
-  Textarea,
-} from '#/components/ui.tsx'
-import { statusLabels, statusOrder, type CompanyStatus } from '#/lib/companies.ts'
+import { Button, CompanyLogo, ErrorText } from '#/components/ui.tsx'
 import { fetchEditableCompany, mergeCompany, saveCompany } from '#/lib/companies.functions.ts'
-import { industrySuggestions } from '#/lib/industries.ts'
 
 export const Route = createFileRoute('/_konto/selskaper/$slug/rediger')({
   loader: async ({ params }) => {
@@ -32,71 +21,9 @@ export const Route = createFileRoute('/_konto/selskaper/$slug/rediger')({
   component: EditCompany,
 })
 
-const thisYear = new Date().getFullYear()
-
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string
-  description?: string
-  children: ReactNode
-}) {
-  return (
-    <Card className="grid gap-6 p-5 sm:p-6 md:grid-cols-[200px_minmax(0,1fr)]">
-      <div>
-        <h2 className="text-sm font-semibold text-stone-950">{title}</h2>
-        {description && (
-          <p className="mt-1 text-xs leading-relaxed text-stone-500">{description}</p>
-        )}
-      </div>
-      <div className="min-w-0 space-y-4">{children}</div>
-    </Card>
-  )
-}
-
 function EditCompany() {
   const company = Route.useLoaderData()
   const router = useRouter()
-  const [industries, setIndustries] = useState(company.industries)
-  const [status, setStatus] = useState<CompanyStatus>(company.status)
-  const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const text = (name: string) => String(form.get(name) ?? '')
-    const founded = text('foundedYear').trim()
-    setSaving(true)
-    setError(null)
-    try {
-      if (founded && (Number(founded) < 1800 || Number(founded) > thisYear + 1)) {
-        throw new Error(`«${founded}» er ikke et gyldig årstall.`)
-      }
-      const { slug } = await saveCompany({
-        data: {
-          companyId: company.id,
-          values: {
-            name: text('name'),
-            tagline: text('tagline'),
-            description: text('description'),
-            website: text('website'),
-            foundedYear: founded ? Number(founded) : null,
-            location: text('location'),
-            industries,
-            status,
-          },
-        },
-      })
-      await router.invalidate()
-      await router.navigate({ to: '/selskaper/$slug', params: { slug } })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
-      setSaving(false)
-    }
-  }
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -131,103 +58,15 @@ function EditCompany() {
         </Section>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        <Section title="Om selskapet" description="Det andre ser først på selskapssiden.">
-          <Field
-            label="Navn"
-            hint="Et nytt navn gir ny adresse til siden. Gamle lenker sendes videre."
-          >
-            <Input name="name" defaultValue={company.name} required maxLength={120} />
-          </Field>
-          <Field label="Kort beskrivelse" hint="Én linje om hva selskapet gjør.">
-            <Input
-              name="tagline"
-              defaultValue={company.tagline ?? ''}
-              maxLength={140}
-              placeholder="Sanntids vannkvalitet for oppdrettere"
-            />
-          </Field>
-          <Field label="Om selskapet">
-            <Textarea
-              name="description"
-              defaultValue={company.description ?? ''}
-              rows={6}
-              maxLength={3000}
-              placeholder="Hva lager dere, for hvem, og hvor langt har dere kommet?"
-            />
-          </Field>
-        </Section>
-
-        <Section title="Fakta">
-          <Field label="Nettside">
-            <Input
-              name="website"
-              defaultValue={company.website ?? ''}
-              inputMode="url"
-              maxLength={300}
-              placeholder="syrlig.no"
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-[8rem_minmax(0,1fr)]">
-            <Field label="Grunnlagt">
-              <Input
-                name="foundedYear"
-                defaultValue={company.foundedYear ?? ''}
-                inputMode="numeric"
-                pattern="[0-9]{4}"
-                maxLength={4}
-                placeholder={String(thisYear)}
-              />
-            </Field>
-            <Field label="Sted">
-              <Input
-                name="location"
-                defaultValue={company.location ?? ''}
-                maxLength={80}
-                placeholder="Trondheim"
-              />
-            </Field>
-          </div>
-          <fieldset>
-            <legend className="text-sm font-medium text-stone-800">Status</legend>
-            <div className="mt-1.5 inline-flex flex-wrap rounded-xl bg-stone-200/60 p-1">
-              {statusOrder.map((s) => (
-                <label
-                  key={s}
-                  className={cx(
-                    'inline-flex h-8 cursor-pointer items-center rounded-lg px-3 text-sm font-medium transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500',
-                    status === s
-                      ? 'bg-white text-stone-950 shadow-card'
-                      : 'text-stone-600 hover:text-stone-900',
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="status"
-                    value={s}
-                    checked={status === s}
-                    onChange={() => setStatus(s)}
-                    className="sr-only"
-                  />
-                  {statusLabels[s]}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        </Section>
-
-        <Section title="Bransjer" description="Gjør selskapet lett å finne i oversikten.">
-          <TagInput
-            label="Bransjer"
-            value={industries}
-            onChange={setIndustries}
-            suggestions={industrySuggestions}
-            placeholder="Skriv en bransje og trykk Enter"
-          />
-        </Section>
-
-        {error && <ErrorText>{error}</ErrorText>}
-        <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t border-stone-200 bg-stone-50/90 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:px-4">
+      <CompanyForm
+        initial={companyFormValues(company)}
+        submitLabel="Lagre endringer"
+        onSubmit={async (values) => {
+          const { slug } = await saveCompany({ data: { companyId: company.id, values } })
+          await router.invalidate()
+          await router.navigate({ to: '/selskaper/$slug', params: { slug } })
+        }}
+        cancel={
           <Link
             to="/selskaper/$slug"
             params={{ slug: company.slug }}
@@ -235,11 +74,8 @@ function EditCompany() {
           >
             Avbryt
           </Link>
-          <Button type="submit" variant="brand" disabled={saving}>
-            {saving ? 'Lagrer …' : 'Lagre endringer'}
-          </Button>
-        </div>
-      </form>
+        }
+      />
 
       {company.canMerge && <Merge targetId={company.id} targetName={company.name} />}
     </div>
@@ -275,7 +111,7 @@ function Merge({ targetId, targetName }: { targetId: string; targetName: string 
   }
 
   return (
-    <div className="mt-8">
+    <div id="sla-sammen" className="mt-8 scroll-mt-20">
       <Section
         title="Slå sammen duplikater"
         description="Finnes selskapet to ganger med ulik skrivemåte? Velg den andre, så flyttes alle som er knyttet til den, hit. Info som mangler her, hentes derfra."

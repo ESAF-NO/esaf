@@ -14,6 +14,7 @@ import {
   Rocket,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
 import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
@@ -28,18 +29,21 @@ import {
   ProfileStatus,
   Verified,
 } from '#/components/ui.tsx'
+import { fetchMyLinkRequests } from '#/lib/contributions.functions.ts'
 import { fetchPosts } from '#/lib/feed.functions.ts'
 import { esPeriod, yearSpan } from '#/lib/format.ts'
 import { confirmProfile, fetchProfile } from '#/lib/profiles.functions.ts'
 import { profileFieldLabels, profileFields, sourcesFor, unconfirmed } from '#/lib/sources.ts'
 
 export const Route = createFileRoute('/_konto/medlemmer/$personId/')({
-  loader: async ({ params }) => {
-    const [profile, posts] = await Promise.all([
+  loader: async ({ params, context: { viewer } }) => {
+    const [profile, posts, linkRequests] = await Promise.all([
       fetchProfile({ data: { personId: params.personId } }),
       fetchPosts({ data: { authorPersonId: params.personId, sort: 'new', limit: 10 } }),
+      // Noen sier at du var med i et selskap: bare på din egen profil.
+      viewer.personId === params.personId ? fetchMyLinkRequests() : [],
     ])
-    return { profile, posts }
+    return { profile, posts, linkRequests }
   },
   head: ({ loaderData }) => ({
     meta: [{ title: `${loaderData?.profile.fullName ?? 'Profil'} – ESAF` }],
@@ -190,7 +194,7 @@ function ConfirmBanner({ profile: p, fields }: { profile: Profile; fields: Profi
 }
 
 function ProfilePage() {
-  const { profile: p, posts } = Route.useLoaderData()
+  const { profile: p, posts, linkRequests } = Route.useLoaderData()
   const pending = profileFields.filter((f) => unconfirmed(sourcesFor(p.sources, f)))
   /** Merket under et importert felt som ikke er bekreftet. */
   const note = (field: ProfileSourceField, props: { label?: string; className?: string } = {}) => (
@@ -214,6 +218,22 @@ function ProfilePage() {
       >
         <ArrowLeft className="size-4" aria-hidden /> Personer
       </Link>
+
+      {linkRequests.length > 0 && (
+        <Card className="mb-4 p-5">
+          <h2 className="text-sm font-semibold text-stone-950">Stemmer dette?</h2>
+          <p className="mt-1 text-sm text-stone-500">
+            Andre har sagt at du var med i disse selskapene. Det vises ikke før du har bekreftet.
+          </p>
+          <ul className="mt-4 divide-y divide-stone-100">
+            {linkRequests.map((r) => (
+              <li key={r.id} className="py-3 first:pt-0 last:pb-0">
+                <LinkRequestCard request={r} as="person" />
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         <div

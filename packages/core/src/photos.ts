@@ -137,7 +137,7 @@ async function uploadTarget(db: Db | Tx, personId: string, isOwn: boolean, lock:
 }
 
 /** Sletter begge størrelsene. En feil her skal ikke stoppe brukeren, men må synes i loggen. */
-const deletePhotoFiles = (storage: ObjectStorage, photoKey: string) =>
+export const deletePhotoFiles = (storage: ObjectStorage, photoKey: string) =>
   deleteImageFiles(
     storage,
     sizes.map((s) => objectKey(photoKey, s)),

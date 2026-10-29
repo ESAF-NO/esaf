@@ -1,7 +1,13 @@
 import { crc32, deflateSync } from 'node:zlib'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
-import { DomainError, PHOTO_MAX_BYTES, processProfilePhoto } from '../src/index.ts'
+import {
+  DomainError,
+  PHOTO_MAX_BYTES,
+  PORTRAIT_CROP_TOP,
+  processProfilePhoto,
+  squareCrop,
+} from '../src/index.ts'
 
 type Rgb = [number, number, number]
 const red: Rgb = [220, 30, 30]
@@ -43,6 +49,42 @@ function phoneJpeg() {
     .withIccProfile('p3')
     .jpeg({ quality: 90 })
     .toBuffer()
+}
+
+const grey: Rgb = [128, 128, 128]
+
+/**
+ * Som et portrett: grått bilde på høykant med et rødt «hode» midt på bredden,
+ * i øvre tredjedel, der hodet står på de fleste profilbilder.
+ */
+function portrait(width: number, height: number, head: { top: number; bottom: number }) {
+  const pixels = Buffer.alloc(width * height * 3)
+  const [left, right] = [width * 0.35, width * 0.65]
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const inHead = y >= head.top && y < head.bottom && x >= left && x < right
+      pixels.set(inHead ? red : grey, (y * width + x) * 3)
+    }
+  }
+  return sharp(pixels, { raw: { width, height, channels: 3 } })
+}
+
+/** Ytterkantene av det røde i bildet, eller `null` om det ikke er noe rødt. */
+async function redBox(image: Buffer) {
+  const { data, info } = await sharp(image).raw().toBuffer({ resolveWithObject: true })
+  let box: { top: number; bottom: number; left: number; right: number } | null = null
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const i = (y * info.width + x) * info.channels
+      if (!near([data[i]!, data[i + 1]!, data[i + 2]!], red)) continue
+      box = box ?? { top: y, bottom: y, left: x, right: x }
+      box.top = Math.min(box.top, y)
+      box.bottom = Math.max(box.bottom, y)
+      box.left = Math.min(box.left, x)
+      box.right = Math.max(box.right, x)
+    }
+  }
+  return box
 }
 
 async function pixel(image: Buffer, x: number, y: number) {
@@ -121,7 +163,61 @@ describe('behandling av profilbilder', () => {
     expect(near(await pixel(large, 256, 412), blue)).toBe(true)
   })
 
-  it('beskjærer fra midten', async () => {
+  it('beskjærer bilder på høykant litt over midten, så hodet kommer med', async () => {
+    // 400 × 800 med hodet fra y = 60 til 200. Et kvadrat fra midten (y = 200–600)
+    // ville kuttet det helt bort.
+    const input = await portrait(400, 800, { top: 60, bottom: 200 }).png().toBuffer()
+    const { large, small } = await processProfilePhoto(input)
+    expect(await sharp(large).metadata()).toMatchObject({ width: 400, height: 400 })
+    expect(await sharp(small).metadata()).toMatchObject({ width: 192, height: 192 })
+
+    // Utsnittet starter på y = 60: hodet står helt inne i kvadratet, i øvre halvdel
+    // og midt på bredden.
+    const head = await redBox(large)
+    expect(head).not.toBeNull()
+    expect(head!.top).toBeLessThanOrEqual(2)
+    expect(head!.bottom).toBeGreaterThan(130)
+    expect(head!.bottom).toBeLessThan(200)
+    expect(Math.abs((head!.left + head!.right) / 2 - 200)).toBeLessThanOrEqual(2)
+    expect(await redBox(small)).not.toBeNull()
+  })
+
+  it('beskjærer etter EXIF-roteringen, så hodet kommer med også fra mobilbilder', async () => {
+    // Lagret liggende (800 × 400) med orientering 6; står 400 × 800 med hodet øverst.
+    const upright = await portrait(400, 800, { top: 70, bottom: 190 }).png().toBuffer()
+    const input = await sharp(upright)
+      .rotate(270)
+      .withMetadata({ orientation: 6 })
+      .jpeg({ quality: 95 })
+      .toBuffer()
+    expect(await sharp(input).metadata()).toMatchObject({ width: 800, height: 400, orientation: 6 })
+
+    const { large } = await processProfilePhoto(input)
+    expect(await sharp(large).metadata()).toMatchObject({ width: 400, height: 400 })
+    const head = await redBox(large)
+    expect(head).not.toBeNull()
+    // Hodet ligger øverst og midt på bredden, ikke ute på siden.
+    expect(head!.top).toBeLessThan(20)
+    expect(head!.bottom).toBeLessThan(200)
+    expect(Math.abs((head!.left + head!.right) / 2 - 200)).toBeLessThanOrEqual(3)
+  })
+
+  it('regner ut utsnittet: midt på bredden, og litt over midten på høykant', () => {
+    expect(PORTRAIT_CROP_TOP).toBeGreaterThan(0)
+    expect(PORTRAIT_CROP_TOP).toBeLessThan(0.5)
+    expect(squareCrop(400, 800)).toEqual({
+      left: 0,
+      top: Math.round(400 * PORTRAIT_CROP_TOP),
+      width: 400,
+      height: 400,
+    })
+    expect(squareCrop(683, 1024)).toEqual({ left: 0, top: 51, width: 683, height: 683 })
+    expect(squareCrop(1500, 500)).toEqual({ left: 500, top: 0, width: 500, height: 500 })
+    expect(squareCrop(301, 200)).toEqual({ left: 50, top: 0, width: 200, height: 200 })
+    expect(squareCrop(300, 300)).toEqual({ left: 0, top: 0, width: 300, height: 300 })
+  })
+
+  it('beskjærer bilder på bredden fra midten', async () => {
     const wide = await stripes(1500, 500, [green, red, blue]).png().toBuffer()
     const { large } = await processProfilePhoto(wide)
     expect(await sharp(large).metadata()).toMatchObject({ width: 500, height: 500 })

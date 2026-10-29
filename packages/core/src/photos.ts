@@ -28,7 +28,7 @@ const { auditEvent, membership, person } = schema
  *   logges. Admins kan fjerne bildet til hvem som helst, så upassende bilder kan
  *   tas bort.
  * - Alt behandles på serveren før det lagres: rotert etter EXIF, ALL metadata
- *   fjernet (også GPS), beskåret til kvadrat fra midten, skalert ned og lagret
+ *   fjernet (også GPS), beskåret til kvadrat (se `squareCrop`), skalert ned og lagret
  *   som WebP i to størrelser. Det som ikke kan leses som JPEG, PNG eller WebP,
  *   avvises, uansett filnavn eller hva nettleseren sier filtypen er (se
  *   `images.ts`).
@@ -48,6 +48,31 @@ const sizes = Object.keys(PHOTO_SIZES) as PhotoSize[]
 
 /** Mindre enn dette blir uskarpt selv som liten avatar. */
 const MIN_SIDE = 128
+
+/**
+ * Hvor høyt kvadratet skjæres ut av et bilde på høykant: 0 er helt øverst, 0,5
+ * er midten. Profilbilder er nesten alltid portretter med hodet i øvre del; et
+ * kvadrat fra midten kutter pannen og viser mest overkropp. Prøvd på bildene fra
+ * kullsidene: 0,15 får med hodet både på nærbilder og på bilder av hele
+ * overkroppen. Ansikts- og «attention»-beskjæring i sharp traff ofte en lys
+ * skjorte i stedet for ansiktet. Appen viser forhåndsvisningen likt
+ * (`object-position: 50% 15%`).
+ */
+export const PORTRAIT_CROP_TOP = 0.15
+
+/**
+ * Kvadratet som skjæres ut av et bilde som står slik (etter EXIF-rotering):
+ * midten på bredden, og litt over midten på høyden når bildet står på høykant.
+ */
+export function squareCrop(width: number, height: number) {
+  const side = Math.min(width, height)
+  return {
+    left: Math.floor((width - side) / 2),
+    top: Math.round((height - side) * PORTRAIT_CROP_TOP),
+    width: side,
+    height: side,
+  }
+}
 
 /** Adressene til et profilbilde. Bildene serveres bare til aktive medlemmer. */
 export type ProfilePhoto = {
@@ -80,7 +105,8 @@ export type ProcessedPhoto = Record<PhotoSize, Buffer>
  */
 export async function processProfilePhoto(file: Uint8Array): Promise<ProcessedPhoto> {
   const { width, height } = await inspectUpload(file)
-  const side = Math.min(width, height)
+  const crop = squareCrop(width, height)
+  const side = crop.width
   if (side < MIN_SIDE) {
     throw new DomainError(
       `Bildet er for lite. Bruk et bilde på minst ${MIN_SIDE} × ${MIN_SIDE} piksler.`,
@@ -92,10 +118,10 @@ export async function processProfilePhoto(file: Uint8Array): Promise<ProcessedPh
     // IPTC eller fargeprofil, og fargene gjøres om til sRGB. Testene sjekker det.
     const large = await sharp(file, readOptions)
       .timeout({ seconds: 20 })
-      .resize(Math.min(side, PHOTO_SIZES.large), Math.min(side, PHOTO_SIZES.large), {
-        fit: 'cover',
-        position: 'centre',
-      })
+      // `autoOrient` i `readOptions` roterer før utsnittet, så det gjelder bildet
+      // slik det står, akkurat som målene fra `inspectUpload`.
+      .extract(crop)
+      .resize(Math.min(side, PHOTO_SIZES.large), Math.min(side, PHOTO_SIZES.large))
       // Gjennomsiktig bakgrunn blir hvit, så alle avatarer er hele sirkler.
       .flatten({ background: '#ffffff' })
       .webp({ quality: 82 })

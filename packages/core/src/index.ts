@@ -89,10 +89,12 @@ export {
   PHOTO_MAX_BYTES,
   PHOTO_SIZES,
   photoUrls,
+  PORTRAIT_CROP_TOP,
   processProfilePhoto,
   readProfilePhoto,
   removeProfilePhoto,
   setProfilePhoto,
+  squareCrop,
   type ProcessedPhoto,
   type ProfilePhoto,
 } from './photos.ts'

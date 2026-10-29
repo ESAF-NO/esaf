@@ -15,7 +15,7 @@ import {
   PageHeader,
   Select,
 } from '#/components/ui.tsx'
-import { roleText, statusLabels } from '#/lib/companies.ts'
+import { roleText, statusLabels, statusOrder, type CompanyStatus } from '#/lib/companies.ts'
 import { fetchCompanies } from '#/lib/companies.functions.ts'
 import { fold } from '#/lib/member-search.ts'
 
@@ -24,6 +24,7 @@ export const Route = createFileRoute('/_konto/selskaper/')({
     q: z.string().optional().catch(undefined),
     vis: z.enum(['alle']).optional().catch(undefined),
     bransje: z.string().optional().catch(undefined),
+    status: z.enum(statusOrder).optional().catch(undefined),
   }),
   loader: () => fetchCompanies(),
   head: () => ({ meta: [{ title: 'Selskaper – ESAF' }] }),
@@ -35,7 +36,7 @@ const same = (a: string, b: string) => a.toLocaleLowerCase('nb') === b.toLocaleL
 
 function Companies() {
   const companies = Route.useLoaderData()
-  const { q, vis, bransje } = Route.useSearch()
+  const { q, vis, bransje, status } = Route.useSearch()
   const { viewer } = Route.useRouteContext()
   const navigate = useNavigate({ from: Route.fullPath })
   const [shown, setShown] = useState(PAGE)
@@ -55,12 +56,22 @@ function Companies() {
     return [...counts.values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label, 'nb'))
   }, [tab])
 
+  // Statusene som finnes i fanen, i fast rekkefølge.
+  const statuses = useMemo(
+    () =>
+      statusOrder
+        .map((s) => ({ status: s, n: tab.filter((c) => c.status === s).length }))
+        .filter((s) => s.n > 0),
+    [tab],
+  )
+
   const results = useMemo(() => {
     const words = fold(q ?? '')
       .split(/\s+/)
       .filter(Boolean)
     return tab.filter((c) => {
       if (bransje && !c.industries.some((tag) => same(tag, bransje))) return false
+      if (status && c.status !== status) return false
       const text = fold(
         [
           c.name,
@@ -74,9 +85,9 @@ function Companies() {
       )
       return words.every((w) => text.includes(w))
     })
-  }, [tab, q, bransje])
+  }, [tab, q, bransje, status])
 
-  const setSearch = (patch: { q?: string; bransje?: string }) => {
+  const setSearch = (patch: { q?: string; bransje?: string; status?: CompanyStatus }) => {
     setShown(PAGE)
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
   }
@@ -105,6 +116,7 @@ function Companies() {
           ).map(([value, label]) => (
             <Link
               key={label}
+              from={Route.fullPath}
               to="/selskaper"
               search={(prev) => ({ ...prev, vis: value })}
               onClick={() => setShown(PAGE)}
@@ -151,15 +163,32 @@ function Companies() {
               ))}
             </Select>
           )}
+          {(statuses.length > 1 || status) && (
+            <Select
+              value={status ?? ''}
+              onChange={(e) =>
+                setSearch({ status: (e.target.value || undefined) as CompanyStatus | undefined })
+              }
+              aria-label="Status"
+              className="shrink-0 sm:w-44"
+            >
+              <option value="">Alle statuser</option>
+              {statuses.map((s) => (
+                <option key={s.status} value={s.status}>
+                  {statusLabels[s.status]} ({s.n})
+                </option>
+              ))}
+            </Select>
+          )}
         </div>
       </div>
 
       {results.length === 0 ? (
         <EmptyState
           icon={Building2}
-          title={q || bransje ? 'Ingen selskaper matcher søket' : 'Ingen selskaper ennå'}
+          title={q || bransje || status ? 'Ingen selskaper matcher søket' : 'Ingen selskaper ennå'}
         >
-          {q || bransje ? (
+          {q || bransje || status ? (
             <p>Prøv et annet søk, eller se alle selskaper.</p>
           ) : (
             <p>
@@ -167,7 +196,7 @@ function Companies() {
               sin.
             </p>
           )}
-          {!q && !bransje && viewer.personId && (
+          {!q && !bransje && !status && viewer.personId && (
             <Link
               to="/medlemmer/$personId/rediger"
               params={{ personId: viewer.personId }}

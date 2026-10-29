@@ -1,7 +1,8 @@
-import type { Experience } from '@esaf/core'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import type { Experience, Profile, ProfileSourceField } from '@esaf/core'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import {
   ArrowLeft,
+  BadgeCheck,
   BriefcaseBusiness,
   GraduationCap,
   Info,
@@ -12,12 +13,16 @@ import {
   Plus,
   Rocket,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { PostCard } from '#/components/PostCard.tsx'
+import { QuoteList } from '#/components/Quotes.tsx'
+import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
 import {
   Avatar,
+  Button,
   buttonClass,
   Card,
+  ErrorText,
   CompanyLogo,
   LinkedInIcon,
   ProfileStatus,
@@ -25,7 +30,8 @@ import {
 } from '#/components/ui.tsx'
 import { fetchPosts } from '#/lib/feed.functions.ts'
 import { esPeriod, yearSpan } from '#/lib/format.ts'
-import { fetchProfile } from '#/lib/profiles.functions.ts'
+import { confirmProfile, fetchProfile } from '#/lib/profiles.functions.ts'
+import { profileFieldLabels, profileFields, sourcesFor, unconfirmed } from '#/lib/sources.ts'
 
 export const Route = createFileRoute('/_konto/medlemmer/$personId/')({
   loader: async ({ params }) => {
@@ -128,8 +134,74 @@ function ExperienceList({ items }: { items: Experience[] }) {
   )
 }
 
+/**
+ * For eieren, når noe på profilen er importert og ikke bekreftet: hva det er,
+ * hvor det kom fra, og én knapp for å bekrefte alt.
+ */
+function ConfirmBanner({ profile: p, fields }: { profile: Profile; fields: ProfileSourceField[] }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sources = p.sources.filter((s) => fields.includes(s.field))
+  const labels = fields.map((f) => profileFieldLabels[f].toLocaleLowerCase('nb'))
+
+  async function confirmAll() {
+    setBusy(true)
+    setError(null)
+    try {
+      await confirmProfile({ data: { personId: p.personId } })
+      await router.invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke bekrefte.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl bg-brand-50 p-4 text-sm text-brand-900 ring-1 ring-brand-200 ring-inset">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 basis-72">
+          Noe på profilen din er hentet fra <SourceNames sources={sources} />:{' '}
+          {labels.length > 1 ? `${labels.slice(0, -1).join(', ')} og ${labels.at(-1)}` : labels[0]}.
+          Stemmer det? Rett det som er feil, eller bekreft det som stemmer, så forsvinner merkingen.
+        </p>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            to="/medlemmer/$personId/rediger"
+            params={{ personId: p.personId }}
+            className={buttonClass({ variant: 'secondary', size: 'sm' })}
+          >
+            Rett opp
+          </Link>
+          <Button variant="brand" size="sm" onClick={confirmAll} disabled={busy}>
+            <BadgeCheck className="size-4" aria-hidden />{' '}
+            {busy ? 'Bekrefter …' : 'Stemmer, bekreft alt'}
+          </Button>
+        </div>
+      </div>
+      {error && (
+        <div className="mt-3">
+          <ErrorText>{error}</ErrorText>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ProfilePage() {
   const { profile: p, posts } = Route.useLoaderData()
+  const pending = profileFields.filter((f) => unconfirmed(sourcesFor(p.sources, f)))
+  /** Merket under et importert felt som ikke er bekreftet. */
+  const note = (field: ProfileSourceField, props: { label?: string; className?: string } = {}) => (
+    <SourceNote
+      sources={sourcesFor(p.sources, field)}
+      personId={p.personId}
+      field={field}
+      canConfirm={p.isOwn}
+      {...props}
+    />
+  )
   const headline = [p.jobTitle, p.currentCompany].filter(Boolean).join(' · ')
   const empty =
     !p.bio && p.experience.length === 0 && p.expertise.length === 0 && p.industries.length === 0
@@ -218,6 +290,7 @@ function ProfilePage() {
               )}
               <ProfileStatus claimed={p.claimed} />
             </div>
+            {note('photo', { label: 'Bildet', className: 'mt-2' })}
           </div>
         </div>
       </Card>
@@ -231,6 +304,7 @@ function ProfilePage() {
           </p>
         </div>
       )}
+      {p.isOwn && pending.length > 0 && <ConfirmBanner profile={p} fields={pending} />}
       {p.isOwn && empty && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-brand-50 p-4 text-sm text-brand-900 ring-1 ring-brand-200 ring-inset">
           <p>
@@ -255,11 +329,13 @@ function ProfilePage() {
               <p className="mt-2 text-[15px] leading-relaxed whitespace-pre-line text-stone-700">
                 {p.bio}
               </p>
+              {note('bio', { className: 'mt-3' })}
             </Card>
           )}
           {p.experience.length > 0 ? (
             <Card className="p-5 sm:p-6">
               <h2 className="text-sm font-semibold text-stone-950">Erfaring</h2>
+              {note('experience', { className: 'mt-1' })}
               <ExperienceList items={p.experience} />
             </Card>
           ) : (
@@ -285,14 +361,17 @@ function ProfilePage() {
             <Card className="p-5 sm:p-6">
               <h2 className="text-sm font-semibold text-stone-950">Kan hjelpe med</h2>
               <TagLinks tags={p.expertise} />
+              {note('expertise', { className: 'mt-3' })}
             </Card>
           )}
           {p.industries.length > 0 && (
             <Card className="p-5 sm:p-6">
               <h2 className="text-sm font-semibold text-stone-950">Bransjer</h2>
               <TagLinks tags={p.industries} />
+              {note('industries', { className: 'mt-3' })}
             </Card>
           )}
+          <QuoteList quotes={p.quotes} showSpeaker={false} />
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-stone-950">Innlegg</h2>
@@ -346,16 +425,19 @@ function ProfilePage() {
                   >
                     {p.esCompany}
                   </Link>
+                  {note('esCompany', { className: 'mt-0.5 font-normal' })}
                 </Fact>
               )}
               {p.studyBackground && (
                 <Fact icon={GraduationCap} label="Studieretning før ES">
                   {p.studyBackground}
+                  {note('studyBackground', { className: 'mt-0.5 font-normal' })}
                 </Fact>
               )}
               {p.city && (
                 <Fact icon={MapPin} label="Bor i">
                   {p.city}
+                  {note('city', { className: 'mt-0.5 font-normal' })}
                 </Fact>
               )}
             </dl>
@@ -375,6 +457,7 @@ function ProfilePage() {
                     >
                       <LinkedInIcon className="size-4 text-[#0A66C2]" /> LinkedIn-profil
                     </a>
+                    {note('linkedinUrl', { className: 'mt-0.5 pl-6' })}
                   </li>
                 )}
                 {p.contactEmail && (

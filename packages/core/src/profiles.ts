@@ -12,6 +12,14 @@ import { DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
+import { loadQuotes, type Quote } from './quotes.ts'
+import {
+  loadFieldSources,
+  profileSourceFields,
+  recordFieldEdits,
+  type FieldSource,
+  type ProfileSourceField,
+} from './sources.ts'
 import { optionalText, tagList, yearInput } from './validation.ts'
 
 const { auditEvent, cohort, company, experience, membership, person, personCohort } = schema
@@ -145,6 +153,13 @@ export type Profile = {
   /** Bare satt når personen selv har valgt å vise det. */
   phone: string | null
   cohorts: { graduationYear: number; relation: schema.CohortRelation }[]
+  /** Sitater fra personen. */
+  quotes: Quote[]
+  /**
+   * Hvor importerte felt kom fra, for feltene som vises. Aldri for kontaktinfo.
+   * Felt uten bekreftede kilder merkes på profilen, og eieren kan bekrefte dem.
+   */
+  sources: FieldSource<ProfileSourceField>[]
   isOwn: boolean
   canEdit: boolean
 }
@@ -174,6 +189,27 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     loadExperience(db, [personId]),
   ])
   const roles = experiences.get(personId) ?? []
+  const values: Record<ProfileSourceField, unknown> = {
+    photo: row.photoKey,
+    bio: row.bio,
+    experience: roles.length ? roles : null,
+    expertise: row.expertise.length ? row.expertise : null,
+    industries: row.industries.length ? row.industries : null,
+    esCompany: row.esCompany,
+    studyBackground: row.studyBackground,
+    city: row.city,
+    linkedinUrl: row.linkedinUrl,
+  }
+  const [quotes, sources] = await Promise.all([
+    loadQuotes(db, viewer, { personId }),
+    loadFieldSources(
+      db,
+      viewer,
+      'person',
+      personId,
+      profileSourceFields.filter((field) => values[field] !== null),
+    ),
+  ])
 
   const claimed = row.userId !== null
   return {
@@ -195,6 +231,8 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     contactEmail: claimed && row.contactEmailVisible ? row.contactEmail : null,
     phone: claimed && row.phoneVisible ? row.phone : null,
     cohorts,
+    quotes,
+    sources,
     isOwn,
     canEdit: isOwn || can(viewer, 'profiles.edit'),
   }
@@ -279,15 +317,30 @@ export async function updateProfile(
 
   await db.transaction(async (tx) => {
     const [before] = await tx
-      .select({ esCompanyId: person.esCompanyId })
+      .select({
+        esCompanyId: person.esCompanyId,
+        bio: person.bio,
+        city: person.city,
+        studyBackground: person.studyBackground,
+        linkedinUrl: person.linkedinUrl,
+        expertise: person.expertise,
+        industries: person.industries,
+      })
       .from(person)
       .where(eq(person.id, personId))
       .for('update')
     if (!before) throw new NotFoundError('Fant ikke profilen.')
     const previous = await tx
-      .select({ companyId: experience.companyId })
+      .select({
+        companyId: experience.companyId,
+        title: experience.title,
+        startYear: experience.startYear,
+        endYear: experience.endYear,
+        founder: experience.founder,
+      })
       .from(experience)
       .where(eq(experience.personId, personId))
+      .orderBy(asc(experience.position))
 
     // ES-selskapet sist, så rekkefølgen på erfaringen beholdes.
     const companyIds = await resolveCompanies(tx, [
@@ -312,6 +365,28 @@ export async function updateProfile(
         })),
       )
     }
+    // Importerte felt som er endret: eieren bekrefter dem, en admin erstatter dem.
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+    const job = (e: (typeof previous)[number]) =>
+      [e.companyId, e.title, e.startYear, e.endYear, e.founder] as const
+    const after = {
+      bio: fields.bio,
+      city: fields.city,
+      studyBackground: fields.studyBackground,
+      linkedinUrl: fields.linkedinUrl,
+      expertise: fields.expertise,
+      industries: fields.industries,
+    }
+    const edited: ProfileSourceField[] = (Object.keys(after) as (keyof typeof after)[]).filter(
+      (key) => !same(after[key], before[key]),
+    )
+    if (esId !== before.esCompanyId) edited.push('esCompany')
+    const jobs = roles.map(({ title, startYear, endYear, founder }, i) =>
+      job({ companyId: companyIds[i]!, title, startYear, endYear, founder }),
+    )
+    if (!same(jobs, previous.map(job))) edited.push('experience')
+    await recordFieldEdits(tx, 'person', personId, edited, isOwn ? 'confirm' : 'forget')
+
     // Et selskap som bare fantes fordi personen skrev det (f.eks. en skrivefeil), ryddes bort.
     await deleteOrphanCompanies(tx, [
       ...previous.map((p) => p.companyId).filter((id) => !companyIds.includes(id)),

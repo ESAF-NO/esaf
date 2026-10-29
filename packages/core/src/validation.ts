@@ -1,3 +1,4 @@
+import { domainToUnicode } from 'node:url'
 import { z } from 'zod'
 
 /** Valgfri tekst. Tomme felt lagres som `null`. */
@@ -40,3 +41,40 @@ export const yearInput = (min: number) =>
       'Årstallet kan ikke være så langt fram i tid.',
     )
     .nullable()
+
+/**
+ * Lenken bare hvis den er http eller https, ellers `null`. Brukes på kildelenker
+ * fra import før de sendes til nettleseren, så en lenke aldri kan kjøre kode.
+ */
+export function safeHttpUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+      ? url.href
+      : null
+  } catch {
+    return null
+  }
+}
+
+/** Valgfri kildelenke: en full http- eller https-adresse. */
+export const optionalSourceUrl = optionalText(500).transform((v, ctx) => {
+  if (v === null) return null
+  const url = safeHttpUrl(/^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`)
+  if (!url || !/^[^.]+(\.[^.]+)+$/.test(new URL(url).hostname)) {
+    ctx.addIssue({ code: 'custom', message: 'Ugyldig lenke til kilden.' })
+    return z.NEVER
+  }
+  return url
+})
+
+/** Domenet i en lenke uten «www.», til å vise som navnet på kilden. */
+export function hostLabel(url: string | null): string | null {
+  if (!url) return null
+  try {
+    return domainToUnicode(new URL(url).hostname).replace(/^www\./, '') || null
+  } catch {
+    return null
+  }
+}

@@ -46,7 +46,7 @@ describe.skipIf(!url)('feed', () => {
 
   beforeEach(async () => {
     await db.execute(
-      sql`truncate ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
+      sql`truncate ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user}, ${schema.company} cascade`,
     )
     const adminId = await account('Admin')
     await grantRoleAsOperator(db, { email: 'admin@example.test', reason: 'test', role: 'admin' })

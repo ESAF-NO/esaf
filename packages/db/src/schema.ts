@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -189,7 +190,12 @@ export const person = pgTable(
   (t) => [uniqueIndex().on(t.userId), uniqueIndex().on(t.photoKey), index().on(t.esCompanyId)],
 )
 
-export const companyStatus = pgEnum('company_status', ['active', 'acquired', 'closed'])
+/**
+ * `unknown` er standard for selskaper fra import uten bevis for at de lever. Når
+ * noen skriver inn et nytt selskap selv, settes `active` eksplisitt (se
+ * `resolveCompanies` i @esaf/core).
+ */
+export const companyStatus = pgEnum('company_status', ['active', 'acquired', 'closed', 'unknown'])
 
 /**
  * Et selskap ES-alumni har startet, jobber i eller har jobbet i. Erfaring og
@@ -223,7 +229,12 @@ export const company = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
-    status: companyStatus().notNull().default('active'),
+    status: companyStatus().notNull().default('unknown'),
+    /**
+     * Siste gang selskapet sto på entreprenorskolen.no (nettsiden eller arkivet).
+     * Settes av importen og vises når statusen er ukjent.
+     */
+    lastSeenOnEsSite: date({ mode: 'string' }),
     /**
      * Logoen: en tilfeldig nøkkel til logofilene i lagringen (se `logos.ts` i
      * @esaf/core), som `person.photoKey`. Null betyr bokstavflis.
@@ -278,6 +289,111 @@ export const experience = pgTable(
       sql`(${t.startYear} is null or ${t.startYear} between 1950 and 2100) and (${t.endYear} is null or ${t.endYear} between 1950 and 2100) and (${t.startYear} is null or ${t.endYear} is null or ${t.endYear} >= ${t.startYear})`,
     ),
   ],
+)
+
+/** Hvor sikker en kilde er. `low` vises bare for dem som kan rette det (se @esaf/core). */
+export const sourceConfidence = pgEnum('source_confidence', ['high', 'medium', 'low'])
+
+/** Hvor mye av datoen som er kjent: bare året, året og måneden, eller hele datoen. */
+export const datePrecision = pgEnum('date_precision', ['year', 'month', 'day'])
+
+export const companyEventType = pgEnum('company_event_type', [
+  'founded',
+  'funding',
+  'award',
+  'launch',
+  'acquired',
+  'bankrupt',
+  'dissolved',
+  'closed',
+  'other',
+])
+
+/**
+ * En hendelse i historien til et selskap: stiftet, kapital, priser, lanseringer,
+ * oppkjøp, konkurs. Fra import (Brreg, nyhetssaker) eller lagt inn i appen.
+ * `date` lagres som en hel dato; `datePrecision` sier hvor mye av den som vises
+ * («2019», «juni 2019» eller «4. juni 2019»).
+ */
+export const companyEvent = pgTable(
+  'company_event',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    companyId: uuid()
+      .notNull()
+      .references(() => company.id, { onDelete: 'cascade' }),
+    date: date({ mode: 'string' }).notNull(),
+    datePrecision: datePrecision().notNull().default('day'),
+    type: companyEventType().notNull(),
+    text: text().notNull(),
+    sourceUrl: text(),
+    /** Kilden slik den vises, f.eks. «Brønnøysundregistrene» eller «tu.no». */
+    sourceLabel: text(),
+    /** Hendelser lagt inn eller bekreftet i appen er `high`. */
+    confidence: sourceConfidence().notNull().default('high'),
+    ...timestamps,
+  },
+  (t) => [index().on(t.companyId, t.date)],
+)
+
+/**
+ * Et sitat fra en ES-er, fra entreprenorskolen.no eller en nyhetssak. Taleren er
+ * en person ESAF kjenner (`personId`), og navnet slik kilden skriver det står
+ * alltid i `speakerName`.
+ * `confidence` gjelder hvem som sa det: sitater med usikker taler vises ikke for
+ * vanlige medlemmer.
+ */
+export const quote = pgTable(
+  'quote',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    text: text().notNull(),
+    personId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    companyId: uuid().references(() => company.id, { onDelete: 'set null' }),
+    /**
+     * Navnet slik kilden skriver det. Vises når taleren ikke er koblet til en
+     * person, og blir stående om personen slettes.
+     */
+    speakerName: text().notNull(),
+    /** Rollen slik kilden skriver den, f.eks. «Daglig leder i OptoScale». */
+    speakerRole: text(),
+    date: date({ mode: 'string' }),
+    sourceUrl: text(),
+    sourceLabel: text(),
+    confidence: sourceConfidence().notNull().default('high'),
+    ...timestamps,
+  },
+  (t) => [index().on(t.personId), index().on(t.companyId)],
+)
+
+export const fieldSourceEntity = pgEnum('field_source_entity', ['person', 'company'])
+
+/**
+ * Hvor et felt på en profil eller et selskap kom fra, for felt som er importert
+ * (f.eks. bio fra entreprenorskolen.no). Ett felt kan ha flere kilder.
+ * `confirmedAt` settes når eieren av profilen, eller noen som er knyttet til
+ * selskapet, bekrefter eller skriver om feltet. Raden peker på personen eller
+ * selskapet med `entityType` og `entityId`, uten fremmednøkkel; @esaf/core
+ * flytter og sletter radene når selskaper slås sammen eller ryddes bort.
+ */
+export const fieldSource = pgTable(
+  'field_source',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    entityType: fieldSourceEntity().notNull(),
+    entityId: uuid().notNull(),
+    /** Feltet i appen, f.eks. `bio`, `linkedinUrl` eller `website`. */
+    field: text().notNull(),
+    /** Kilden slik den vises, f.eks. «entreprenorskolen.no» eller «kullisten». */
+    sourceLabel: text().notNull(),
+    /** Null når kilden ikke har en offentlig adresse (som kullisten). */
+    sourceUrl: text(),
+    fetchedAt: timestamp({ withTimezone: true }),
+    confidence: sourceConfidence().notNull(),
+    confirmedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [uniqueIndex().on(t.entityType, t.entityId, t.field, t.sourceLabel)],
 )
 
 export const emailSource = pgEnum('email_source', ['signup', 'import', 'admin'])
@@ -398,6 +514,10 @@ export type CohortRelation = (typeof cohortRelation.enumValues)[number]
 export type PersonSource = (typeof personSource.enumValues)[number]
 export type AccessRequestStatus = (typeof accessRequestStatus.enumValues)[number]
 export type CompanyStatus = (typeof companyStatus.enumValues)[number]
+export type SourceConfidence = (typeof sourceConfidence.enumValues)[number]
+export type DatePrecision = (typeof datePrecision.enumValues)[number]
+export type CompanyEventType = (typeof companyEventType.enumValues)[number]
+export type FieldSourceEntity = (typeof fieldSourceEntity.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)

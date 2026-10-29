@@ -88,8 +88,8 @@ function AuditLog() {
   return (
     <div className="max-w-3xl">
       <p className="mb-5 text-sm text-stone-500">
-        Hvem som har gjort hva med tilgang, roller, profiler og andres innhold, nyeste først.
-        Hendelsene kan ikke endres eller slettes i appen.
+        Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater og andres innhold,
+        nyeste først. Hendelsene kan ikke endres eller slettes i appen.
       </p>
 
       {entries.length === 0 ? (
@@ -144,7 +144,12 @@ function AuditLog() {
 
 function LogEntry({ entry: e }: { entry: Entry }) {
   const reason = text(e.details.reason)
-  const excerpt = e.action === 'content.remove_comment' ? text(e.details.excerpt) : null
+  const excerpt =
+    e.action === 'content.remove_comment'
+      ? text(e.details.excerpt)
+      : e.action === 'quote.remove'
+        ? text(e.details.text)
+        : null
   const extra = Object.hasOwn(sentences, e.action)
     ? []
     : Object.entries(e.details).filter(([key, value]) => key !== 'reason' && value !== null)
@@ -215,6 +220,26 @@ function Who({ person }: { person: AuditPerson | null }) {
     </Link>
   )
 }
+
+/** Selskapet i en setning, med lenke. Gamle slugger sendes videre til selskapet. */
+function Company({ details }: { details: Entry['details'] }) {
+  const name = text(details.name) ?? 'et selskap'
+  const slug = text(details.slug)
+  if (!slug) return <>{name}</>
+  return (
+    <Link
+      to="/selskaper/$slug"
+      params={{ slug }}
+      className="font-medium text-stone-900 hover:text-brand-600"
+    >
+      {name}
+    </Link>
+  )
+}
+
+/** Hvem et sitat er fra: personen, ellers navnet slik kilden skriver det. */
+const speaker = ({ subject, details, entry }: Parts) =>
+  entry.subject ? subject : (text(details.speaker) ?? 'en ukjent')
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
 const count = (value: unknown) => (typeof value === 'number' ? value : 0)
@@ -308,6 +333,55 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
   'profile.link': ({ actor, subject }) => (
     <>
       {actor} koblet en konto til profilen til {subject}.
+    </>
+  ),
+  'company.admin_edit': ({ actor, details }) => (
+    <>
+      {actor} redigerte <Company details={details} />.
+    </>
+  ),
+  'company.admin_logo_upload': ({ actor, details }) => (
+    <>
+      {actor} {details.replaced ? 'byttet' : 'la inn'} logoen til <Company details={details} />.
+    </>
+  ),
+  'company.admin_logo_remove': ({ actor, details }) => (
+    <>
+      {actor} fjernet logoen til <Company details={details} />.
+    </>
+  ),
+  'company.merge': ({ actor, details }) => {
+    const from = (details.from ?? {}) as Entry['details']
+    const into = (details.into ?? {}) as Entry['details']
+    return (
+      <>
+        {actor} slo sammen «{text(from.name) ?? 'et selskap'}» med <Company details={into} />.
+      </>
+    )
+  },
+  'company.admin_event_add': ({ actor, details }) => (
+    <>
+      {actor} la til en hendelse i historikken til <Company details={details} />.
+    </>
+  ),
+  'company.admin_event_edit': ({ actor, details }) => (
+    <>
+      {actor} rettet en hendelse i historikken til <Company details={details} />.
+    </>
+  ),
+  'company.admin_event_remove': ({ actor, details }) => (
+    <>
+      {actor} slettet en hendelse i historikken til <Company details={details} />.
+    </>
+  ),
+  'quote.edit': (parts) => (
+    <>
+      {parts.actor} rettet et sitat fra {speaker(parts)}.
+    </>
+  ),
+  'quote.remove': (parts) => (
+    <>
+      {parts.actor} slettet et sitat fra {speaker(parts)}.
     </>
   ),
   'content.remove_post': ({ actor, subject, details }) => {

@@ -11,13 +11,15 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { PostCard } from '#/components/PostCard.tsx'
+import { FeaturedQuote } from '#/components/Quotes.tsx'
 import { Avatar, buttonClass, Card, cx, EmptyState } from '#/components/ui.tsx'
 import { channelKeys, channelOrder, channels } from '#/lib/channels.ts'
 import { fetchCommunity, fetchPosts } from '#/lib/feed.functions.ts'
 import { esPeriod, plural } from '#/lib/format.ts'
+import { fetchRandomQuote } from '#/lib/quotes.functions.ts'
 
 export const Route = createFileRoute('/_konto/feed/')({
   validateSearch: z.object({
@@ -27,11 +29,12 @@ export const Route = createFileRoute('/_konto/feed/')({
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) => {
-    const [posts, community] = await Promise.all([
+    const [posts, community, quote] = await Promise.all([
       fetchPosts({ data: { channel: deps.kanal, sort: deps.sort ?? 'top', q: deps.q, limit: 50 } }),
       fetchCommunity(),
+      fetchRandomQuote(),
     ])
-    return { posts, community }
+    return { posts, community, quote }
   },
   head: ({ match }) => ({
     meta: [
@@ -196,7 +199,9 @@ function OwnCohort({ cohort: c }: { cohort: CohortSummary }) {
 }
 
 function Feed() {
-  const { posts, community } = Route.useLoaderData()
+  const { posts, community, quote: loadedQuote } = Route.useLoaderData()
+  // Samme sitat mens man bytter kanal og sortering; et nytt neste gang man kommer hit.
+  const [quote] = useState(loadedQuote)
   const { kanal, sort = 'top', q } = Route.useSearch()
   const { viewer } = Route.useRouteContext()
   const channel = kanal ? channels[kanal] : null
@@ -348,6 +353,8 @@ function Feed() {
         </Card>
 
         {ownCohort && <OwnCohort cohort={ownCohort} />}
+
+        {quote && <FeaturedQuote quote={quote} />}
 
         <Card className="p-2">
           <p className="px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wider text-stone-400 uppercase">

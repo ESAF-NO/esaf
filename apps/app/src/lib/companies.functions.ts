@@ -1,11 +1,15 @@
 import {
+  addCompanyEvent,
+  companyEventTypes,
   companyStatuses,
+  deleteCompanyEvent,
   getCompany,
   getEditableCompany,
   listCompanies,
   mergeCompanies,
   searchCompanies,
   updateCompany,
+  updateCompanyEvent,
 } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
@@ -53,3 +57,35 @@ export const findCompanies = createServerFn({ method: 'GET' })
 export const mergeCompany = createServerFn({ method: 'POST' })
   .validator(z.object({ sourceId: z.uuid(), targetId: z.uuid() }))
   .handler(({ data }) => run((viewer) => mergeCompanies(db, storage, viewer, data)))
+
+// Full validering av hendelsen skjer i @esaf/core (companyEventInput). Her sjekkes bare formen.
+const eventFields = z.object({
+  year: z.number().int(),
+  month: z.number().int().nullable(),
+  day: z.number().int().nullable(),
+  type: z.enum(companyEventTypes),
+  text: z.string().max(2000),
+  sourceUrl: z.string().max(1000),
+  sourceLabel: z.string().max(200),
+})
+
+export type CompanyEventFormValues = z.infer<typeof eventFields>
+
+/** Ny hendelse med `companyId`, eller rett en med `eventId`. */
+export const saveCompanyEvent = createServerFn({ method: 'POST' })
+  .validator(
+    z.union([
+      z.object({ companyId: z.uuid(), values: eventFields }),
+      z.object({ eventId: z.uuid(), values: eventFields }),
+    ]),
+  )
+  .handler(({ data }) =>
+    run(async (viewer) => {
+      if ('eventId' in data) await updateCompanyEvent(db, viewer, data.eventId, data.values)
+      else await addCompanyEvent(db, viewer, data.companyId, data.values)
+    }),
+  )
+
+export const removeCompanyEvent = createServerFn({ method: 'POST' })
+  .validator(z.object({ eventId: z.uuid() }))
+  .handler(({ data }) => run((viewer) => deleteCompanyEvent(db, viewer, data.eventId)))

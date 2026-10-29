@@ -190,7 +190,7 @@ function EditCompany() {
           </div>
           <fieldset>
             <legend className="text-sm font-medium text-stone-800">Status</legend>
-            <div className="mt-1.5 inline-flex rounded-xl bg-stone-200/60 p-1">
+            <div className="mt-1.5 inline-flex flex-wrap rounded-xl bg-stone-200/60 p-1">
               {statusOrder.map((s) => (
                 <label
                   key={s}

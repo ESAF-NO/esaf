@@ -5,6 +5,7 @@ import { assertCan, assertMember, type Viewer } from './access.ts'
 import { DomainError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
+import { deleteFieldSources } from './sources.ts'
 
 const {
   accessRequest,
@@ -305,6 +306,7 @@ export async function linkAccountInTx(
     .set({ personId: input.profilePersonId })
     .where(eq(personEmail.personId, input.pendingPersonId))
   await tx.delete(person).where(eq(person.id, input.pendingPersonId))
+  await deleteFieldSources(tx, 'person', [input.pendingPersonId])
   await tx
     .update(person)
     .set({ userId: pending.userId, claimedAt: new Date() })

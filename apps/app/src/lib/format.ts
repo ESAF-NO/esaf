@@ -99,3 +99,25 @@ export function yearSpan(start: number | null, end: number | null) {
   if (start === null) return `Til ${end}`
   return start === end ? String(start) : `${start}–${end}`
 }
+
+const monthYear = new Intl.DateTimeFormat('nb-NO', {
+  timeZone: 'UTC',
+  month: 'long',
+  year: 'numeric',
+})
+const longDate = new Intl.DateTimeFormat('nb-NO', { timeZone: 'UTC', dateStyle: 'long' })
+
+/**
+ * En dato der bare deler er kjent: «2019», «juni 2019» eller «4. juni 2019».
+ * `date` er `YYYY-MM-DD`; den leses som UTC, så server og nettleser skriver likt.
+ */
+export function partialDate(date: string, precision: 'year' | 'month' | 'day') {
+  if (precision === 'year') return date.slice(0, 4)
+  const d = new Date(`${date}T00:00:00Z`)
+  return precision === 'month' ? monthYear.format(d) : longDate.format(d)
+}
+
+const day = new Intl.DateTimeFormat('nb-NO', { timeZone: zone, dateStyle: 'long' })
+
+/** «29. oktober 2026» i norsk tid. */
+export const longDay = (date: Date | string) => day.format(new Date(date))

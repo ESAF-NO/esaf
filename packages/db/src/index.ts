@@ -5,12 +5,16 @@ export * as schema from './schema.ts'
 export type {
   AccessRequestStatus,
   CohortRelation,
+  CompanyEventType,
   CompanyStatus,
+  DatePrecision,
+  FieldSourceEntity,
   MemberRole,
   MembershipStatus,
   NotificationPayload,
   NotificationType,
   PersonSource,
   PostChannel,
+  SourceConfidence,
 } from './schema.ts'
 export { sql } from 'drizzle-orm'

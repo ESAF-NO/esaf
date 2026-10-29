@@ -1,4 +1,10 @@
-import { getEditableProfile, getProfile, updateProfile } from '@esaf/core'
+import {
+  confirmProfileFields,
+  getEditableProfile,
+  getProfile,
+  profileSourceFields,
+  updateProfile,
+} from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { rethrowForClient } from '#/server/access.server.ts'
@@ -61,6 +67,19 @@ export const saveProfile = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await updateProfile(db, await getRequestViewer(), data.personId, data.values)
+    } catch (error) {
+      return rethrowForClient(error)
+    }
+  })
+
+/** Eieren bekrefter importerte felt. Uten `fields` bekreftes alle. */
+export const confirmProfile = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ personId: z.uuid(), fields: z.array(z.enum(profileSourceFields)).optional() }),
+  )
+  .handler(async ({ data }) => {
+    try {
+      return await confirmProfileFields(db, await getRequestViewer(), data.personId, data.fields)
     } catch (error) {
       return rethrowForClient(error)
     }

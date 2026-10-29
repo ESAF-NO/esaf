@@ -5,13 +5,34 @@ import { and, arrayOverlaps, asc, eq, inArray, isNotNull, isNull, ne, or, sql } 
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
+import { loadCompanyEvents, type CompanyEvent } from './company-events.ts'
 import { deleteLogoFiles, logoUrls, type CompanyLogoUrls } from './logos.ts'
 import type { Tx } from './members.ts'
+import { loadQuotes, type Quote } from './quotes.ts'
+import {
+  companySourceFields,
+  deleteFieldSources,
+  loadFieldSources,
+  moveCompanySources,
+  recordFieldEdits,
+  type CompanySourceField,
+  type FieldSource,
+} from './sources.ts'
 import { optionalText, tagList, yearInput } from './validation.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import type { ObjectStorage } from './storage.ts'
 
-const { auditEvent, cohort, company, experience, membership, person, personCohort } = schema
+const {
+  auditEvent,
+  cohort,
+  company,
+  companyEvent,
+  experience,
+  membership,
+  person,
+  personCohort,
+  quote,
+} = schema
 
 /**
  * URL-vennlig nøkkel for et selskapsnavn. Samme selskap får samme slug uansett
@@ -146,8 +167,16 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   /** Domenet uten «www.», til visning. */
   websiteLabel: string | null
   foundedYear: number | null
+  /** Siste gang selskapet sto på entreprenorskolen.no, `YYYY-MM-DD`. Fra import. */
+  lastSeenOnEsSite: string | null
   editedAt: Date | null
   people: (CompanyPerson & { cohortYears: number[] })[]
+  /** Historikken, nyeste først. */
+  events: CompanyEvent[]
+  /** Sitater om selskapet eller fra folk i det. */
+  quotes: Quote[]
+  /** Hvor de importerte feltene kom fra, for feltene som vises. */
+  sources: FieldSource<CompanySourceField>[]
   /** Den innloggede er gründer, i ES-teamet eller jobber der nå. */
   connected: boolean
   canEdit: boolean
@@ -342,6 +371,7 @@ const editableColumns = {
   industries: company.industries,
   status: company.status,
   logoKey: company.logoKey,
+  lastSeenOnEsSite: company.lastSeenOnEsSite,
   editedAt: company.editedAt,
 }
 
@@ -382,6 +412,30 @@ export async function isConnected(db: Db | Tx, personId: string, companyId: stri
   return Boolean(role || es)
 }
 
+/**
+ * Selskapet, når den innloggede kan redigere det: gründere (også tidligere),
+ * ES-teamet, de som jobber der nå og admins med `profiles.edit`. `adminEdit`
+ * betyr at endringen gjøres med adminrettighet og skal logges. Brukes av
+ * redigering, logo og historikk.
+ */
+export async function companyForEdit(
+  db: Db | Tx,
+  viewer: Viewer,
+  companyId: string,
+  { lock = false } = {},
+) {
+  assertMember(viewer)
+  const query = db
+    .select({ id: company.id, slug: company.slug, name: company.name, logoKey: company.logoKey })
+    .from(company)
+    .where(eq(company.id, companyId))
+  const [row] = lock ? await query.for('update') : await query
+  if (!row) throw new NotFoundError('Fant ikke selskapet.')
+  const connected = await isConnected(db, viewer.personId, companyId)
+  if (!connected) assertCan(viewer, 'profiles.edit')
+  return { ...row, adminEdit: !connected }
+}
+
 /** Domenet uten «www.», med æøå i stedet for punycode. */
 function websiteLabel(website: string | null) {
   if (!website) return null
@@ -408,14 +462,33 @@ export async function getCompany(
     people.map((p) => p.personId),
   )
   const connected = people.some((p) => p.personId === viewer.personId && p.role !== 'past')
+  const canEdit = connected || can(viewer, 'profiles.edit')
+  // Kilder bare for feltene som vises.
+  const shown = companySourceFields.filter((field) =>
+    field === 'logo'
+      ? logoKey !== null
+      : field === 'industries'
+        ? row.industries.length > 0
+        : field === 'lastSeenOnEsSite'
+          ? row.status === 'unknown' && row.lastSeenOnEsSite !== null
+          : row[field] !== null,
+  )
+  const [events, quotes, sources] = await Promise.all([
+    loadCompanyEvents(db, row.id, { includeReview: canEdit }),
+    loadQuotes(db, viewer, { companyId: row.id }),
+    loadFieldSources(db, viewer, 'company', row.id, shown),
+  ])
   return {
     ...row,
     logo: logoUrls(logoKey),
     ...summarize(people, years),
     websiteLabel: websiteLabel(row.website),
     people: people.map((p) => ({ ...p, cohortYears: years.get(p.personId) ?? [] })),
+    events,
+    quotes,
+    sources,
     connected,
-    canEdit: connected || can(viewer, 'profiles.edit'),
+    canEdit,
   }
 }
 
@@ -441,7 +514,13 @@ export async function getEditableCompany(
   if ('movedTo' in found) return found
   const connected = await isConnected(db, viewer.personId, found.id)
   if (!connected) assertCan(viewer, 'profiles.edit')
-  const { aliasSlugs: _aliasSlugs, editedAt: _editedAt, logoKey, ...fields } = found
+  const {
+    aliasSlugs: _aliasSlugs,
+    editedAt: _editedAt,
+    lastSeenOnEsSite: _lastSeen,
+    logoKey,
+    ...fields
+  } = found
   return {
     ...fields,
     logo: logoUrls(logoKey),
@@ -522,6 +601,8 @@ export async function updateCompany(
         })
         .where(eq(company.id, companyId))
 
+      // De som er knyttet til selskapet, bekrefter det de endrer; admins erstatter det.
+      await recordFieldEdits(tx, 'company', companyId, changed, connected ? 'confirm' : 'forget')
       if (!connected) {
         await tx.insert(auditEvent).values({
           actorPersonId: viewer.personId,
@@ -557,8 +638,15 @@ export type CompanyRef = {
  * sammenslåtte duplikater), ellers et nytt. Får flere nye referanser samme slug,
  * blir det ett selskap med skrivemåten som er brukt flest ganger, som i
  * migreringen som laget selskapene fra dagens navn.
+ *
+ * Nye selskaper får `status`: `active` når et medlem skriver inn et selskap selv
+ * (de vet at det finnes), `unknown` fra import, der ingen har sagt noe om det.
  */
-export async function resolveCompanies(db: Db | Tx, refs: CompanyRef[]): Promise<string[]> {
+export async function resolveCompanies(
+  db: Db | Tx,
+  refs: CompanyRef[],
+  { status = 'active' }: { status?: CompanyStatus } = {},
+): Promise<string[]> {
   const chosen = [...new Set(refs.flatMap((r) => (r.companyId ? [r.companyId] : [])))]
   const known = new Set(
     chosen.length
@@ -598,6 +686,7 @@ export async function resolveCompanies(db: Db | Tx, refs: CompanyRef[]): Promise
       slug,
       // Flest bruk vinner; ved likt antall den som kom først.
       name: [...counts].sort((a, b) => b[1] - a[1])[0]![0],
+      status,
     }))
     const inserted = await db
       .insert(company)
@@ -630,7 +719,7 @@ export async function deleteOrphanCompanies(tx: Tx, companyIds: (string | null)[
   if (!ids.length) return
   try {
     await tx.transaction(async (savepoint) => {
-      await savepoint
+      const deleted = await savepoint
         .delete(company)
         .where(
           and(
@@ -641,6 +730,12 @@ export async function deleteOrphanCompanies(tx: Tx, companyIds: (string | null)[
             sql`not exists (select 1 from ${person} where ${person.esCompanyId} = ${company.id})`,
           ),
         )
+        .returning({ id: company.id })
+      await deleteFieldSources(
+        savepoint,
+        'company',
+        deleted.map((c) => c.id),
+      )
     })
   } catch (error) {
     // Noen koblet seg til selskapet i samme øyeblikk. Da får det bli stående.
@@ -757,6 +852,23 @@ export async function mergeCompanies(
       .where(eq(person.esCompanyId, source.id))
       .returning({ id: person.id })
 
+    // Historikken og sitatene følger med.
+    await tx
+      .update(companyEvent)
+      .set({ companyId: target.id })
+      .where(eq(companyEvent.companyId, source.id))
+    await tx.update(quote).set({ companyId: target.id }).where(eq(quote.companyId, source.id))
+    // Kildene følger feltene som hentes fra duplikatet.
+    const filled: CompanySourceField[] = (
+      ['tagline', 'description', 'website', 'foundedYear', 'location'] as const
+    ).filter((field) => target[field] === null && source[field] !== null)
+    if (target.logoKey === null && source.logoKey !== null) filled.push('logo')
+    if (!target.industries.length && source.industries.length) filled.push('industries')
+    if ((source.lastSeenOnEsSite ?? '') > (target.lastSeenOnEsSite ?? '')) {
+      filled.push('lastSeenOnEsSite')
+    }
+    await moveCompanySources(tx, source.id, target.id, filled)
+
     const industries = [...target.industries, ...source.industries]
       .filter(
         (tag, i, all) =>
@@ -773,6 +885,11 @@ export async function mergeCompanies(
         website: target.website ?? source.website,
         foundedYear: target.foundedYear ?? source.foundedYear,
         location: target.location ?? source.location,
+        lastSeenOnEsSite:
+          [target.lastSeenOnEsSite, source.lastSeenOnEsSite]
+            .filter((d): d is string => d !== null)
+            .sort()
+            .at(-1) ?? null,
         // Duplikatet er slettet over, så nøkkelen er ledig.
         logoKey: target.logoKey ?? source.logoKey,
         industries,

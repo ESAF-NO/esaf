@@ -1,8 +1,8 @@
 import { schema, type Db } from '@esaf/db'
 import { eq } from 'drizzle-orm'
 import sharp from 'sharp'
-import { assertCan, assertMember, type Viewer } from './access.ts'
-import { isConnected } from './companies.ts'
+import { assertMember, type Viewer } from './access.ts'
+import { companyForEdit } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import {
   deleteImageFiles,
@@ -16,6 +16,7 @@ import {
   unreadable,
 } from './images.ts'
 import type { Tx } from './members.ts'
+import { recordFieldEdits } from './sources.ts'
 import type { ObjectStorage } from './storage.ts'
 
 const { auditEvent, company } = schema
@@ -112,22 +113,13 @@ export async function processCompanyLogo(file: Uint8Array): Promise<ProcessedLog
  * logges. Kalles også av appen før selve opplastingen leses inn, så ingen
  * sender 10 MB for å få nei.
  */
-export async function assertCanChangeLogo(
+export function assertCanChangeLogo(
   db: Db | Tx,
   viewer: Viewer,
   companyId: string,
-  { lock = false } = {},
+  options?: { lock?: boolean },
 ) {
-  assertMember(viewer)
-  const query = db
-    .select({ id: company.id, slug: company.slug, name: company.name, logoKey: company.logoKey })
-    .from(company)
-    .where(eq(company.id, companyId))
-  const [row] = lock ? await query.for('update') : await query
-  if (!row) throw new NotFoundError('Fant ikke selskapet.')
-  const connected = await isConnected(db, viewer.personId, companyId)
-  if (!connected) assertCan(viewer, 'profiles.edit')
-  return { ...row, adminEdit: !connected }
+  return companyForEdit(db, viewer, companyId, options)
 }
 
 /** Sletter begge størrelsene. En feil her skal ikke stoppe brukeren, men må synes i loggen. */
@@ -168,6 +160,13 @@ export async function setCompanyLogo(
         .update(company)
         .set({ logoKey, editedAt: new Date() })
         .where(eq(company.id, companyId))
+      await recordFieldEdits(
+        tx,
+        'company',
+        companyId,
+        ['logo'],
+        target.adminEdit ? 'forget' : 'confirm',
+      )
       if (target.adminEdit) {
         await tx.insert(auditEvent).values({
           actorPersonId: viewer!.personId,
@@ -204,6 +203,8 @@ export async function removeCompanyLogo(
       .update(company)
       .set({ logoKey: null, editedAt: new Date() })
       .where(eq(company.id, companyId))
+    // Uten logo finnes det ikke noe å vise kilden for.
+    await recordFieldEdits(tx, 'company', companyId, ['logo'], 'forget')
     if (target.adminEdit) {
       await tx.insert(auditEvent).values({
         actorPersonId: viewer!.personId,

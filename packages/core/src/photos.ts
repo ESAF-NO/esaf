@@ -15,6 +15,7 @@ import {
   unreadable,
 } from './images.ts'
 import type { Tx } from './members.ts'
+import { recordFieldEdits } from './sources.ts'
 import type { ObjectStorage } from './storage.ts'
 
 const { auditEvent, membership, person } = schema
@@ -169,6 +170,7 @@ export async function setProfilePhoto(
     previous = await db.transaction(async (tx) => {
       const target = await uploadTarget(tx, personId, isOwn, true)
       await tx.update(person).set({ photoKey }).where(eq(person.id, personId))
+      await recordFieldEdits(tx, 'person', personId, ['photo'], isOwn ? 'confirm' : 'forget')
       if (!isOwn) {
         await tx.insert(auditEvent).values({
           actorPersonId: viewer!.personId,
@@ -204,6 +206,8 @@ export async function removeProfilePhoto(
     if (!row) throw new NotFoundError('Fant ikke profilen.')
     if (!row.photoKey) return null
     await tx.update(person).set({ photoKey: null }).where(eq(person.id, personId))
+    // Uten bilde finnes det ikke noe å vise kilden for.
+    await recordFieldEdits(tx, 'person', personId, ['photo'], 'forget')
     if (!isOwn) {
       await tx.insert(auditEvent).values({
         actorPersonId: viewer!.personId,

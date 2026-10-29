@@ -1,11 +1,23 @@
-import type { CompanyDetails } from '@esaf/core'
+import type { CompanyDetails, CompanySourceField } from '@esaf/core'
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
-import { ArrowLeft, ArrowUpRight, CalendarDays, Globe, MapPin, Pencil, Rocket } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CalendarDays,
+  Globe,
+  History,
+  MapPin,
+  Pencil,
+  Rocket,
+} from 'lucide-react'
 import type { ReactNode } from 'react'
+import { CompanyTimeline } from '#/components/CompanyTimeline.tsx'
+import { QuoteList } from '#/components/Quotes.tsx'
 import { Avatar, buttonClass, Card, CompanyLogo, cx, Verified } from '#/components/ui.tsx'
 import { statusLabels } from '#/lib/companies.ts'
 import { fetchCompany } from '#/lib/companies.functions.ts'
-import { yearSpan } from '#/lib/format.ts'
+import { longDay, yearSpan } from '#/lib/format.ts'
+import { companyFieldLabels, confidenceLabels } from '#/lib/sources.ts'
 
 export const Route = createFileRoute('/_konto/selskaper/$slug/')({
   loader: async ({ params }) => {
@@ -106,6 +118,12 @@ function CompanyPage() {
               )}
             </h1>
             {c.tagline && <p className="mt-1 text-base text-stone-600">{c.tagline}</p>}
+            {c.status === 'unknown' && c.lastSeenOnEsSite && (
+              <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-stone-500">
+                <History className="size-4" aria-hidden />
+                Sist nevnt på ES-siden {c.lastSeenOnEsSite.slice(0, 4)}
+              </p>
+            )}
             {c.startedByAlumni && (
               <p className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-brand-700">
                 <Rocket className="size-4" aria-hidden />
@@ -165,7 +183,8 @@ function CompanyPage() {
       <div
         className={cx(
           'mt-6 grid gap-6',
-          (facts || c.industries.length > 0) && 'lg:grid-cols-[minmax(0,1fr)_280px]',
+          (facts || c.industries.length > 0 || c.sources.length > 0) &&
+            'lg:grid-cols-[minmax(0,1fr)_280px]',
         )}
       >
         <div className="min-w-0 space-y-6">
@@ -182,6 +201,14 @@ function CompanyPage() {
               </p>
             )}
           </Card>
+
+          <CompanyTimeline
+            companyId={c.id}
+            name={c.name}
+            events={c.events}
+            canEdit={c.canEdit}
+            adminEdit={c.canEdit && !c.connected}
+          />
 
           <Card className="p-5 sm:p-6">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
@@ -212,6 +239,8 @@ function CompanyPage() {
               })
             )}
           </Card>
+
+          <QuoteList quotes={c.quotes} showSpeaker />
         </div>
 
         <aside className="space-y-4 empty:hidden">
@@ -262,8 +291,65 @@ function CompanyPage() {
               </ul>
             </Card>
           )}
+          {c.sources.length > 0 && <Sources sources={c.sources} />}
         </aside>
       </div>
     </div>
+  )
+}
+
+/**
+ * Hvor de importerte feltene kom fra, lukket til man åpner den. Medlemmer ser
+ * kilden og om noen knyttet til selskapet har bekreftet feltet; admins ser også
+ * hvor sikker kilden er.
+ */
+function Sources({ sources }: { sources: CompanyDetails['sources'] }) {
+  const fields = [...new Set(sources.map((s) => s.field))] as CompanySourceField[]
+  return (
+    <Card className="p-5">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-stone-950">
+          Kilder
+          <span className="text-xs font-normal text-stone-500 group-open:hidden">Vis</span>
+          <span className="hidden text-xs font-normal text-stone-500 group-open:inline">Skjul</span>
+        </summary>
+        <p className="mt-2 text-xs leading-relaxed text-stone-500">
+          Hvor informasjonen på siden er hentet fra. Bekreftet betyr at noen som er knyttet til
+          selskapet, har sett over eller endret feltet.
+        </p>
+        <dl className="mt-3 space-y-3">
+          {fields.map((field) => (
+            <div key={field}>
+              <dt className="text-xs font-medium text-stone-700">{companyFieldLabels[field]}</dt>
+              {sources
+                .filter((s) => s.field === field)
+                .map((s) => (
+                  <dd key={s.label} className="text-xs leading-relaxed text-stone-500">
+                    {s.url ? (
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-0.5 font-medium text-stone-700 hover:text-brand-600"
+                      >
+                        {s.label}
+                        <ArrowUpRight className="size-3" aria-hidden />
+                      </a>
+                    ) : (
+                      <span className="font-medium text-stone-700">{s.label}</span>
+                    )}
+                    {' · '}
+                    {s.confirmed ? 'bekreftet' : 'ikke bekreftet'}
+                    {s.confidence && ` · ${confidenceLabels[s.confidence]}`}
+                    {s.fetchedAt && (
+                      <span className="block text-stone-400">Hentet {longDay(s.fetchedAt)}</span>
+                    )}
+                  </dd>
+                ))}
+            </div>
+          ))}
+        </dl>
+      </details>
+    </Card>
   )
 }

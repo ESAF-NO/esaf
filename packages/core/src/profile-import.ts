@@ -619,13 +619,15 @@ export async function applyProfileImport(
     )
 
     // Selskapene i arket kobles som i appen: samme slug blir samme selskap, og
-    // nye selskaper får skrivemåten som går igjen flest ganger.
+    // nye selskaper får skrivemåten som går igjen flest ganger. Lista sier ikke
+    // om selskapene finnes ennå, så nye selskaper får ukjent status.
     const mentions = plan
       .flatMap((row) => [row.role?.company, row.fields.esCompany?.slice(0, 120)])
       .filter(isCompanyName)
     const resolved = await resolveCompanies(
       tx,
       mentions.map((name) => ({ name })),
+      { status: 'unknown' },
     )
     const companyIds = new Map(mentions.map((name, i) => [name, resolved[i]!]))
 

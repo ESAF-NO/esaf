@@ -190,7 +190,9 @@ type DemoCompany = {
   location?: string
   industries?: string[]
   website?: string
-  status?: 'active' | 'acquired' | 'closed'
+  status?: 'active' | 'acquired' | 'closed' | 'unknown'
+  /** Siste gang selskapet sto på ES-siden, for selskaper med ukjent status. */
+  lastSeenOnEsSite?: string
 }
 const companies: DemoCompany[] = [
   {
@@ -254,7 +256,13 @@ const companies: DemoCompany[] = [
     location: 'Trondheim',
     industries: ['Industri', 'IT og programvare'],
   },
-  { name: 'Løypa', jobs: ['Grunnlegger'], tagline: 'Turstier i hele Norden, i én app' },
+  {
+    name: 'Løypa',
+    jobs: ['Grunnlegger'],
+    tagline: 'Turstier i hele Norden, i én app',
+    status: 'unknown',
+    lastSeenOnEsSite: '2016-05-12',
+  },
 ]
 const employers = [
   'Equinor',
@@ -320,7 +328,7 @@ const {
 } = schema
 
 await db.execute(
-  sql`truncate ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
+  sql`truncate ${schema.fieldSource}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
 )
 
 /** En innloggingskonto med bekreftet e-post og passord, som om personen hadde registrert seg. */
@@ -397,6 +405,7 @@ async function seedDemo() {
 
   type Seeded = { id: string; name: string; year: number }
   const people: Seeded[] = []
+  const claimedIds = new Set<string>()
   const usedNames = new Set<string>()
   const companySeats = companies.flatMap((c) => c.jobs.map((job) => ({ company: c.name, job })))
   const companyYear = new Map(companies.map((c, i) => [c.name, 2009 + ((i * 7) % 16)]))
@@ -406,14 +415,19 @@ async function seedDemo() {
   const companyRows = await db
     .insert(schema.company)
     .values([
-      ...companies.map(({ jobs: _jobs, industries, ...c }) => ({
+      ...companies.map(({ jobs: _jobs, industries, status, ...c }) => ({
         ...c,
         slug: companySlug(c.name),
         industries: industries ?? [],
+        status: status ?? 'active',
         foundedYear: companyYear.get(c.name)! - 1,
         editedAt: new Date(),
       })),
-      ...[...employers, 'ESAF'].map((name) => ({ name, slug: companySlug(name) })),
+      ...[...employers, 'ESAF'].map((name) => ({
+        name,
+        slug: companySlug(name),
+        status: 'active' as const,
+      })),
     ])
     .returning({ id: schema.company.id, name: schema.company.name })
   const companyId = new Map(companyRows.map((c) => [c.name, c.id]))
@@ -518,6 +532,7 @@ async function seedDemo() {
         .values({ email: 'admin@example.test', personId: p!.id, source: 'signup' })
     }
     people.push({ id: p!.id, name: fullName, year })
+    if (claimed) claimedIds.add(p!.id)
   }
 
   // To forespørsler om tilgang, så adminsiden har noe å vise: én der adressen står
@@ -708,6 +723,89 @@ async function seedDemo() {
   await addComment(db, saraViewer, weekend!.id, {
     body: `${ada}, trenger dere hjelp med middagen også? Jeg kan ta kontakt med et sted i Bakklandet.`,
   })
+
+  // Historikk, et sitat og kilder, så selskapssidene og profilene har noe å vise.
+  const syrlig = companyId.get('Syrlig')!
+  const fjordflow = companyId.get('Fjordflow')!
+  await db.insert(schema.companyEvent).values([
+    {
+      companyId: syrlig,
+      date: `${companyYear.get('Syrlig')! - 1}-01-01`,
+      datePrecision: 'year',
+      type: 'founded',
+      text: 'Syrlig AS stiftet av to fra kullet.',
+      sourceLabel: 'Brønnøysundregistrene',
+      sourceUrl: 'https://data.brreg.no/enhetsregisteret/oppslag/enheter',
+    },
+    {
+      companyId: syrlig,
+      date: '2021-06-01',
+      datePrecision: 'month',
+      type: 'funding',
+      text: 'Hentet 4 MNOK fra Torv og Innovasjon Norge.',
+    },
+    {
+      companyId: fjordflow,
+      date: '2023-03-14',
+      datePrecision: 'day',
+      type: 'launch',
+      text: 'Første kommersielle versjon lansert etter to år med piloter.',
+    },
+    {
+      companyId: fjordflow,
+      date: '2024-01-01',
+      datePrecision: 'year',
+      type: 'award',
+      text: 'Fjordflow nevnt i en sak om årets havbruksgründere.',
+      sourceLabel: 'example.test',
+      sourceUrl: 'https://example.test/havbruk',
+      confidence: 'low',
+    },
+  ])
+  const syrligFounder = people[1]!
+  await db.insert(schema.quote).values([
+    {
+      text: 'På ES lærte vi å teste om noen ville betale før vi bygde noe. Det sparte oss for et år.',
+      personId: syrligFounder.id,
+      companyId: syrlig,
+      speakerName: syrligFounder.name,
+      speakerRole: 'Daglig leder i Syrlig',
+      date: '2022-09-01',
+      sourceLabel: 'example.test',
+      sourceUrl: 'https://example.test/syrlig',
+    },
+    {
+      text: 'Det viktigste vi tok med oss, var folkene.',
+      companyId: fjordflow,
+      speakerName: 'Ukjent gründer',
+      sourceLabel: 'example.test',
+      sourceUrl: 'https://example.test/fjordflow',
+      confidence: 'low',
+    },
+  ])
+  const unclaimed = people.find((p, i) => i > 0 && !claimedIds.has(p.id))
+  await db.insert(schema.fieldSource).values([
+    ...(unclaimed
+      ? [
+          {
+            entityType: 'person' as const,
+            entityId: unclaimed.id,
+            field: 'studyBackground',
+            sourceLabel: 'kullisten',
+            confidence: 'high' as const,
+          },
+        ]
+      : []),
+    {
+      entityType: 'company' as const,
+      entityId: syrlig,
+      field: 'website',
+      sourceLabel: 'syrlig.test',
+      sourceUrl: 'https://syrlig.test',
+      fetchedAt: new Date(),
+      confidence: 'medium' as const,
+    },
+  ])
 
   console.log(
     `Seedet ${people.length + 1} oppdiktede personer, ${posts.length} innlegg og ${years.length} kull. Logg inn som admin@example.test eller sara@example.test, passord ${PASSWORD}.`,

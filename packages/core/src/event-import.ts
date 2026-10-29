@@ -1,15 +1,18 @@
-import { schema, type Db } from '@esaf/db'
+import { schema, type Db, type EventDatePrecision } from '@esaf/db'
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, type Viewer } from './access.ts'
 import { DomainError } from './errors.ts'
 import {
   ESAF_WEEKEND_SLUG,
+  eventDatePrecisions,
   eventRoles,
   insertEvent,
   normalizeRole,
   osloToday,
   parseEventInput,
+  periodEventName,
+  periodStart,
   rolePriority,
   type EventRole,
   type EventTypeInfo,
@@ -687,6 +690,7 @@ type DbEvent = {
   name: string
   startDate: string
   endDate: string | null
+  datePrecision?: EventDatePrecision
   typeId: string
   typeName: string
 }
@@ -696,6 +700,7 @@ export type EventCandidate = {
   name: string
   startDate: string
   endDate: string | null
+  datePrecision: EventDatePrecision
   typeName: string
   upcoming: boolean
 }
@@ -704,8 +709,16 @@ export type ImportEventPreview = EventRef & {
   status: 'matched' | 'ambiguous' | 'missing'
   by: 'name' | 'date' | 'year' | null
   candidates: EventCandidate[]
-  /** Forslag til et nytt arrangement når det mangler. */
-  suggestion: { name: string; startDate: string; endDate: string | null; guessed: boolean }
+  /**
+   * Forslag til et nytt arrangement når det mangler. Med bare år eller semester
+   * i overskriften får det den presisjonen («Høst 2018», «2015»), ikke en gjettet dato.
+   */
+  suggestion: {
+    name: string
+    startDate: string
+    endDate: string | null
+    datePrecision: EventDatePrecision
+  }
 }
 
 export type ImportPersonPreview = PersonRef &
@@ -724,8 +737,6 @@ export type ParticipationPreview = Omit<ParsedParticipation, 'people' | 'events'
   entries: number
 }
 
-const seasonWord = { spring: 'vår', autumn: 'høst' } as const
-
 /** Matcher et arrangement fra arket mot dem som finnes: navn, dato, så år (og semester). */
 export function matchEventRef(
   ref: EventRef,
@@ -740,6 +751,7 @@ export function matchEventRef(
     name: e.name,
     startDate: e.startDate,
     endDate: e.endDate,
+    datePrecision: e.datePrecision ?? 'day',
     typeName: e.typeName,
     upcoming: e.startDate > today,
   })
@@ -760,7 +772,8 @@ export function matchEventRef(
   if (!found && ref.year !== null) {
     const hits = ofType.filter((e) => {
       if (Number(e.startDate.slice(0, 4)) !== ref.year) return false
-      if (!ref.season) return true
+      // Et arrangement med bare årstall passer begge semestrene det året.
+      if (!ref.season || e.datePrecision === 'year') return true
       const month = Number(e.startDate.slice(5, 7))
       return ref.season === 'spring' ? month <= 6 : month >= 7
     })
@@ -773,16 +786,19 @@ export function matchEventRef(
     .replace(/[^a-z]/g, '')
   const name =
     bare && ref.year !== null
-      ? [type.name, ref.season ? seasonWord[ref.season] : null, ref.year].filter(Boolean).join(' ')
+      ? periodEventName(type.name, ref.year, ref.season ?? 'year')
       : ref.label
-  const startDate =
-    ref.date ??
-    (ref.year !== null
-      ? `${ref.year}-${ref.season === 'spring' ? '04' : ref.season === 'autumn' ? '09' : '01'}-01`
-      : '')
+  const suggestion = ref.date
+    ? { startDate: ref.date, datePrecision: 'day' as const }
+    : ref.year !== null
+      ? {
+          startDate: periodStart(ref.year, ref.season ?? 'year'),
+          datePrecision: ref.season ? ('semester' as const) : ('year' as const),
+        }
+      : { startDate: '', datePrecision: 'day' as const }
   return {
     ...(found ?? { status: 'missing' as const, by: null, candidates: [] }),
-    suggestion: { name: name.slice(0, 120), startDate, endDate: null, guessed: !ref.date },
+    suggestion: { name: name.slice(0, 120), endDate: null, ...suggestion },
   }
 }
 
@@ -793,6 +809,7 @@ async function loadEvents(db: Db | Tx): Promise<DbEvent[]> {
       name: event.name,
       startDate: event.startDate,
       endDate: event.endDate,
+      datePrecision: event.datePrecision,
       typeId: event.typeId,
       typeName: eventType.name,
     })
@@ -903,6 +920,7 @@ const eventDecision = z.discriminatedUnion('kind', [
     name: z.string().max(500),
     startDate: z.string().max(20),
     endDate: z.string().max(20).nullable(),
+    datePrecision: z.enum(eventDatePrecisions).optional(),
     location: z.string().max(500),
   }),
   z.object({ kind: z.literal('skip') }),

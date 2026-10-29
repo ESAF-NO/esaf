@@ -624,7 +624,8 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
   'event.create': ({ actor, details }) => (
     <>
       {actor} opprettet <EventLink details={details} />
-      {details.via === 'import' && ' under en import'}.
+      {details.via === 'import' && ' under en import'}
+      {details.via === 'history' && ' med «Legg inn historikk»'}.
     </>
   ),
   'event.edit': ({ actor, details }) => (
@@ -674,6 +675,20 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} fjernet {subject} fra <EventLink details={details} />.
     </>
   ),
+  'event.history': ({ actor, details }) => {
+    const skipped = count(details.skipped)
+    const from = count(details.fromYear)
+    const to = count(details.toYear)
+    return (
+      <>
+        {actor} la inn historikk for{' '}
+        <EventTypeLink details={{ ...details, name: details.typeName ?? null }} />:{' '}
+        {plural(count(details.created), 'arrangement', 'arrangementer')}
+        {from > 0 && (from === to ? ` i ${from}` : ` fra ${from} til ${to}`)}
+        {skipped > 0 && `, ${skipped} fantes fra før`}.
+      </>
+    )
+  },
   'event.import': ({ actor, details }) => {
     const events = Array.isArray(details.events) ? (details.events as Entry['details'][]) : []
     const created = count(details.profilesCreated)

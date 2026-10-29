@@ -1,13 +1,14 @@
 import type { EventSummary } from '@esaf/core'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, CalendarDays, Check, MapPin, Plus } from 'lucide-react'
-import { useState } from 'react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { ArrowLeft, CalendarDays, Check, MapPin } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { CohortChart, ParticipantsChart, RoleBadge } from '#/components/EventCharts.tsx'
-import { emptyEvent, EventDialog } from '#/components/EventForm.tsx'
-import { Button, buttonClass, Card, EmptyState, PageHeader } from '#/components/ui.tsx'
-import { roleSummary, typePlural } from '#/lib/events.ts'
-import { fetchEventTypeOptions, fetchEventTypeOverview, newEvent } from '#/lib/events.functions.ts'
-import { dateRange, plural } from '#/lib/format.ts'
+import { EventCreateActions } from '#/components/EventCreate.tsx'
+import { StrongAuthCallout } from '#/components/StrongAuth.tsx'
+import { buttonClass, Card, PageHeader } from '#/components/ui.tsx'
+import { eventWhen, roleSummary, typePlural } from '#/lib/events.ts'
+import { fetchEventTypeOptions, fetchEventTypeOverview } from '#/lib/events.functions.ts'
+import { plural } from '#/lib/format.ts'
 
 export const Route = createFileRoute('/_konto/arrangementer/$typeSlug/')({
   loader: async ({ params, context: { viewer } }) => {
@@ -31,8 +32,6 @@ export const Route = createFileRoute('/_konto/arrangementer/$typeSlug/')({
  */
 function EventTypePage() {
   const { overview: o, types } = Route.useLoaderData()
-  const navigate = useNavigate()
-  const [creating, setCreating] = useState(false)
   const past = o.events.filter((e) => !e.upcoming)
   const roles = roleSummary(o.roles)
   const name = typePlural(o.type)
@@ -57,18 +56,23 @@ function EventTypePage() {
             : undefined
         }
         actions={
-          o.canManage && (
-            <Button variant="brand" onClick={() => setCreating(true)}>
-              <Plus className="size-4" aria-hidden /> Nytt arrangement
-            </Button>
+          o.canManage &&
+          o.events.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2">
+              <EventCreateActions types={types} typeId={o.type.id} />
+            </div>
           )
         }
       />
+      <StrongAuthCallout className="mb-6">
+        legge inn arrangementer, historikk og deltakere
+      </StrongAuthCallout>
 
       {o.events.length === 0 ? (
-        <EmptyState icon={CalendarDays} title="Ingen arrangementer ennå">
-          De dukker opp her når styret har lagt dem inn.
-        </EmptyState>
+        <TypeEmpty
+          canManage={o.canManage}
+          action={<EventCreateActions types={types} typeId={o.type.id} />}
+        />
       ) : (
         <div className="space-y-10">
           <p className="max-w-2xl text-sm text-stone-500">
@@ -110,22 +114,35 @@ function EventTypePage() {
           </section>
         </div>
       )}
+    </div>
+  )
+}
 
-      {creating && (
-        <EventDialog
-          title={`Nytt arrangement: ${o.type.name}`}
-          initial={emptyEvent(o.type.id)}
-          types={types}
-          submitLabel="Opprett"
-          onClose={() => setCreating(false)}
-          onSubmit={async (values) => {
-            const { id, typeSlug } = await newEvent({ data: values })
-            await navigate({
-              to: '/arrangementer/$typeSlug/$eventId',
-              params: { typeSlug, eventId: id },
-            })
-          }}
-        />
+/**
+ * Ingen arrangementer av typen. Admins får de to måtene å legge dem inn på;
+ * medlemmer får vite at styret legger dem inn.
+ */
+function TypeEmpty({ canManage, action }: { canManage: boolean; action: ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-stone-300 bg-white/50 px-6 py-14 text-center">
+      <div className="mx-auto grid size-11 place-items-center rounded-full bg-stone-100 text-stone-500">
+        <CalendarDays className="size-5" aria-hidden />
+      </div>
+      <p className="mt-3 font-medium text-stone-900">Ingen arrangementer ennå</p>
+      {canManage ? (
+        <>
+          <p className="mx-auto mt-1 max-w-md text-sm text-stone-500">
+            Legg inn ett arrangement med dato, eller mange tidligere på én gang med «Legg inn
+            historikk» når du bare vet året eller semesteret. Deltakerne legger du til på hvert
+            arrangement etterpå.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">{action}</div>
+        </>
+      ) : (
+        <p className="mx-auto mt-1 max-w-md text-sm text-stone-500">
+          De dukker opp her når styret har lagt dem inn. Da kan du åpne dem og trykke «Jeg var der»,
+          så teller du med.
+        </p>
       )}
     </div>
   )
@@ -144,7 +161,7 @@ function EventRow({ event: e, typeSlug }: { event: EventSummary; typeSlug: strin
           {e.name}
         </Link>
         <p className="flex flex-wrap items-center gap-x-3 text-sm text-stone-500 tabular-nums">
-          <span>{dateRange(e.startDate, e.endDate)}</span>
+          <span>{eventWhen(e)}</span>
           {e.location && (
             <span className="inline-flex items-center gap-1">
               <MapPin className="size-3.5" aria-hidden /> {e.location}

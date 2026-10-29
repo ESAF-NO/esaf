@@ -1,0 +1,3 @@
+CREATE TYPE "public"."event_date_precision" AS ENUM('day', 'semester', 'year');--> statement-breakpoint
+ALTER TABLE "event" ADD COLUMN "date_precision" "event_date_precision" DEFAULT 'day' NOT NULL;--> statement-breakpoint
+ALTER TABLE "event" ADD CONSTRAINT "event_date_precision" CHECK ("event"."date_precision" = 'day' or ("event"."end_date" is null and extract(day from "event"."start_date") = 1 and (extract(month from "event"."start_date") = 1 or ("event"."date_precision" = 'semester' and extract(month from "event"."start_date") = 7))));

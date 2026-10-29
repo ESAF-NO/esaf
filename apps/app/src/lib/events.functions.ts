@@ -2,6 +2,7 @@ import {
   addEventCohort,
   addEventParticipants,
   createEvent,
+  createEventHistory,
   createEventType,
   deleteEvent,
   deleteEventType,
@@ -11,6 +12,7 @@ import {
   listEventTypeOptions,
   listEventTypes,
   matchEventParticipants,
+  previewEventHistory,
   removeEventParticipant,
   setOwnParticipation,
   updateEvent,
@@ -30,6 +32,7 @@ const eventFields = z.object({
   name: z.string().max(500),
   startDate: z.string().max(20),
   endDate: z.string().max(20).nullable(),
+  datePrecision: z.enum(['day', 'semester', 'year']),
   location: z.string().max(500),
   description: z.string().max(5000),
 })
@@ -107,6 +110,34 @@ export const saveEvent = createServerFn({ method: 'POST' })
 export const removeEvent = createServerFn({ method: 'POST' })
   .validator(z.object(ev))
   .handler(({ data }) => run((viewer) => deleteEvent(db, viewer, data.eventId)))
+
+// Historikk (admin): mange gamle arrangementer på én gang
+
+const historyRange = z.object({
+  typeId: z.string().max(100),
+  fromYear: z.number().int(),
+  toYear: z.number().int(),
+  frequency: z.enum(['year', 'autumn', 'spring', 'both']),
+})
+
+export type HistoryFormValues = z.infer<typeof historyRange>
+
+/** Forhåndsvisningen: hva som lages, og hva som finnes fra før. Lagrer ingenting. */
+export const previewHistory = createServerFn({ method: 'POST' })
+  .validator(historyRange)
+  .handler(({ data }) => run((viewer) => previewEventHistory(db, viewer, data)))
+
+export const createHistory = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      typeId: z.string().max(100),
+      items: z
+        .array(z.object({ year: z.number().int(), period: z.enum(['year', 'spring', 'autumn']) }))
+        .max(200),
+      location: z.string().max(500),
+    }),
+  )
+  .handler(({ data }) => run((viewer) => createEventHistory(db, viewer, data)))
 
 // Deltakere (admin)
 

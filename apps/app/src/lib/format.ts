@@ -107,6 +107,22 @@ const monthYear = new Intl.DateTimeFormat('nb-NO', {
 })
 const longDate = new Intl.DateTimeFormat('nb-NO', { timeZone: 'UTC', dateStyle: 'long' })
 
+/** Månedene med små bokstaver, til nedtrekkslister. */
+export const monthNames = [
+  'januar',
+  'februar',
+  'mars',
+  'april',
+  'mai',
+  'juni',
+  'juli',
+  'august',
+  'september',
+  'oktober',
+  'november',
+  'desember',
+]
+
 /**
  * En dato der bare deler er kjent: «2019», «juni 2019» eller «4. juni 2019».
  * `date` er `YYYY-MM-DD`; den leses som UTC, så server og nettleser skriver likt.

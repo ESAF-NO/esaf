@@ -1,7 +1,8 @@
 import type { LinkRequestView, SuggestedValue, SuggestionView } from '@esaf/core'
 import { Link, useRouter } from '@tanstack/react-router'
-import { ArrowRight, Check, Undo2, X } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Check, Undo2, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { ArticleMeta } from './CompanyArticles.tsx'
 import { Avatar, Button, CompanyLogo, cx, ErrorText, Verified } from './ui.tsx'
 import { eventTypeLabels, statusLabels, type CompanyStatus } from '#/lib/companies.ts'
 import {
@@ -64,6 +65,15 @@ function show(field: string, value: SuggestedValue): ReactNode {
   return String(value)
 }
 
+/** Domenet i lenken uten «www.», når saken ikke har utgiver. */
+function hostOf(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
 const same = (a: SuggestedValue, b: SuggestedValue) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
@@ -122,7 +132,11 @@ export function SuggestionCard({
                 {s.suggestedBy.fullName}
               </Link>
             )}{' '}
-            {s.kind === 'info' ? 'foreslår endringer i selskapsinfoen' : 'foreslår en ny hendelse'}
+            {s.kind === 'info'
+              ? 'foreslår endringer i selskapsinfoen'
+              : s.kind === 'event'
+                ? 'foreslår en ny hendelse'
+                : 'foreslår en sak under «I media»'}
           </p>
           <p className="text-xs text-stone-500">{timeAgo(s.createdAt)}</p>
         </div>
@@ -167,6 +181,30 @@ export function SuggestionCard({
             )
           })}
         </dl>
+      ) : s.article ? (
+        <div className="rounded-xl px-3 py-2.5 ring-1 ring-stone-200 ring-inset">
+          <a
+            href={s.article.url}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="text-sm font-medium break-words text-stone-900 hover:text-brand-600"
+          >
+            {s.article.title}
+            <ArrowUpRight className="ml-0.5 inline size-3.5 text-stone-400" aria-hidden />
+            <span className="sr-only"> (åpnes i ny fane)</span>
+          </a>
+          <ArticleMeta
+            publisher={s.article.publisher ?? hostOf(s.article.url)}
+            publishedAt={
+              s.article.year === null
+                ? null
+                : `${s.article.year}-${String(s.article.month ?? 1).padStart(2, '0')}-${String(s.article.day ?? 1).padStart(2, '0')}`
+            }
+            publishedPrecision={s.article.day ? 'day' : s.article.month ? 'month' : 'year'}
+            paywall={s.article.paywall}
+            mentionsEs={s.article.mentionsEs}
+          />
+        </div>
       ) : (
         s.event && (
           <div className="rounded-xl px-3 py-2.5 ring-1 ring-stone-200 ring-inset">

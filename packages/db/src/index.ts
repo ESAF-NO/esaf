@@ -5,6 +5,7 @@ export * as schema from './schema.ts'
 export type {
   AccessRequestStatus,
   CohortRelation,
+  CompanyArticleSource,
   CompanyEventType,
   CompanyLinkRole,
   CompanySuggestionChanges,
@@ -13,6 +14,7 @@ export type {
   ContributionStatus,
   DatePrecision,
   FieldSourceEntity,
+  ImportRecordKind,
   MemberRole,
   MembershipStatus,
   NotificationPayload,

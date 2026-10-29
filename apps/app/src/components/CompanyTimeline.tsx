@@ -27,7 +27,7 @@ import {
   type CompanyEventFormValues,
 } from '#/lib/companies.functions.ts'
 import { proposeCompanyEvent } from '#/lib/contributions.functions.ts'
-import { partialDate } from '#/lib/format.ts'
+import { monthNames, partialDate } from '#/lib/format.ts'
 
 const icons: Record<CompanyEventType, LucideIcon> = {
   founded: Sprout,
@@ -40,21 +40,6 @@ const icons: Record<CompanyEventType, LucideIcon> = {
   closed: Flag,
   other: CircleDot,
 }
-
-const months = [
-  'januar',
-  'februar',
-  'mars',
-  'april',
-  'mai',
-  'juni',
-  'juli',
-  'august',
-  'september',
-  'oktober',
-  'november',
-  'desember',
-]
 
 /** Skjemaverdiene for en hendelse, eller tomme for en ny. */
 function formValues(event: CompanyEvent | null): CompanyEventFormValues {
@@ -385,7 +370,7 @@ function EventDialog({
               }
             >
               <option value="">Ukjent</option>
-              {months.map((m, i) => (
+              {monthNames.map((m, i) => (
                 <option key={m} value={i + 1}>
                   {m}
                 </option>

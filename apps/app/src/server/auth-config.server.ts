@@ -6,6 +6,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { twoFactor } from 'better-auth/plugins'
 import { tanstackStartCookies } from 'better-auth/tanstack-start'
+import { invitations } from './invitations-plugin.server.ts'
 
 /** Stiene der en passkey-innlogging skjer. Bare her kan en økt bli merket som passkey-økt. */
 const PASSKEY_SIGN_IN = '/passkey/verify-authentication'
@@ -30,12 +31,17 @@ export type AuthConfig = {
   /** `BETTER_AUTH_URL`. Opprinnelsen og vertsnavnet er også WebAuthn-identiteten. */
   baseURL: string
   secret: string
-  sendVerificationEmail: (data: { user: { email: string }; url: string }) => Promise<void>
+  /**
+   * Sender bekreftelseslenken ved registrering. Uten den (ingen e-postleverandør)
+   * er registrering slått av på serveren, og veien inn er en invitasjon.
+   */
+  sendVerificationEmail?: (data: { user: { email: string }; url: string }) => Promise<void>
 }
 
 /**
  * Innlogging med e-post og passord, og e-postbekreftelse før kontoen kan
- * brukes. Tofaktor med autentiseringsapp (TOTP) og reservekoder, og passkeys
+ * brukes. Uten e-postleverandør er registrering slått av, og kontoer lages bare
+ * fra invitasjoner (se `invitations-plugin.server.ts`). Tofaktor med autentiseringsapp (TOTP) og reservekoder, og passkeys
  * (WebAuthn). Admins må være sterkt innlogget: passkey i denne økten, eller
  * tofaktor på kontoen (se `strongAuth` i @esaf/core). En konto gir aldri
  * medlemsinnsyn alene; det styres av `membership` i @esaf/core. Better Auths
@@ -46,6 +52,7 @@ export type AuthConfig = {
  */
 export function createAuth(config: AuthConfig) {
   const base = new URL(config.baseURL)
+  const selfSignUp = config.sendVerificationEmail !== undefined
 
   return betterAuth({
     appName: 'ESAF',
@@ -66,9 +73,11 @@ export function createAuth(config: AuthConfig) {
       enabled: true,
       requireEmailVerification: true,
       minPasswordLength: 12,
+      // Håndheves av endepunktet selv, ikke bare ved at skjemaet er skjult.
+      disableSignUp: !selfSignUp,
     },
     emailVerification: {
-      sendOnSignUp: true,
+      sendOnSignUp: selfSignUp,
       autoSignInAfterVerification: true,
       sendVerificationEmail: config.sendVerificationEmail,
     },
@@ -146,6 +155,7 @@ export function createAuth(config: AuthConfig) {
       }),
     },
     plugins: [
+      invitations(config.db),
       twoFactor({
         issuer: 'ESAF',
         // Ti feil koder på rad låser tofaktor i et kvarter.

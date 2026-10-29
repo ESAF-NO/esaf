@@ -1,4 +1,5 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { useServerFn } from '@tanstack/react-start'
 import { Check, Copy, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
@@ -7,6 +8,7 @@ import { PasskeySignInButton } from '#/components/StrongAuth.tsx'
 import { QrCode } from '#/components/QrCode.tsx'
 import { Button, buttonClass, Card, ErrorText, Field, Input, PageHeader } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { fetchSignInMethods, setFirstPassword } from '#/lib/invitations.functions.ts'
 import { longDay } from '#/lib/format.ts'
 import { passkeyManageError, usePasskeySupport } from '#/lib/passkey.ts'
 import { needsStrongAuth, roleNames } from '#/lib/roles.ts'
@@ -15,6 +17,8 @@ export const Route = createFileRoute('/_konto/konto')({
   validateSearch: z.object({
     krav: z.enum(['sterk-innlogging']).optional().catch(undefined),
   }),
+  // Kontoer fra en invitasjon kan ha bare passkey, uten passord.
+  loader: () => fetchSignInMethods(),
   head: () => ({ meta: [{ title: 'Konto og sikkerhet – ESAF' }] }),
   component: Account,
 })
@@ -60,6 +64,7 @@ function message(error: { code?: string; message?: string } | null, fallback: st
 function Account() {
   const { viewer } = Route.useRouteContext()
   const { krav } = Route.useSearch()
+  const { hasPassword } = Route.useLoaderData()
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
@@ -83,8 +88,13 @@ function Account() {
           enabled={viewer.twoFactorEnabled}
           required={viewer.strongAuthMissing}
           mayChange={viewer.mayChangeSignInMethods}
+          hasPassword={hasPassword}
         />
-        <ChangePassword />
+        {hasPassword ? (
+          <ChangePassword />
+        ) : (
+          <SetPassword mayChange={viewer.mayChangeSignInMethods} />
+        )}
         <Sessions />
       </div>
     </div>
@@ -384,10 +394,12 @@ function TwoFactor({
   enabled,
   required,
   mayChange,
+  hasPassword,
 }: {
   enabled: boolean
   required: boolean
   mayChange: boolean
+  hasPassword: boolean
 }) {
   const router = useRouter()
   const [step, setStep] = useState<'idle' | 'password' | 'scan' | 'codes' | 'disable' | 'renew'>(
@@ -464,7 +476,13 @@ function TwoFactor({
       title="Tofaktor"
       description="En kode fra en autentiseringsapp i tillegg til passordet. Admins må ha tofaktor eller logge inn med passkey."
     >
-      {step === 'codes' ? (
+      {!hasPassword && !enabled ? (
+        <p className="text-sm text-stone-600">
+          Tofaktor gjelder innlogging med passord. Du logger inn med passkey, som allerede er sterk
+          innlogging. Vil du også kunne bruke passord med tofaktor, setter du et passord under
+          først.
+        </p>
+      ) : step === 'codes' ? (
         <BackupCodes
           codes={codes}
           onDone={async () => {
@@ -684,6 +702,71 @@ function ChangePassword() {
           )}
         </div>
       </form>
+    </Section>
+  )
+}
+
+/** For kontoer uten passord (bare passkey, fra en invitasjon). */
+function SetPassword({ mayChange }: { mayChange: boolean }) {
+  const router = useRouter()
+  const save = useServerFn(setFirstPassword)
+  const [state, setState] = useState<'idle' | 'busy'>('idle')
+  const [error, setError] = useState<string | null>(null)
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    const next = String(form.get('next'))
+    if (next !== String(form.get('repeat'))) return setError('Passordene er ikke like.')
+    setState('busy')
+    setError(null)
+    try {
+      await save({ data: { password: next } })
+      await router.invalidate()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kunne ikke sette passordet.')
+    } finally {
+      setState('idle')
+    }
+  }
+
+  return (
+    <Section
+      title="Passord"
+      description="Kontoen din har ikke passord. Du logger inn med passkey. Et passord er en reserve om du mister passkeyen."
+    >
+      {mayChange ? (
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Passord" hint="Minst 12 tegn.">
+              <Input
+                name="next"
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+              />
+            </Field>
+            <Field label="Gjenta passordet">
+              <Input
+                name="repeat"
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                required
+              />
+            </Field>
+          </div>
+          {error && <ErrorText>{error}</ErrorText>}
+          <Button type="submit" variant="secondary" disabled={state === 'busy'}>
+            Sett passord
+          </Button>
+        </form>
+      ) : (
+        <p className="text-sm text-stone-600">
+          Logg inn med en av passkeyene dine for å sette et passord.
+        </p>
+      )}
     </Section>
   )
 }

@@ -1,19 +1,57 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
-import { ArrowRight, MailCheck } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { ArrowRight, MailCheck, MailX } from 'lucide-react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { AccessSteps, AuthCard, AuthShell } from '#/components/AuthLayout.tsx'
 import { Button, ErrorText, Field, Input } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { fetchAuthOptions } from '#/lib/invitations.functions.ts'
 
 export const Route = createFileRoute('/registrer')({
   beforeLoad: ({ context }) => {
     if (context.viewer.level !== 'anonymous') throw redirect({ to: '/feed' })
   },
+  // Uten e-postleverandør er registrering slått av på serveren. Da forklarer siden
+  // at veien inn er en invitasjon.
+  loader: () => fetchAuthOptions(),
   head: () => ({ meta: [{ title: 'Be om tilgang – ESAF' }] }),
   component: SignUp,
 })
 
+function InvitationOnly({ login }: { login: ReactNode }) {
+  return (
+    <AuthShell action={login}>
+      <AuthCard
+        title="Tilgang skjer med invitasjon fra styret"
+        subtitle="ESAF er for alle som går eller har gått på Entreprenørskolen. Styret sender hver person en personlig invitasjonslenke, så bare ES-ere slipper inn."
+        footer={
+          <>
+            Har du konto?{' '}
+            <Link to="/logg-inn" className="font-medium text-brand-600 hover:underline">
+              Logg inn
+            </Link>
+          </>
+        }
+      >
+        <div className="flex gap-4 rounded-2xl bg-stone-50 p-4 ring-1 ring-stone-200/70 ring-inset">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-200 ring-inset">
+            <MailX className="size-5" aria-hidden />
+          </span>
+          <p className="text-sm text-stone-600">
+            Er du ES-er og vil inn? Ta kontakt med styret på{' '}
+            <a href="mailto:styret@esaf.no" className="font-medium text-brand-600 hover:underline">
+              styret@esaf.no
+            </a>{' '}
+            eller med kullrepresentanten din, så får du en invitasjon. Har du fått en lenke, åpner
+            du den for å komme i gang.
+          </p>
+        </div>
+      </AuthCard>
+    </AuthShell>
+  )
+}
+
 function SignUp() {
+  const { selfSignUp } = Route.useLoaderData()
   const [state, setState] = useState<'idle' | 'pending' | 'sent'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
@@ -46,6 +84,8 @@ function SignUp() {
       Logg inn
     </Link>
   )
+
+  if (!selfSignUp) return <InvitationOnly login={login} />
 
   if (state === 'sent') {
     return (

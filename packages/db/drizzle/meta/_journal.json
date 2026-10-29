@@ -169,6 +169,13 @@
       "when": 1793296128665,
       "tag": "0023_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793316971437,
+      "tag": "0024_board",
+      "breakpoints": true
     }
   ]
 }

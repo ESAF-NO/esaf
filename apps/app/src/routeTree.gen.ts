@@ -16,6 +16,7 @@ import { Route as RegistrerRouteImport } from './routes/registrer'
 import { Route as KontoAdminRouteRouteImport } from './routes/_konto/admin/route'
 import { Route as KontoKomIGangRouteImport } from './routes/_konto/kom-i-gang'
 import { Route as KontoKontoRouteImport } from './routes/_konto/konto'
+import { Route as KontoStyretRouteImport } from './routes/_konto/styret'
 import { Route as KontoVarslerRouteImport } from './routes/_konto/varsler'
 import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
@@ -31,6 +32,7 @@ import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
 import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
 import { Route as KontoAdminProfilerRouteImport } from './routes/_konto/admin/profiler'
 import { Route as KontoAdminSelskaperRouteImport } from './routes/_konto/admin/selskaper'
+import { Route as KontoAdminStyretRouteImport } from './routes/_konto/admin/styret'
 import { Route as KontoArrangementerIndexRouteImport } from './routes/_konto/arrangementer/index'
 import { Route as KontoEsafHelgenIndexRouteImport } from './routes/_konto/esaf-helgen/index'
 import { Route as KontoEsafHelgenWeekendIdRouteImport } from './routes/_konto/esaf-helgen/$weekendId'
@@ -91,6 +93,11 @@ const KontoKomIGangRoute = KontoKomIGangRouteImport.update({
 const KontoKontoRoute = KontoKontoRouteImport.update({
   id: '/konto',
   path: '/konto',
+  getParentRoute: () => KontoRoute,
+} as any)
+const KontoStyretRoute = KontoStyretRouteImport.update({
+  id: '/styret',
+  path: '/styret',
   getParentRoute: () => KontoRoute,
 } as any)
 const KontoVarslerRoute = KontoVarslerRouteImport.update({
@@ -167,6 +174,11 @@ const KontoAdminProfilerRoute = KontoAdminProfilerRouteImport.update({
 const KontoAdminSelskaperRoute = KontoAdminSelskaperRouteImport.update({
   id: '/selskaper',
   path: '/selskaper',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminStyretRoute = KontoAdminStyretRouteImport.update({
+  id: '/styret',
+  path: '/styret',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
 const KontoArrangementerIndexRoute = KontoArrangementerIndexRouteImport.update({
@@ -324,6 +336,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof KontoAdminRouteRouteWithChildren
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
+  '/styret': typeof KontoStyretRoute
   '/varsler': typeof KontoVarslerRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
@@ -338,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/admin/styret': typeof KontoAdminStyretRoute
   '/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
@@ -373,6 +387,7 @@ export interface FileRoutesByTo {
   '/registrer': typeof RegistrerRoute
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
+  '/styret': typeof KontoStyretRoute
   '/varsler': typeof KontoVarslerRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
@@ -387,6 +402,7 @@ export interface FileRoutesByTo {
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/admin/styret': typeof KontoAdminStyretRoute
   '/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
@@ -425,6 +441,7 @@ export interface FileRoutesById {
   '/_konto/admin': typeof KontoAdminRouteRouteWithChildren
   '/_konto/kom-i-gang': typeof KontoKomIGangRoute
   '/_konto/konto': typeof KontoKontoRoute
+  '/_konto/styret': typeof KontoStyretRoute
   '/_konto/varsler': typeof KontoVarslerRoute
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
@@ -439,6 +456,7 @@ export interface FileRoutesById {
   '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/_konto/admin/profiler': typeof KontoAdminProfilerRoute
   '/_konto/admin/selskaper': typeof KontoAdminSelskaperRoute
+  '/_konto/admin/styret': typeof KontoAdminStyretRoute
   '/_konto/esaf-helgen/$weekendId': typeof KontoEsafHelgenWeekendIdRoute
   '/_konto/feed/$postId': typeof KontoFeedPostIdRoute
   '/_konto/feed/ny': typeof KontoFeedNyRoute
@@ -477,6 +495,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/kom-i-gang'
     | '/konto'
+    | '/styret'
     | '/varsler'
     | '/velkommen'
     | '/venter'
@@ -491,6 +510,7 @@ export interface FileRouteTypes {
     | '/admin/medlemmer'
     | '/admin/profiler'
     | '/admin/selskaper'
+    | '/admin/styret'
     | '/esaf-helgen/$weekendId'
     | '/feed/$postId'
     | '/feed/ny'
@@ -526,6 +546,7 @@ export interface FileRouteTypes {
     | '/registrer'
     | '/kom-i-gang'
     | '/konto'
+    | '/styret'
     | '/varsler'
     | '/velkommen'
     | '/venter'
@@ -540,6 +561,7 @@ export interface FileRouteTypes {
     | '/admin/medlemmer'
     | '/admin/profiler'
     | '/admin/selskaper'
+    | '/admin/styret'
     | '/esaf-helgen/$weekendId'
     | '/feed/$postId'
     | '/feed/ny'
@@ -577,6 +599,7 @@ export interface FileRouteTypes {
     | '/_konto/admin'
     | '/_konto/kom-i-gang'
     | '/_konto/konto'
+    | '/_konto/styret'
     | '/_konto/varsler'
     | '/_konto/velkommen'
     | '/_konto/venter'
@@ -591,6 +614,7 @@ export interface FileRouteTypes {
     | '/_konto/admin/medlemmer'
     | '/_konto/admin/profiler'
     | '/_konto/admin/selskaper'
+    | '/_konto/admin/styret'
     | '/_konto/esaf-helgen/$weekendId'
     | '/_konto/feed/$postId'
     | '/_konto/feed/ny'
@@ -687,6 +711,13 @@ declare module '@tanstack/react-router' {
       path: '/konto'
       fullPath: '/konto'
       preLoaderRoute: typeof KontoKontoRouteImport
+      parentRoute: typeof KontoRoute
+    }
+    '/_konto/styret': {
+      id: '/_konto/styret'
+      path: '/styret'
+      fullPath: '/styret'
+      preLoaderRoute: typeof KontoStyretRouteImport
       parentRoute: typeof KontoRoute
     }
     '/_konto/varsler': {
@@ -792,6 +823,13 @@ declare module '@tanstack/react-router' {
       path: '/selskaper'
       fullPath: '/admin/selskaper'
       preLoaderRoute: typeof KontoAdminSelskaperRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/styret': {
+      id: '/_konto/admin/styret'
+      path: '/styret'
+      fullPath: '/admin/styret'
+      preLoaderRoute: typeof KontoAdminStyretRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
     '/_konto/arrangementer/': {
@@ -995,6 +1033,7 @@ interface KontoAdminRouteRouteChildren {
   KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
   KontoAdminProfilerRoute: typeof KontoAdminProfilerRoute
   KontoAdminSelskaperRoute: typeof KontoAdminSelskaperRoute
+  KontoAdminStyretRoute: typeof KontoAdminStyretRoute
   KontoAdminIndexRoute: typeof KontoAdminIndexRoute
   KontoAdminArrangementerImportRoute: typeof KontoAdminArrangementerImportRoute
   KontoAdminKullrepresentanterImportRoute: typeof KontoAdminKullrepresentanterImportRoute
@@ -1009,6 +1048,7 @@ const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
   KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
   KontoAdminProfilerRoute: KontoAdminProfilerRoute,
   KontoAdminSelskaperRoute: KontoAdminSelskaperRoute,
+  KontoAdminStyretRoute: KontoAdminStyretRoute,
   KontoAdminIndexRoute: KontoAdminIndexRoute,
   KontoAdminArrangementerImportRoute: KontoAdminArrangementerImportRoute,
   KontoAdminKullrepresentanterImportRoute:
@@ -1023,6 +1063,7 @@ interface KontoRouteChildren {
   KontoAdminRouteRoute: typeof KontoAdminRouteRouteWithChildren
   KontoKomIGangRoute: typeof KontoKomIGangRoute
   KontoKontoRoute: typeof KontoKontoRoute
+  KontoStyretRoute: typeof KontoStyretRoute
   KontoVarslerRoute: typeof KontoVarslerRoute
   KontoVelkommenRoute: typeof KontoVelkommenRoute
   KontoVenterRoute: typeof KontoVenterRoute
@@ -1050,6 +1091,7 @@ const KontoRouteChildren: KontoRouteChildren = {
   KontoAdminRouteRoute: KontoAdminRouteRouteWithChildren,
   KontoKomIGangRoute: KontoKomIGangRoute,
   KontoKontoRoute: KontoKontoRoute,
+  KontoStyretRoute: KontoStyretRoute,
   KontoVarslerRoute: KontoVarslerRoute,
   KontoVelkommenRoute: KontoVelkommenRoute,
   KontoVenterRoute: KontoVenterRoute,

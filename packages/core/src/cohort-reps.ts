@@ -40,10 +40,43 @@ export type RepresentativeBadge = {
   period: string | null
 }
 
-function span(start: number | null, end: number | null) {
+/** «2019–2022», «siden 2023» eller «til 2018». */
+export function span(start: number | null, end: number | null) {
   if (end === null) return start === null ? null : `siden ${start}`
   if (start === null) return `til ${end}`
   return start === end ? String(start) : `${start}–${end}`
+}
+
+type EndedTerm = { startYear: number | null; endYear: number }
+
+/**
+ * Avsluttede verv som tekst, nyeste først: «2023–2024, 2019». Perioder som
+ * overlapper eller henger sammen, slås sammen: 2019–2020 og 2021–2022 blir
+ * 2019–2022. `lastEnd` er det siste sluttåret, til sortering.
+ */
+export function endedPeriods(terms: EndedTerm[]): { period: string; lastEnd: number } {
+  // Sortert på start (ukjent start først), så perioder som henger sammen slås sammen.
+  const ended = [...terms].sort(
+    (a, b) => (a.startYear ?? a.endYear) - (b.startYear ?? b.endYear) || a.endYear - b.endYear,
+  )
+  const merged: { start: number | null; end: number }[] = []
+  for (const t of ended) {
+    const last = merged.at(-1)
+    const start = t.startYear ?? t.endYear
+    if (last && start <= last.end + 1) {
+      last.end = Math.max(last.end, t.endYear)
+      if (t.startYear === null && last.start !== null && t.endYear < last.start) last.start = null
+    } else {
+      merged.push({ start: t.startYear, end: t.endYear })
+    }
+  }
+  return {
+    period: merged
+      .reverse()
+      .map((m) => span(m.start, m.end))
+      .join(', '),
+    lastEnd: merged[0]!.end,
+  }
 }
 
 /**
@@ -71,32 +104,8 @@ export function representativeBadges(terms: RepresentativeTerm[]): Representativ
       })
       continue
     }
-    // Sortert på start (ukjent start først), så perioder som henger sammen slås sammen.
-    const ended = [...list].sort(
-      (a, b) =>
-        (a.startYear ?? a.endYear!) - (b.startYear ?? b.endYear!) || a.endYear! - b.endYear!,
-    )
-    const merged: { start: number | null; end: number }[] = []
-    for (const t of ended) {
-      const last = merged.at(-1)
-      const start = t.startYear ?? t.endYear!
-      if (last && start <= last.end + 1) {
-        last.end = Math.max(last.end, t.endYear!)
-        if (t.startYear === null && last.start !== null && t.endYear! < last.start)
-          last.start = null
-      } else {
-        merged.push({ start: t.startYear, end: t.endYear! })
-      }
-    }
-    past.push({
-      graduationYear,
-      current: false,
-      period: merged
-        .reverse()
-        .map((m) => span(m.start, m.end))
-        .join(', '),
-      sort: merged[0]!.end,
-    })
+    const { period, lastEnd } = endedPeriods(list as EndedTerm[])
+    past.push({ graduationYear, current: false, period, sort: lastEnd })
   }
   return [
     ...current.sort((a, b) => b.sort - a.sort),

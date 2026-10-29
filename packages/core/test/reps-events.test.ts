@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   attendeeLines,
+  boardBadge,
+  sittingSince,
   matchAttendeeLines,
   parseAttendeeLine,
   primaryCohort,
@@ -180,5 +182,52 @@ describe('innlimt liste med deltakere', () => {
 
   it('avviser for lange lister', () => {
     expect(() => matchAttendeeLines(Array(501).fill('x').join('\n'), people)).toThrow(/Maks 500/)
+  })
+})
+
+describe('styret på profilen', () => {
+  it('viser det nåværende vervet med rollen, ansvarsområdet og når personen kom inn', () => {
+    expect(
+      boardBadge([
+        { role: 'member', responsibility: null, startYear: 2020, endYear: 2023 },
+        { role: 'chair', responsibility: 'Strategi', startYear: 2024, endYear: null },
+      ]),
+    ).toEqual({ current: true, role: 'chair', responsibility: 'Strategi', period: 'siden 2020' })
+  })
+
+  it('samler tidligere verv med rollene, høyeste først, og årene', () => {
+    expect(
+      boardBadge([
+        { role: 'member', responsibility: null, startYear: 2015, endYear: 2016 },
+        { role: 'vice_chair', responsibility: null, startYear: 2017, endYear: 2018 },
+        { role: 'deputy', responsibility: null, startYear: 2021, endYear: 2021 },
+      ]),
+    ).toEqual({
+      current: false,
+      roles: ['vice_chair', 'member', 'deputy'],
+      period: '2021, 2015–2018',
+    })
+  })
+
+  it('regner sammenhengende verv som én periode i styret, men ikke over hull', () => {
+    expect(
+      sittingSince([
+        { startYear: 2015, endYear: 2016 },
+        { startYear: 2019, endYear: 2021 },
+        { startYear: 2021, endYear: null },
+      ]),
+    ).toBe(2019)
+    expect(
+      sittingSince([
+        { startYear: null, endYear: 2020 },
+        { startYear: 2021, endYear: null },
+      ]),
+    ).toBeNull()
+    expect(sittingSince([{ startYear: 2020, endYear: 2022 }])).toBeNull()
+  })
+
+  it('ingen verv gir intet merke', () => {
+    expect(boardBadge([])).toBeNull()
+    expect(boardBadge(undefined)).toBeNull()
   })
 })

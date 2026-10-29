@@ -714,6 +714,53 @@ export const cohortRepresentative = pgTable(
 )
 
 /**
+ * Rollen i styret. `member` er et vanlig styremedlem, og er standard: styret
+ * fordeler gjerne rollene internt etter generalforsamlingen.
+ */
+export const boardRole = pgEnum('board_role', ['chair', 'vice_chair', 'member', 'deputy'])
+
+/**
+ * Styret i ESAF, med historikk. Én rad er ett verv: en person i en rolle fra
+ * `startYear` til `endYear`. Uten `endYear` sitter personen i styret nå. Bytter
+ * noen rolle, avsluttes det gamle vervet og et nytt startes, så historikken
+ * står. Reglene står i @esaf/core (board.ts).
+ */
+export const boardMember = pgTable(
+  'board_member',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    role: boardRole().notNull().default('member'),
+    /** Ansvarsområde, f.eks. «Økonomi» eller «Arrangementer». Vises for medlemmer. */
+    responsibility: text(),
+    /** Null når det ikke er kjent når vervet startet (f.eks. fra en gammel liste). */
+    startYear: integer(),
+    /** Null betyr at personen sitter i styret nå. */
+    endYear: integer(),
+    /** Notat fra styret, f.eks. «Valgt for to år». Vises bare for admins. */
+    note: text(),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.personId),
+    // Samme person sitter bare én gang i styret om gangen.
+    uniqueIndex('board_member_current_index')
+      .on(t.personId)
+      .where(sql`${t.endYear} is null`),
+    // Styret har én leder og én nestleder om gangen.
+    uniqueIndex('board_member_current_lead_index')
+      .on(t.role)
+      .where(sql`${t.endYear} is null and ${t.role} in ('chair', 'vice_chair')`),
+    check(
+      'board_member_years',
+      sql`(${t.startYear} is null or ${t.startYear} between 1990 and 2100) and (${t.endYear} is null or ${t.endYear} between 1990 and 2100) and (${t.startYear} is null or ${t.endYear} is null or ${t.endYear} >= ${t.startYear})`,
+    ),
+  ],
+)
+
+/**
  * Typer arrangementer: ESAF-helgen (lagt inn av migreringen), og det admins
  * legger til, f.eks. «Generalforsamling» eller «Fagkveld». `slug` er adressen
  * (`/arrangementer/esaf-helgen`) og endres ikke etter at typen er laget, så
@@ -976,6 +1023,7 @@ export type ReviewDismissalKind = (typeof reviewDismissalKind.enumValues)[number
 export type ParticipationRole = (typeof participationRole.enumValues)[number]
 export type EventDatePrecision = (typeof eventDatePrecision.enumValues)[number]
 export type ParticipationSource = (typeof participationSource.enumValues)[number]
+export type BoardRole = (typeof boardRole.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)

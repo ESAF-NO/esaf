@@ -4,13 +4,13 @@ import { Megaphone } from 'lucide-react'
 import { Avatar, cx, Verified } from './ui.tsx'
 
 /**
- * Vervene som kullrepresentant på profilen: nåværende som tydelige merker,
- * tidligere i en roligere stil med årene. Hvert merke lenker til kullet.
+ * Vervene som kullrepresentant på profilen, som `<li>` i listen over verv:
+ * nåværende som tydelige merker, tidligere i en roligere stil med årene. Hvert
+ * merke lenker til kullet.
  */
 export function RepresentativeBadges({ badges }: { badges: RepresentativeBadge[] }) {
-  if (!badges.length) return null
   return (
-    <ul className="mt-3 flex flex-wrap gap-2" aria-label="Kullrepresentant">
+    <>
       {badges.map((b) => (
         <li key={b.graduationYear}>
           <Link
@@ -30,7 +30,7 @@ export function RepresentativeBadges({ badges }: { badges: RepresentativeBadge[]
           </Link>
         </li>
       ))}
-    </ul>
+    </>
   )
 }
 

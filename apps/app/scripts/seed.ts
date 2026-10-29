@@ -871,13 +871,28 @@ async function seedDemo() {
     ])
     .returning({ id: schema.eventType.id })
 
-  // ESAF-helgen: én helg hver høst, noen år også om våren, og én som kommer.
+  // ESAF-helgen: én helg hver høst, noen år også om våren, og én som kommer. De
+  // to eldste har bare årstall eller semester.
   // Generalforsamling hver vår fra 2014, og noen fagkvelder.
   const places = ['Trondheim', 'Oppdal', 'Røros', 'Oslo', 'Hemsedal', 'Bergen']
   const topics = ['salg', 'finansiering', 'ledelse', 'produktutvikling', 'eksport', 'rekruttering']
   const eventRows = await db
     .insert(schema.event)
     .values([
+      // De eldste helgene, der bare året eller semesteret er kjent.
+      {
+        typeId: weekendType!.id,
+        name: 'ESAF-helgen 2008',
+        startDate: '2008-01-01',
+        datePrecision: 'year' as const,
+      },
+      {
+        typeId: weekendType!.id,
+        name: 'ESAF-helgen høst 2009',
+        startDate: '2009-07-01',
+        datePrecision: 'semester' as const,
+        location: 'Trondheim',
+      },
       ...Array.from({ length: 2026 - 2010 + 1 }, (_, i) => 2010 + i).flatMap((year) => [
         ...([2015, 2019, 2022].includes(year)
           ? [

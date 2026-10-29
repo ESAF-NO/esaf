@@ -1,18 +1,14 @@
-import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
+import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { Check, Copy, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
+import { PasskeySignInButton } from '#/components/StrongAuth.tsx'
 import { QrCode } from '#/components/QrCode.tsx'
 import { Button, buttonClass, Card, ErrorText, Field, Input, PageHeader } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import { longDay } from '#/lib/format.ts'
-import {
-  passkeyManageError,
-  passkeySignInError,
-  signInWithPasskey,
-  usePasskeySupport,
-} from '#/lib/passkey.ts'
+import { passkeyManageError, usePasskeySupport } from '#/lib/passkey.ts'
 import { needsStrongAuth, roleNames } from '#/lib/roles.ts'
 
 export const Route = createFileRoute('/_konto/konto')({
@@ -136,37 +132,6 @@ function StrongAuthNotice({
           </>
         )}
       </div>
-    </div>
-  )
-}
-
-/** Logger inn på nytt med passkey, så økten blir sterk nok til adminverktøyene. */
-function PasskeySignInButton({ then }: { then?: '/admin' }) {
-  const router = useRouter()
-  const navigate = useNavigate()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function signIn() {
-    setBusy(true)
-    setError(null)
-    const failure = await signInWithPasskey()
-    if (failure) {
-      setBusy(false)
-      return setError(passkeySignInError(failure))
-    }
-    await router.invalidate()
-    if (then) await navigate({ to: then })
-    setBusy(false)
-  }
-
-  return (
-    <div className="space-y-2">
-      <Button variant="brand" size="sm" onClick={signIn} disabled={busy}>
-        <KeyRound className="size-4" aria-hidden />{' '}
-        {busy ? 'Venter på passkey …' : 'Logg inn med passkey'}
-      </Button>
-      {error && <ErrorText>{error}</ErrorText>}
     </div>
   )
 }

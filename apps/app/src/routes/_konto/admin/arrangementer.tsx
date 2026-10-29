@@ -1,8 +1,9 @@
 import type { EventTypeSummary } from '@esaf/core'
 import { createFileRoute, Link, notFound, useRouter } from '@tanstack/react-router'
-import { CalendarDays, FileSpreadsheet, Pencil, Plus, Trash2 } from 'lucide-react'
+import { CalendarDays, CalendarPlus, FileSpreadsheet, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
+import { EventCreateActions } from '#/components/EventCreate.tsx'
 import { emptyEventType, EventTypeDialog } from '#/components/EventForm.tsx'
 import { Button, buttonClass, Card, EmptyState, ErrorText } from '#/components/ui.tsx'
 import {
@@ -35,8 +36,8 @@ type Open =
   | null
 
 /**
- * Typene arrangementer (ESAF-helgen, generalforsamling, fagkveld …) og import
- * av deltakelse fra regneark. Selve arrangementene lages på siden for hver type.
+ * Arrangementene for admins: nye arrangementer og historikk, import av
+ * deltakelse fra regneark, og typene (ESAF-helgen, generalforsamling, fagkveld …).
  */
 function EventTypesAdmin() {
   const { types } = Route.useLoaderData()
@@ -47,9 +48,27 @@ function EventTypesAdmin() {
   return (
     <>
       <p className="mb-5 max-w-2xl text-sm text-stone-500">
-        Typene arrangementer ESAF holder oversikt over. Arrangementene lages på siden for hver type,
-        og deltakere legges til på siden for hvert arrangement. Alt logges.
+        Arrangementene ESAF holder oversikt over, og hvem som var der. Deltakere og roller legges
+        til på siden for hvert arrangement. Alt logges.
       </p>
+
+      {types.length > 0 && (
+        <Card className="mb-4 flex flex-wrap items-center gap-4 p-5">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600">
+            <CalendarPlus className="size-5" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-stone-950">Legg inn arrangementer</h2>
+            <p className="mt-0.5 text-sm text-stone-500">
+              Ett om gangen, eller mange tidligere på én gang når du bare vet året eller semesteret,
+              f.eks. hver høst fra 2008.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <EventCreateActions types={types} size="sm" />
+          </div>
+        </Card>
+      )}
 
       <Card className="mb-6 flex flex-wrap items-center gap-4 p-5">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600">

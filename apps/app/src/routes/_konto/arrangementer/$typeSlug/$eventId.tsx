@@ -1,10 +1,12 @@
 import type { EventDetails, EventParticipant, EventRole } from '@esaf/core'
 import { createFileRoute, Link, redirect, useNavigate, useRouter } from '@tanstack/react-router'
-import { ArrowLeft, Check, MapPin, Pencil, Tent, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Check, CircleCheck, MapPin, Pencil, Tent, Trash2, X } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { z } from 'zod'
 import { RoleBadge } from '#/components/EventCharts.tsx'
 import { EventDialog } from '#/components/EventForm.tsx'
 import { EventParticipantsAdmin } from '#/components/EventParticipantsAdmin.tsx'
-import { useState, type FormEvent } from 'react'
+import { StrongAuthCallout } from '#/components/StrongAuth.tsx'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import {
   Avatar,
@@ -19,8 +21,8 @@ import {
   Verified,
 } from '#/components/ui.tsx'
 import { fetchCommunity } from '#/lib/feed.functions.ts'
-import { dateRange, plural } from '#/lib/format.ts'
-import { roleLabels, roleOrder, roleSummary } from '#/lib/events.ts'
+import { plural } from '#/lib/format.ts'
+import { eventWhen, roleLabels, roleOrder, roleSummary } from '#/lib/events.ts'
 import {
   fetchEvent,
   fetchEventTypeOptions,
@@ -32,6 +34,8 @@ import {
 } from '#/lib/events.functions.ts'
 
 export const Route = createFileRoute('/_konto/arrangementer/$typeSlug/$eventId')({
+  // Satt når admin nettopp har opprettet arrangementet, så neste steg vises.
+  validateSearch: z.object({ opprettet: z.boolean().optional().catch(undefined) }),
   loader: async ({ params, context: { viewer } }) => {
     const admin = viewer.permissions.includes('profiles.edit')
     const [event, community, types] = await Promise.all([
@@ -45,6 +49,7 @@ export const Route = createFileRoute('/_konto/arrangementer/$typeSlug/$eventId')
       throw redirect({
         to: '/arrangementer/$typeSlug/$eventId',
         params: { typeSlug: event.type.slug, eventId: event.id },
+        search: true,
         replace: true,
       })
     }
@@ -65,6 +70,7 @@ const sourceLabels = {
 
 function EventPage() {
   const { event: w, types, cohortYears } = Route.useLoaderData()
+  const { opprettet } = Route.useSearch()
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const router = useRouter()
@@ -88,7 +94,7 @@ function EventPage() {
             {w.name}
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-stone-500 tabular-nums">
-            <span>{dateRange(w.startDate, w.endDate)}</span>
+            <span>{eventWhen(w)}</span>
             {w.location && (
               <span className="inline-flex items-center gap-1">
                 <MapPin className="size-3.5" aria-hidden /> {w.location}
@@ -117,6 +123,11 @@ function EventPage() {
         </div>
       </div>
 
+      {opprettet && w.canManage && <CreatedNotice event={w} />}
+      <StrongAuthCallout className="mb-6">
+        legge til deltakere og roller, eller rette arrangementet
+      </StrongAuthCallout>
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-8">
           {w.description && (
@@ -143,6 +154,7 @@ function EventPage() {
             name: w.name,
             startDate: w.startDate,
             endDate: w.endDate,
+            datePrecision: w.datePrecision,
             location: w.location ?? '',
             description: w.description ?? '',
           }}
@@ -164,6 +176,24 @@ function EventPage() {
         />
       )}
       {deleting && <DeleteDialog event={w} onClose={() => setDeleting(false)} />}
+    </div>
+  )
+}
+
+/** Rett etter «Opprett»: hva admin gjør nå. */
+function CreatedNotice({ event: w }: { event: EventDetails }) {
+  return (
+    <div
+      role="status"
+      className="mb-6 flex gap-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-900 ring-1 ring-emerald-200 ring-inset"
+    >
+      <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <p>
+        {w.name} er opprettet.{' '}
+        {w.upcoming
+          ? 'Deltakere kan legges til når det har startet.'
+          : 'Legg til hvem som var der under «Legg til deltakere»: lim inn en liste, søk opp én og én, eller ta med et helt kull. Velg rollen (arrangør, foredragsholder, frivillig) før du legger til, eller endre den med blyanten på hver deltaker etterpå.'}
+      </p>
     </div>
   )
 }
@@ -256,7 +286,9 @@ function Participants({ event: w }: { event: EventDetails }) {
   if (w.participants === 0) {
     return (
       <p className="rounded-2xl border border-dashed border-stone-300 px-4 py-10 text-center text-sm text-stone-500">
-        Ingen har sagt at de var der ennå.
+        {w.canManage
+          ? 'Ingen deltakere ennå. Legg dem til under «Legg til deltakere», så vises de her etter kull, med rollene.'
+          : 'Ingen har sagt at de var der ennå.'}
       </p>
     )
   }

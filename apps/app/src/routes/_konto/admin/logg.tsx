@@ -7,6 +7,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { Avatar, Button, Card, EmptyState, ErrorText } from '#/components/ui.tsx'
 import { auditPageSize, fetchAuditLog } from '#/lib/admin.functions.ts'
+import { boardRoleInSentence } from '#/lib/board.ts'
 import { clockTime, dayKey, dayLabel, plural, timestamp } from '#/lib/format.ts'
 import { roleNames } from '#/lib/roles.ts'
 import { companyFieldLabels, profileFieldLabels } from '#/lib/sources.ts'
@@ -89,7 +90,7 @@ function AuditLog() {
   return (
     <div className="max-w-3xl">
       <p className="mb-5 text-sm text-stone-500">
-        Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater, forslag,
+        Hvem som har gjort hva med tilgang, roller, profiler, selskaper, sitater, forslag, styret,
         kullrepresentanter, arrangementer og andres innhold, nyeste først. Hendelsene kan ikke
         endres eller slettes i appen.
       </p>
@@ -630,6 +631,40 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
   'cohort.rep_remove': ({ actor, subject, details }) => (
     <>
       {actor} slettet vervet til {subject} som kullrepresentant for {cohortName(details)}.
+    </>
+  ),
+  'board.add': ({ actor, subject, details }) => (
+    <>
+      {actor} satte {subject} inn i styret som {boardRoleInSentence(details.role)}
+      {typeof details.startYear === 'number' && ` fra ${details.startYear}`}.
+    </>
+  ),
+  'board.edit': ({ actor, subject }) => (
+    <>
+      {actor} rettet vervet til {subject} i styret.
+    </>
+  ),
+  'board.role_change': ({ actor, subject, details }) => {
+    const from = (details.from ?? {}) as Entry['details']
+    const to = (details.to ?? {}) as Entry['details']
+    return (
+      <>
+        {actor} endret rollen til {subject} i styret
+        {from.role !== to.role &&
+          ` fra ${boardRoleInSentence(from.role)} til ${boardRoleInSentence(to.role)}`}
+        {typeof details.year === 'number' && ` (${details.year})`}.
+      </>
+    )
+  },
+  'board.end': ({ actor, subject, details }) => (
+    <>
+      {actor} avsluttet vervet til {subject} som {boardRoleInSentence(details.role)}
+      {typeof details.endYear === 'number' && ` (${details.endYear})`}.
+    </>
+  ),
+  'board.remove': ({ actor, subject, details }) => (
+    <>
+      {actor} slettet vervet til {subject} som {boardRoleInSentence(details.role)}.
     </>
   ),
   // Fra før ESAF-helgen ble et arrangement (migrering 0019).

@@ -2,6 +2,7 @@ import { schema, type Db } from '@esaf/db'
 import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import { boardBadge, loadBoardTerms, type BoardBadge } from './board.ts'
 import {
   loadRepresentativeTerms,
   representativeBadges,
@@ -173,6 +174,8 @@ export type Profile = {
   cohorts: { graduationYear: number; relation: schema.CohortRelation }[]
   /** Kullrepresentant nå og tidligere, slik det vises på profilen. */
   representative: RepresentativeBadge[]
+  /** Vervet i styret nå, ellers tidligere verv samlet. Null for dem som ikke har sittet. */
+  board: BoardBadge | null
   /** Arrangementene personen har vært på, per type (ESAF-helgen først). */
   events: PersonEventGroup[]
   /** Sitater fra personen. */
@@ -223,7 +226,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     city: row.city,
     linkedinUrl: row.linkedinUrl,
   }
-  const [quotes, sources, terms, events] = await Promise.all([
+  const [quotes, sources, terms, events, boardTerms] = await Promise.all([
     loadQuotes(db, viewer, { personId }),
     loadFieldSources(
       db,
@@ -234,6 +237,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     ),
     loadRepresentativeTerms(db, [personId]),
     loadPersonEvents(db, personId),
+    loadBoardTerms(db, [personId]),
   ])
 
   const claimed = row.userId !== null
@@ -257,6 +261,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     phone: contactDetail(row.phone, row.phoneVisible),
     cohorts,
     representative: representativeBadges(terms.get(personId) ?? []),
+    board: boardBadge(boardTerms.get(personId)),
     events,
     quotes,
     sources,

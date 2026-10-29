@@ -1,4 +1,5 @@
 import { createRouter } from '@tanstack/react-router'
+import { ErrorPage, NotFoundPage } from './components/ErrorPage.tsx'
 import { routeTree } from './routeTree.gen'
 
 export function getRouter() {
@@ -8,14 +9,8 @@ export function getRouter() {
     defaultPreload: 'intent',
     // Private data skal alltid hentes på nytt fra serveren, ikke fra en gammel cache.
     defaultPreloadStaleTime: 0,
-    defaultNotFoundComponent: () => (
-      <main>
-        <h1>Fant ikke siden</h1>
-        <p>
-          <a href="/">Til forsiden</a>
-        </p>
-      </main>
-    ),
+    defaultErrorComponent: ErrorPage,
+    defaultNotFoundComponent: NotFoundPage,
   })
 }
 

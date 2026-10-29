@@ -25,6 +25,7 @@ const {
   companyLinkRequest,
   companySuggestion,
   experience,
+  invitation,
   membership,
   notification,
   person,
@@ -687,6 +688,13 @@ export async function mergePeople(
       .update(membership)
       .set({ decidedByPersonId: into })
       .where(eq(membership.decidedByPersonId, from))
+    // Lenker som gjelder duplikatet, gjelder nå personen som ble beholdt. Er den
+    // allerede tatt i bruk, avvises en invitasjon til den når den brukes.
+    await tx.update(invitation).set({ personId: into }).where(eq(invitation.personId, from))
+    await tx
+      .update(invitation)
+      .set({ createdByPersonId: into })
+      .where(eq(invitation.createdByPersonId, from))
 
     // Loggen forteller fortsatt hva som skjedde, nå med personen som ble beholdt.
     await tx

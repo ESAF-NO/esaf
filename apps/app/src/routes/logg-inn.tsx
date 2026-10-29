@@ -1,9 +1,11 @@
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 import { KeyRound } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { z } from 'zod'
 import { AuthCard, AuthShell } from '#/components/AuthLayout.tsx'
 import { Button, ErrorText, Field, Input } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { noReferrer, safeRedirect } from '#/lib/links.ts'
 import {
   passkeyAutofillSupported,
   passkeySignInError,
@@ -12,15 +14,22 @@ import {
 } from '#/lib/passkey.ts'
 
 export const Route = createFileRoute('/logg-inn')({
-  beforeLoad: ({ context }) => {
-    if (context.viewer.level !== 'anonymous') throw redirect({ to: '/feed' })
+  // `til`: siden personen kom fra, for eksempel en invitasjon. Bare stier i appen godtas.
+  validateSearch: z.object({ til: z.string().optional().transform(safeRedirect).catch(undefined) }),
+  beforeLoad: ({ context, search }) => {
+    if (context.viewer.level !== 'anonymous') {
+      throw search.til ? redirect({ href: search.til }) : redirect({ to: '/feed' })
+    }
   },
-  head: () => ({ meta: [{ title: 'Logg inn – ESAF' }] }),
+  // Adressen kan inneholde en invitasjon (`til`), så den sendes ikke videre.
+  headers: () => noReferrer.headers,
+  head: () => ({ meta: [{ title: 'Logg inn – ESAF' }, noReferrer.meta] }),
   component: SignIn,
 })
 
 function SignIn() {
   const router = useRouter()
+  const { til } = Route.useSearch()
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [step, setStep] = useState<'password' | 'code' | 'backup'>('password')
@@ -31,7 +40,8 @@ function SignIn() {
   async function enter() {
     // Rutevaktene sender den som ikke er godkjent ennå, til riktig steg.
     await router.invalidate()
-    await router.navigate({ to: '/feed' })
+    if (til) await router.navigate({ href: til })
+    else await router.navigate({ to: '/feed' })
   }
 
   // Betinget innlogging: nettleseren foreslår passkeys for ESAF i e-postfeltet.
@@ -181,7 +191,10 @@ function SignIn() {
             {/* `webauthn` lar nettleseren foreslå passkeys her. */}
             <Input name="email" type="email" autoComplete="email webauthn" required autoFocus />
           </Field>
-          <Field label="Passord">
+          <Field
+            label="Passord"
+            hint="Glemt passordet? Be en i styret om en lenke for å velge nytt."
+          >
             <Input name="password" type="password" autoComplete="current-password" required />
           </Field>
           {error && <ErrorText>{error}</ErrorText>}

@@ -13,6 +13,7 @@ import { CircleCheck, Search, SearchX, ShieldAlert, ShieldCheck } from 'lucide-r
 import { useMemo, useState, type FormEvent } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
+import { ShareLink } from '#/components/ShareLink.tsx'
 import {
   Avatar,
   Button,
@@ -27,6 +28,7 @@ import {
 } from '#/components/ui.tsx'
 import { fetchAccounts, resetPasskeys, updateAccess, updateRole } from '#/lib/admin.functions.ts'
 import { kull, lastActive, plural } from '#/lib/format.ts'
+import { createPasswordLink, type ShareableLink } from '#/lib/invitations.functions.ts'
 import { fold } from '#/lib/member-search.ts'
 import {
   needsStrongAuth,
@@ -62,6 +64,7 @@ type Pending =
   | { kind: 'role'; account: AccountView; role: MemberRole }
   | { kind: 'access'; account: AccountView }
   | { kind: 'passkeys'; account: AccountView }
+  | { kind: 'password'; account: AccountView }
 
 const firstName = (fullName: string) => fullName.split(/\s+/)[0] || fullName
 
@@ -224,6 +227,7 @@ function Members() {
                   onRole={(role) => setPending({ kind: 'role', account: a, role })}
                   onAccess={() => setPending({ kind: 'access', account: a })}
                   onPasskeys={() => setPending({ kind: 'passkeys', account: a })}
+                  onPassword={() => setPending({ kind: 'password', account: a })}
                 />
               ))}
             </ul>
@@ -252,6 +256,13 @@ function Members() {
       {pending?.kind === 'passkeys' && (
         <PasskeysDialog account={pending.account} onClose={() => setPending(null)} onDone={done} />
       )}
+      {pending?.kind === 'password' && (
+        <PasswordLinkDialog
+          account={pending.account}
+          onClose={() => setPending(null)}
+          onDone={done}
+        />
+      )}
     </>
   )
 }
@@ -265,6 +276,7 @@ function AccountRow({
   onRole,
   onAccess,
   onPasskeys,
+  onPassword,
 }: {
   account: AccountView
   self: boolean
@@ -274,6 +286,7 @@ function AccountRow({
   onRole: (role: MemberRole) => void
   onAccess: () => void
   onPasskeys: () => void
+  onPassword: () => void
 }) {
   const active = a.status === 'active'
   const cohorts = kull(a.cohortYears)
@@ -334,6 +347,17 @@ function AccountRow({
               aria-label={`Fjern passkeys for ${a.fullName}`}
             >
               Fjern {plural(a.passkeys, 'passkey', 'passkeys')}
+            </button>
+          )}
+          {/* Samme regler igjen: lenke for nytt passord, til den som har glemt det. */}
+          {access && (
+            <button
+              type="button"
+              onClick={onPassword}
+              className="mt-1 block text-xs text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline"
+              aria-label={`Lag lenke for nytt passord til ${a.fullName}`}
+            >
+              Lenke for nytt passord
             </button>
           )}
         </div>
@@ -602,6 +626,97 @@ function PasskeysDialog({
           </Button>
           <Button type="submit" variant="destructive" disabled={busy}>
             {busy ? 'Fjerner …' : 'Fjern passkeys'}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  )
+}
+
+/**
+ * Lenke for nytt passord, for den som har glemt det. Lenken vises én gang i
+ * dialogen, og admin sender den selv.
+ */
+function PasswordLinkDialog({
+  account: a,
+  onClose,
+  onDone,
+}: {
+  account: AccountView
+  onClose: () => void
+  onDone: (message: string) => void
+}) {
+  const create = useServerFn(createPasswordLink)
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [link, setLink] = useState<ShareableLink | null>(null)
+  const name = firstName(a.fullName)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const reason = String(new FormData(event.currentTarget).get('reason') ?? '').trim()
+    // Samme krav som serveren, så svaret kommer før noe sendes.
+    if (reason.length < 3) return setError('Skriv en kort begrunnelse. Den lagres i loggen.')
+    setBusy(true)
+    setError(null)
+    try {
+      setLink(await create({ data: { personId: a.personId, reason } }))
+      await router.invalidate()
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (link) {
+    return (
+      <Dialog
+        title={`Lenke for nytt passord til ${a.fullName}`}
+        onClose={() => onDone(`Lenken til ${a.fullName} er laget. Den vises ikke igjen.`)}
+      >
+        <div className="space-y-4">
+          <ShareLink link={link} kind="password_reset" />
+          <DialogActions>
+            <Button
+              onClick={() => onDone(`Lenken til ${a.fullName} er laget. Den vises ikke igjen.`)}
+            >
+              Ferdig
+            </Button>
+          </DialogActions>
+        </div>
+      </Dialog>
+    )
+  }
+
+  return (
+    <Dialog
+      title={`Lage en lenke for nytt passord til ${a.fullName}?`}
+      description={
+        <>
+          <p>
+            Gjør dette bare når {name} har bedt om det, og send lenken direkte til {name}. Med
+            lenken velger {name} et nytt passord, og blir logget ut på alle enheter. Tofaktor og
+            passkeys beholdes.
+          </p>
+          <p>Lenken virker én gang i sju dager. En eldre lenke til {name} slutter å virke.</p>
+        </>
+      }
+      onClose={onClose}
+      busy={busy}
+    >
+      <form onSubmit={submit} noValidate className="space-y-4">
+        <Field label="Begrunnelse" hint="Påkrevd. Lagres i loggen.">
+          <Textarea name="reason" rows={3} maxLength={500} required data-autofocus />
+        </Field>
+        {error && <ErrorText>{error}</ErrorText>}
+        <DialogActions>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Avbryt
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? 'Lager lenke …' : 'Lag lenke'}
           </Button>
         </DialogActions>
       </form>

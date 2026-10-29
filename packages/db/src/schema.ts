@@ -867,6 +867,45 @@ export const accessRequest = pgTable(
   (t) => [index().on(t.status, t.createdAt)],
 )
 
+/**
+ * `invite` gir tilgang til appen. `password_reset` lar en eksisterende konto
+ * velge nytt passord, uten e-post.
+ */
+export const invitationKind = pgEnum('invitation_kind', ['invite', 'password_reset'])
+
+/**
+ * Lenker en admin (eller en operatør på kommandolinjen) lager og deler selv, for
+ * eksempel på SMS. Bare SHA-256 av tokenet lagres; selve tokenet vises én gang
+ * når lenken lages. En lenke er bundet til én e-postadresse, virker én gang og
+ * går ut etter sju dager. Se `invitations.ts` i @esaf/core for reglene.
+ */
+export const invitation = pgTable(
+  'invitation',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    kind: invitationKind().notNull().default('invite'),
+    /** Normalisert til små bokstaver. Kontoen som lages eller brukes, må ha denne adressen. */
+    email: text().notNull(),
+    /** SHA-256 (hex) av tokenet i lenken. Tokenet selv lagres aldri. */
+    tokenHash: text().notNull().unique(),
+    /**
+     * Invitasjon: profilen kontoen skal kobles til, eller null for en ny person.
+     * Nytt passord: personen bak kontoen.
+     */
+    personId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    /** Rollen den inviterte får. Bare hovedadmins kan invitere med en annen rolle enn medlem. */
+    role: memberRole().notNull().default('member'),
+    /** Null betyr lokal operatør (admin-CLI). */
+    createdByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    usedAt: timestamp({ withTimezone: true }),
+    usedByUserId: text().references(() => user.id, { onDelete: 'set null' }),
+    revokedAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.email), index().on(t.createdAt)],
+)
+
 /** Hva i et datasett en rad i `import_record` gjelder. */
 export const importRecordKind = pgEnum('import_record_kind', [
   'company',
@@ -922,6 +961,7 @@ export type MemberRole = (typeof memberRole.enumValues)[number]
 export type CohortRelation = (typeof cohortRelation.enumValues)[number]
 export type PersonSource = (typeof personSource.enumValues)[number]
 export type AccessRequestStatus = (typeof accessRequestStatus.enumValues)[number]
+export type InvitationKind = (typeof invitationKind.enumValues)[number]
 export type CompanyStatus = (typeof companyStatus.enumValues)[number]
 export type SourceConfidence = (typeof sourceConfidence.enumValues)[number]
 export type DatePrecision = (typeof datePrecision.enumValues)[number]

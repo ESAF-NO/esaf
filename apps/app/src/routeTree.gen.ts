@@ -20,9 +20,12 @@ import { Route as KontoVarslerRouteImport } from './routes/_konto/varsler'
 import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as InvitasjonTokenRouteImport } from './routes/invitasjon/$token'
+import { Route as NyttPassordTokenRouteImport } from './routes/nytt-passord/$token'
 import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
 import { Route as KontoAdminArrangementerRouteImport } from './routes/_konto/admin/arrangementer'
 import { Route as KontoAdminGjennomgangRouteImport } from './routes/_konto/admin/gjennomgang'
+import { Route as KontoAdminInvitasjonerRouteImport } from './routes/_konto/admin/invitasjoner'
 import { Route as KontoAdminKullrepresentanterRouteImport } from './routes/_konto/admin/kullrepresentanter'
 import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
 import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
@@ -110,6 +113,16 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvitasjonTokenRoute = InvitasjonTokenRouteImport.update({
+  id: '/invitasjon/$token',
+  path: '/invitasjon/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NyttPassordTokenRoute = NyttPassordTokenRouteImport.update({
+  id: '/nytt-passord/$token',
+  path: '/nytt-passord/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KontoAdminIndexRoute = KontoAdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -123,6 +136,11 @@ const KontoAdminArrangementerRoute = KontoAdminArrangementerRouteImport.update({
 const KontoAdminGjennomgangRoute = KontoAdminGjennomgangRouteImport.update({
   id: '/gjennomgang',
   path: '/gjennomgang',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminInvitasjonerRoute = KontoAdminInvitasjonerRouteImport.update({
+  id: '/invitasjoner',
+  path: '/invitasjoner',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
 const KontoAdminKullrepresentanterRoute =
@@ -310,8 +328,11 @@ export interface FileRoutesByFullPath {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
@@ -356,8 +377,11 @@ export interface FileRoutesByTo {
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
@@ -405,8 +429,11 @@ export interface FileRoutesById {
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
   '/api/health': typeof ApiHealthRoute
+  '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/_konto/admin/arrangementer': typeof KontoAdminArrangementerRoute
   '/_konto/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
+  '/_konto/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/_konto/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/_konto/admin/logg': typeof KontoAdminLoggRoute
   '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
@@ -454,8 +481,11 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/invitasjon/$token'
+    | '/nytt-passord/$token'
     | '/admin/arrangementer'
     | '/admin/gjennomgang'
+    | '/admin/invitasjoner'
     | '/admin/kullrepresentanter'
     | '/admin/logg'
     | '/admin/medlemmer'
@@ -500,8 +530,11 @@ export interface FileRouteTypes {
     | '/velkommen'
     | '/venter'
     | '/api/health'
+    | '/invitasjon/$token'
+    | '/nytt-passord/$token'
     | '/admin/arrangementer'
     | '/admin/gjennomgang'
+    | '/admin/invitasjoner'
     | '/admin/kullrepresentanter'
     | '/admin/logg'
     | '/admin/medlemmer'
@@ -548,8 +581,11 @@ export interface FileRouteTypes {
     | '/_konto/velkommen'
     | '/_konto/venter'
     | '/api/health'
+    | '/invitasjon/$token'
+    | '/nytt-passord/$token'
     | '/_konto/admin/arrangementer'
     | '/_konto/admin/gjennomgang'
+    | '/_konto/admin/invitasjoner'
     | '/_konto/admin/kullrepresentanter'
     | '/_konto/admin/logg'
     | '/_konto/admin/medlemmer'
@@ -591,6 +627,8 @@ export interface RootRouteChildren {
   LoggInnRoute: typeof LoggInnRoute
   RegistrerRoute: typeof RegistrerRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  InvitasjonTokenRoute: typeof InvitasjonTokenRoute
+  NyttPassordTokenRoute: typeof NyttPassordTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBilderKeyRoute: typeof ApiBilderKeyRoute
   ApiImportDeltakelseRoute: typeof ApiImportDeltakelseRoute
@@ -679,6 +717,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invitasjon/$token': {
+      id: '/invitasjon/$token'
+      path: '/invitasjon/$token'
+      fullPath: '/invitasjon/$token'
+      preLoaderRoute: typeof InvitasjonTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nytt-passord/$token': {
+      id: '/nytt-passord/$token'
+      path: '/nytt-passord/$token'
+      fullPath: '/nytt-passord/$token'
+      preLoaderRoute: typeof NyttPassordTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_konto/admin/': {
       id: '/_konto/admin/'
       path: '/'
@@ -698,6 +750,13 @@ declare module '@tanstack/react-router' {
       path: '/gjennomgang'
       fullPath: '/admin/gjennomgang'
       preLoaderRoute: typeof KontoAdminGjennomgangRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/invitasjoner': {
+      id: '/_konto/admin/invitasjoner'
+      path: '/invitasjoner'
+      fullPath: '/admin/invitasjoner'
+      preLoaderRoute: typeof KontoAdminInvitasjonerRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
     '/_konto/admin/kullrepresentanter': {
@@ -930,6 +989,7 @@ declare module '@tanstack/react-router' {
 interface KontoAdminRouteRouteChildren {
   KontoAdminArrangementerRoute: typeof KontoAdminArrangementerRoute
   KontoAdminGjennomgangRoute: typeof KontoAdminGjennomgangRoute
+  KontoAdminInvitasjonerRoute: typeof KontoAdminInvitasjonerRoute
   KontoAdminKullrepresentanterRoute: typeof KontoAdminKullrepresentanterRoute
   KontoAdminLoggRoute: typeof KontoAdminLoggRoute
   KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
@@ -943,6 +1003,7 @@ interface KontoAdminRouteRouteChildren {
 const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
   KontoAdminArrangementerRoute: KontoAdminArrangementerRoute,
   KontoAdminGjennomgangRoute: KontoAdminGjennomgangRoute,
+  KontoAdminInvitasjonerRoute: KontoAdminInvitasjonerRoute,
   KontoAdminKullrepresentanterRoute: KontoAdminKullrepresentanterRoute,
   KontoAdminLoggRoute: KontoAdminLoggRoute,
   KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
@@ -1021,6 +1082,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoggInnRoute: LoggInnRoute,
   RegistrerRoute: RegistrerRoute,
   ApiHealthRoute: ApiHealthRoute,
+  InvitasjonTokenRoute: InvitasjonTokenRoute,
+  NyttPassordTokenRoute: NyttPassordTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBilderKeyRoute: ApiBilderKeyRoute,
   ApiImportDeltakelseRoute: ApiImportDeltakelseRoute,

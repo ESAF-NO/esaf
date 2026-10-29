@@ -16,6 +16,7 @@ export type {
   EventDatePrecision,
   FieldSourceEntity,
   ImportRecordKind,
+  InvitationKind,
   MemberRole,
   MembershipStatus,
   NotificationPayload,

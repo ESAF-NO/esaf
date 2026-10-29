@@ -368,6 +368,39 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} fjernet {plural(count(details.count), 'passkey', 'passkeys')} for {subject}.
     </>
   ),
+  'invitation.create': ({ actor, subject, details }) => (
+    <>
+      {actor} inviterte {text(details.email) ?? 'en e-postadresse'}
+      {details.role && details.role !== 'member' && <> som {role(details.role)}</>}
+      {details.profilePersonId ? <> til profilen til {subject}</> : null}.
+    </>
+  ),
+  'invitation.revoke': ({ actor, details }) => (
+    <>
+      {actor} trakk tilbake invitasjonen til {text(details.email) ?? 'en e-postadresse'}.
+    </>
+  ),
+  'invitation.use': ({ subject, details }) => (
+    <>
+      {subject} tok imot en invitasjon
+      {details.role && details.role !== 'member' && <> som {role(details.role)}</>}
+      {details.profileLinked ? ' og tok i bruk profilen fra kullisten' : ''}
+      {details.account === 'existing' ? ' med kontoen sin' : ''}.
+    </>
+  ),
+  'password_link.create': ({ actor, subject }) => (
+    <>
+      {actor} laget en lenke for nytt passord til {subject}.
+    </>
+  ),
+  'password_link.revoke': ({ actor, subject }) => (
+    <>
+      {actor} trakk tilbake lenken for nytt passord til {subject}.
+    </>
+  ),
+  'password_link.use': ({ subject }) => (
+    <>{subject} valgte nytt passord med en lenke og ble logget ut på alle enheter.</>
+  ),
   'role.change': ({ actor, subject, details }) => (
     <>
       {actor} endret rollen til {subject} fra {role(details.from)} til {role(details.to)}.

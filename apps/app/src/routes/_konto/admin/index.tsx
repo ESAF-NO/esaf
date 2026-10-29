@@ -100,6 +100,11 @@ function Requests() {
       ) : open.length === 0 ? (
         <EmptyState icon={ShieldCheck} title="Ingen venter på godkjenning">
           Nye forespørsler dukker opp her når noen har bekreftet e-posten og fortalt hvem de er.
+          Uten e-post kommer folk inn med en{' '}
+          <Link to="/admin/invitasjoner" className="font-medium text-brand-600 hover:underline">
+            invitasjon
+          </Link>
+          .
         </EmptyState>
       ) : (
         <ul className="space-y-4">

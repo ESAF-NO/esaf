@@ -24,6 +24,7 @@ export const Route = createFileRoute('/_konto/admin')({
 
 const tabs = [
   { to: '/admin', label: 'Forespørsler', permission: 'members.review' },
+  { to: '/admin/invitasjoner', label: 'Invitasjoner', permission: 'members.review' },
   { to: '/admin/gjennomgang', label: 'Gjennomgang', permission: 'profiles.edit' },
   { to: '/admin/medlemmer', label: 'Medlemmer', permission: 'members.manage' },
   { to: '/admin/kullrepresentanter', label: 'Kullrepresentanter', permission: 'members.manage' },

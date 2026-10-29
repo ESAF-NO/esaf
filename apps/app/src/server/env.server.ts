@@ -18,6 +18,10 @@ const schema = z
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
     BETTER_AUTH_SECRET: z.string().min(32, 'må være minst 32 tegn (openssl rand -base64 32)'),
     BETTER_AUTH_URL: z.url(),
+    // E-postleverandør. Uten den er appen bare åpen for invitasjoner: registrering
+    // er slått av, og ingen e-post sendes. `console` skriver bekreftelseslenkene i
+    // terminalen og er bare lov utenfor produksjon. Se README, «Veien inn».
+    EMAIL_PROVIDER: optional(z.enum(['console'])),
     // Profilbilder og logoer: S3-kompatibel lagring (Cloudflare R2) når S3_-variablene
     // er satt, ellers filer på disk. Disk er bare lov utenfor produksjon. Reglene
     // ligger i @esaf/core (storageEnvIssues), så importen på kommandolinjen følger dem.
@@ -34,6 +38,14 @@ const schema = z
       ctx.addIssue({ code: 'custom', path: [issue.variable], message: issue.message })
     }
     if (!production) return
+    if (env.EMAIL_PROVIDER === 'console') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EMAIL_PROVIDER'],
+        message:
+          'console skriver lenkene i loggen og kan ikke brukes i produksjon. La den stå tom (bare invitasjoner)',
+      })
+    }
     if (env.BETTER_AUTH_SECRET === EXAMPLE_SECRET) {
       ctx.addIssue({
         code: 'custom',
@@ -70,3 +82,9 @@ export const storageConfig: StorageConfig = storageConfigFromEnv(
   // Standard er .data/uploads i roten av repoet, uansett hvor dev-serveren startes fra.
   fileURLToPath(new URL('../../../../.data/uploads', import.meta.url)),
 )
+
+/**
+ * Om appen kan sende e-post. Uten det er registrering slått av, og veien inn er
+ * en invitasjon fra en admin (se `invitations.ts` i @esaf/core).
+ */
+export const emailEnabled = env.EMAIL_PROVIDER !== undefined

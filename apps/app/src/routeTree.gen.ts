@@ -31,6 +31,7 @@ import { Route as KontoAdminGjennomgangRouteImport } from './routes/_konto/admin
 import { Route as KontoAdminInvitasjonerRouteImport } from './routes/_konto/admin/invitasjoner'
 import { Route as KontoAdminKullrepresentanterRouteImport } from './routes/_konto/admin/kullrepresentanter'
 import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
+import { Route as KontoAdminMcpRouteImport } from './routes/_konto/admin/mcp'
 import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
 import { Route as KontoAdminProfilerRouteImport } from './routes/_konto/admin/profiler'
 import { Route as KontoAdminSelskaperRouteImport } from './routes/_konto/admin/selskaper'
@@ -173,6 +174,11 @@ const KontoAdminKullrepresentanterRoute =
 const KontoAdminLoggRoute = KontoAdminLoggRouteImport.update({
   id: '/logg',
   path: '/logg',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminMcpRoute = KontoAdminMcpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
 const KontoAdminMedlemmerRoute = KontoAdminMedlemmerRouteImport.update({
@@ -374,6 +380,7 @@ export interface FileRoutesByFullPath {
   '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/admin/logg': typeof KontoAdminLoggRoute
+  '/admin/mcp': typeof KontoAdminMcpRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
@@ -429,6 +436,7 @@ export interface FileRoutesByTo {
   '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/admin/logg': typeof KontoAdminLoggRoute
+  '/admin/mcp': typeof KontoAdminMcpRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
@@ -487,6 +495,7 @@ export interface FileRoutesById {
   '/_konto/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/_konto/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
   '/_konto/admin/logg': typeof KontoAdminLoggRoute
+  '/_konto/admin/mcp': typeof KontoAdminMcpRoute
   '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
   '/_konto/admin/profiler': typeof KontoAdminProfilerRoute
   '/_konto/admin/selskaper': typeof KontoAdminSelskaperRoute
@@ -545,6 +554,7 @@ export interface FileRouteTypes {
     | '/admin/invitasjoner'
     | '/admin/kullrepresentanter'
     | '/admin/logg'
+    | '/admin/mcp'
     | '/admin/medlemmer'
     | '/admin/profiler'
     | '/admin/selskaper'
@@ -600,6 +610,7 @@ export interface FileRouteTypes {
     | '/admin/invitasjoner'
     | '/admin/kullrepresentanter'
     | '/admin/logg'
+    | '/admin/mcp'
     | '/admin/medlemmer'
     | '/admin/profiler'
     | '/admin/selskaper'
@@ -657,6 +668,7 @@ export interface FileRouteTypes {
     | '/_konto/admin/invitasjoner'
     | '/_konto/admin/kullrepresentanter'
     | '/_konto/admin/logg'
+    | '/_konto/admin/mcp'
     | '/_konto/admin/medlemmer'
     | '/_konto/admin/profiler'
     | '/_konto/admin/selskaper'
@@ -868,6 +880,13 @@ declare module '@tanstack/react-router' {
       path: '/logg'
       fullPath: '/admin/logg'
       preLoaderRoute: typeof KontoAdminLoggRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/mcp': {
+      id: '/_konto/admin/mcp'
+      path: '/mcp'
+      fullPath: '/admin/mcp'
+      preLoaderRoute: typeof KontoAdminMcpRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
     '/_konto/admin/medlemmer': {
@@ -1110,6 +1129,7 @@ interface KontoAdminRouteRouteChildren {
   KontoAdminInvitasjonerRoute: typeof KontoAdminInvitasjonerRoute
   KontoAdminKullrepresentanterRoute: typeof KontoAdminKullrepresentanterRoute
   KontoAdminLoggRoute: typeof KontoAdminLoggRoute
+  KontoAdminMcpRoute: typeof KontoAdminMcpRoute
   KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
   KontoAdminProfilerRoute: typeof KontoAdminProfilerRoute
   KontoAdminSelskaperRoute: typeof KontoAdminSelskaperRoute
@@ -1125,6 +1145,7 @@ const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
   KontoAdminInvitasjonerRoute: KontoAdminInvitasjonerRoute,
   KontoAdminKullrepresentanterRoute: KontoAdminKullrepresentanterRoute,
   KontoAdminLoggRoute: KontoAdminLoggRoute,
+  KontoAdminMcpRoute: KontoAdminMcpRoute,
   KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
   KontoAdminProfilerRoute: KontoAdminProfilerRoute,
   KontoAdminSelskaperRoute: KontoAdminSelskaperRoute,

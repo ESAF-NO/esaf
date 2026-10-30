@@ -33,6 +33,7 @@ const tabs = [
   { to: '/admin/arrangementer', label: 'Arrangementer', permission: 'profiles.edit' },
   { to: '/admin/selskaper', label: 'Selskaper', permission: 'profiles.edit' },
   { to: '/admin/logg', label: 'Logg', permission: 'audit.read' },
+  { to: '/admin/mcp', label: 'MCP', permission: 'mcp.access' },
 ] as const
 
 function AdminLayout() {

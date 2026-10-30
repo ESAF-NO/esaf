@@ -6,9 +6,8 @@ import {
   listActiveMembers,
   mayChangeSignInMethods,
   permissions,
-  askPeople,
   roleAtLeast,
-  searchPeopleInterpreted,
+  searchPeopleByTopic,
   searchUnclaimedProfiles,
   strongAuth,
   strongAuthRequired,
@@ -90,52 +89,17 @@ export const findUnclaimedProfiles = createServerFn({ method: 'GET' })
 /**
  * Personsøket på hva folk kan: ord i profilen og likhet i mening (se
  * `people-search.ts` i @esaf/core). Gir personene i rekkefølge, med grunnen.
- * `smart`: søket tolkes først av Claude (emner og filtre som by og kull), når
- * det er slått på. Siden kaller først uten, så svaret kommer med en gang, og så
- * med, som oppdaterer treffene.
  */
 export const findPeopleByTopic = createServerFn({ method: 'GET' })
-  .validator(z.object({ q: z.string().max(200), smart: z.boolean().default(false) }))
+  .validator(z.object({ q: z.string().max(200) }))
   .handler(async ({ data }) => {
     try {
-      const { embedder, searchAi } = await import('#/server/search.server.ts')
-      const { hits, interpreted } = await searchPeopleInterpreted(
-        db,
-        await getRequestViewer(),
-        data.q,
-        { embedder, ai: data.smart ? searchAi : null, limit: 60 },
-      )
-      return {
-        interpreted,
-        hits: hits.map(({ personId, reason, matchedBy }) => ({ personId, reason, matchedBy })),
-      }
-    } catch (error) {
-      return rethrowForClient(error)
-    }
-  })
-
-/** Om Claude er slått på i søket (tolkning og Spør ESAF). */
-export const getSearchFeatures = createServerFn({ method: 'GET' }).handler(async () => {
-  const { searchAi } = await import('#/server/search.server.ts')
-  return { ai: searchAi !== null }
-})
-
-/** Spør ESAF: Claude velger blant kandidatene søket finner, med grunnen (se `askPeople`). */
-export const askEsaf = createServerFn({ method: 'POST' })
-  .validator(z.object({ question: z.string().min(3).max(300) }))
-  .handler(async ({ data }) => {
-    try {
-      const { embedder, searchAi } = await import('#/server/search.server.ts')
-      const result = await askPeople(db, await getRequestViewer(), data.question, {
+      const { embedder } = await import('#/server/search.server.ts')
+      const hits = await searchPeopleByTopic(db, await getRequestViewer(), data.q, {
         embedder,
-        ai: searchAi,
+        limit: 60,
       })
-      return {
-        question: result.question,
-        summary: result.summary,
-        filters: result.filters,
-        hits: result.hits.map(({ personId, why, strong }) => ({ personId, why, strong })),
-      }
+      return hits.map(({ personId, reason, matchedBy }) => ({ personId, reason, matchedBy }))
     } catch (error) {
       return rethrowForClient(error)
     }

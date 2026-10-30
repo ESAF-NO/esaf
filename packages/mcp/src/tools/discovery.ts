@@ -1,9 +1,8 @@
 import {
-  askPeople,
   getUniverse,
   listPeopleForTopics,
   reindexPeople,
-  searchPeopleInterpreted,
+  searchPeopleByTopic,
   setSearchTopics,
 } from '@esaf/core'
 import {
@@ -30,24 +29,21 @@ export function registerDiscoveryTools(server: McpServer, ctx: ToolContext) {
     description:
       'Find people by what they know or have done, not just their name: "space", "fish farming", "fintech", ' +
       '"maskinlæring". Combines words in the profile (jobs with company descriptions, bio, search topics) with ' +
-      'similarity in meaning (local embedding model, Norwegian and English). Each hit says why it matched. With ' +
-      'Claude configured on the server, the query is interpreted first, so sentences with filters work: "folk i ' +
-      'Oslo fra ES 2015 som har startet noe innen helse" (interpreted shows how). For a judged shortlist with ' +
-      'reasons, use ask_people.',
+      'similarity in meaning (local embedding model, Norwegian and English). Each hit says why it matched. Search ' +
+      'one topic at a time; for questions like "who in Oslo from ES 2015 knows health?", search "helse" and filter ' +
+      'the hits yourself (get_person has city and cohorts).',
     input: z.object({
       query: z.string().min(2).max(200),
       limit: z.number().int().min(1).max(50).default(15),
     }),
     effect: 'read',
     run: async ({ query, limit }, ctx) => {
-      const { hits, interpreted } = await searchPeopleInterpreted(ctx.db, ctx.viewer, query, {
+      const hits = await searchPeopleByTopic(ctx.db, ctx.viewer, query, {
         embedder: ctx.embedder,
-        ai: ctx.ai,
         limit,
       })
       return {
         semantic: ctx.embedder !== null,
-        interpreted,
         hits: hits.map((h) => ({
           personId: h.personId,
           fullName: h.fullName,
@@ -61,45 +57,16 @@ export function registerDiscoveryTools(server: McpServer, ctx: ToolContext) {
   })
 
   defineTool(server, ctx, {
-    name: 'ask_people',
-    title: 'Ask ESAF who fits',
-    description:
-      'Ask in plain language who can help with something: "Hvem kan hjelpe meg å selge til sykehus?". The search ' +
-      'finds up to 30 candidates, then Claude (on the server) reads their profiles and returns those who genuinely ' +
-      'fit, best first, with one sentence each on why. Slower (a few seconds) and limited per hour; needs Claude ' +
-      'configured on the server. Use find_people for quick lookups.',
-    input: z.object({ question: z.string().min(3).max(300) }),
-    effect: 'read',
-    run: async ({ question }, ctx) => {
-      const result = await askPeople(ctx.db, ctx.viewer, question, {
-        embedder: ctx.embedder,
-        ai: ctx.ai,
-      })
-      return {
-        summary: result.summary,
-        filters: result.filters,
-        hits: result.hits.map((h) => ({
-          personId: h.personId,
-          fullName: h.fullName,
-          cohorts: h.cohortYears,
-          why: h.why,
-          strong: h.strong,
-          link: links.person(ctx, h.personId),
-        })),
-      }
-    },
-  })
-
-  defineTool(server, ctx, {
     name: 'list_people_for_tagging',
     title: 'People to tag with search topics',
     description:
       'What the profile says about each person (jobs with what the companies do, bio, study), to write search topics ' +
-      'from, with the topics they have now (aiTopics: written automatically by Claude on the server; currentTopics: ' +
-      'set by an admin, which replace aiTopics). missingOnly=true (default) lists people without admin topics. ' +
-      'Then call set_search_topics.',
+      'from, with their current topics. status per person: "missing" (never tagged), "outdated" (the profile ' +
+      'changed after the topics were written), "done". Filter with status: "todo" (default: missing and outdated), ' +
+      '"missing", "outdated", "done" or "all"; counts gives the totals. People with nothing to go on (only a name ' +
+      'and study) are left out. Then call set_search_topics.',
     input: z.object({
-      missingOnly: z.boolean().default(true),
+      status: z.enum(['todo', 'missing', 'outdated', 'done', 'all']).default('todo'),
       cohort: z.number().int().optional(),
       limit: z.number().int().min(1).max(100).default(40),
       offset: z.number().int().min(0).default(0),
@@ -112,9 +79,9 @@ export function registerDiscoveryTools(server: McpServer, ctx: ToolContext) {
     name: 'set_search_topics',
     title: 'Set search topics',
     description:
-      'Set search topics for people (replaces their admin topics, and while set, the automatic ones from Claude), ' +
-      'so find_people and the member directory find them on ' +
-      'what they know. Write 5–15 short topics per person, in BOTH Norwegian and English, including broader concepts ' +
+      'Set search topics for people (replaces their current ones), so find_people and the member directory find ' +
+      'them on what they know. Also marks them as tagged from the profile text as it is now; an empty list means ' +
+      '"nothing to add". Write 5–15 short topics per person, in BOTH Norwegian and English, including broader concepts ' +
       'and synonyms the profile does not spell out: someone at NASA → "romfart, space, aerospace, satellitter, NASA". ' +
       'Only from what the profile and its companies actually say; never sensitive data (health, religion, politics, ' +
       'family). Topics are not shown on the profile, only as the reason for a search hit. Up to 200 people per call.',

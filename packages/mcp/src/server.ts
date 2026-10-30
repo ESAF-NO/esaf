@@ -1,10 +1,4 @@
-import {
-  withApiTokenAudit,
-  type Embedder,
-  type ObjectStorage,
-  type SearchAi,
-  type Viewer,
-} from '@esaf/core'
+import { withApiTokenAudit, type Embedder, type ObjectStorage, type Viewer } from '@esaf/core'
 import type { Db } from '@esaf/db'
 import { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
@@ -47,9 +41,10 @@ Data model:
 
 Finding people: \`find_people\` searches on what people know and have done (jobs with what the companies do, bio,
 topics), by words and by meaning, and says why each person matched. Use it for questions like "who knows about
-space?". Search topics are written automatically from each profile when the server has Claude configured; admins can
-override them with \`set_search_topics\` (see \`list_people_for_tagging\` and the \`tag_people\` prompt). \`show_universe\` shows an interactive map of everyone and their companies over time in
-clients that support MCP Apps.
+space?". The server never calls a language model itself: search topics are written by you, the MCP client, from
+the profile text (\`list_people_for_tagging\`, \`set_search_topics\` and the \`tag_people\` prompt). A person comes
+back in that list when their profile has changed since their topics were written. \`show_universe\` shows an
+interactive map of everyone and their companies over time in clients that support MCP Apps.
 
 Rules that matter:
 - Search before you create (\`search\`, \`list_people\`, \`list_companies\`). Merge duplicates instead of deleting.
@@ -89,8 +84,6 @@ export type AdminMcpOptions = {
   fetchImage?: ImageFetcher
   /** Embedding-modellen for personsøket. */
   embedder?: Embedder | null
-  /** Claude i personsøket. */
-  ai?: SearchAi | null
 }
 
 /** En MCP-server med adminverktøyene, for én forespørsel og én innlogget admin. */
@@ -102,7 +95,6 @@ export function createAdminMcpServer(options: AdminMcpOptions): McpServer {
     viewer,
     fetchImage: options.fetchImage ?? fetchPublicImage,
     embedder: options.embedder ?? null,
-    ai: options.ai ?? null,
     appUrl: options.appUrl.replace(/\/$/, ''),
   }
   const server = new McpServer(
@@ -210,13 +202,16 @@ Research and enrich the company ${company} in ESAF.
       prompt(`
 Write search topics for ESAF profiles${cohort ? ` in ES ${cohort}` : ''}, so people are found on what they know.
 
-1. Call list_people_for_tagging${cohort ? ` with cohort ${cohort}` : ''} (40 at a time, missingOnly=true).
+1. Call list_people_for_tagging${cohort ? ` with cohort ${cohort}` : ''} (40 at a time, status "todo": people
+   without topics, and people whose profile has changed since their topics were written).
 2. For each person, read their text (jobs with what each company does, bio, study) and write 5–15 short topics,
    in BOTH Norwegian and English: the fields, industries, technologies and roles, plus broader concepts and synonyms
    the text does not spell out (NASA → romfart, space, aerospace, satellitter; salmon farming → oppdrett,
    aquaculture, havbruk, sjømat). Only what the text supports. Never health, religion, politics, family or other
-   private matters, and nothing about hobbies unless it is clearly professional.
-3. Save with set_search_topics (up to 200 people per call), then continue with the next page until done.
+   private matters, and nothing about hobbies unless it is clearly professional. For "outdated" people, start from
+   currentTopics and adjust to what the text says now. If the text gives nothing to go on, save an empty list.
+3. Save with set_search_topics (up to 200 people per call). Saved people leave the "todo" list, so call
+   list_people_for_tagging again with offset 0 until it is empty.
 4. Finish with a few find_people checks (e.g. "space", "fintech") and report what you tagged.
 `),
   )

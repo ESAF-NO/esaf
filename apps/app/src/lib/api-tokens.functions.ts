@@ -5,7 +5,7 @@ import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
 import { env } from '#/server/env.server.ts'
 
-// MCP-nøkler for admins, under «Konto og sikkerhet». Reglene står i
+// MCP-nøkler for admins, på adminsiden «MCP». Reglene står i
 // `api-tokens.ts` i @esaf/core; her sjekkes bare formen.
 
 /** Adressen MCP-klienter kobler til. */

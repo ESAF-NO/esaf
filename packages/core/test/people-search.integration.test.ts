@@ -250,7 +250,7 @@ describe.skipIf(!url)('personsøk og ES-universet', () => {
       setSearchTopics(db, member, [{ personId: per, topics: ['romfart'] }]),
     ).rejects.toBeInstanceOf(AccessDeniedError)
 
-    const todo = await listPeopleForTopics(db, admin, { missingOnly: true })
+    const todo = await listPeopleForTopics(db, admin)
     expect(todo.items.map((p) => p.fullName)).toContain('Ola Laks')
     expect(todo.items.map((p) => p.fullName)).not.toContain('Per Uten') // ingenting å skrive ut fra
 
@@ -284,6 +284,69 @@ describe.skipIf(!url)('personsøk og ES-universet', () => {
     // Søkeordet «Romfart» treffer direkte, og står over et treff via et synonym.
     const topic = await searchPeopleByTopic(db, member, 'romfart', { embedder })
     expect(topic[0]!.personId).toBe(per)
+  })
+
+  it('søkeord blir utdaterte når profilen endres, og kommer tilbake i lista', async () => {
+    const { per, ola } = await seed()
+    const statusOf = async (personId: string) =>
+      (await listPeopleForTopics(db, admin, { status: 'all', limit: 100 })).items.find(
+        (i) => i.personId === personId,
+      )?.status
+
+    expect(await statusOf(ola)).toBe('missing')
+    expect(await statusOf(per)).toBeUndefined() // bare navn og kull: ingenting å gå på
+    const start = await listPeopleForTopics(db, admin)
+    expect(start.counts).toMatchObject({ outdated: 0, done: 0 })
+    expect(start.total).toBe(start.counts.missing)
+
+    await setSearchTopics(db, admin, [{ personId: ola, topics: ['oppdrett', 'aquaculture'] }])
+    expect(await statusOf(ola)).toBe('done')
+    expect((await listPeopleForTopics(db, admin)).items.map((i) => i.personId)).not.toContain(ola)
+
+    // Ny tekst på profilen: søkeordene er kanskje ikke riktige lenger.
+    await db
+      .update(schema.person)
+      .set({ bio: 'Ola har startet et selskap som lager programvare for sykehus.' })
+      .where(eq(schema.person.id, ola))
+    expect(await statusOf(ola)).toBe('outdated')
+    const outdated = await listPeopleForTopics(db, admin, { status: 'outdated' })
+    expect(outdated.items).toEqual([
+      expect.objectContaining({
+        personId: ola,
+        currentTopics: ['Oppdrett', 'Aquaculture'],
+        text: [expect.stringContaining('sykehus')],
+      }),
+    ])
+
+    // Samme søkeord bekreftes for den nye teksten uten ny hendelse i loggen;
+    // en tom liste betyr «vurdert, ingenting å legge til».
+    const logged = async () =>
+      (
+        await db
+          .select()
+          .from(schema.auditEvent)
+          .where(eq(schema.auditEvent.action, 'profile.search_topics'))
+      ).length
+    expect(
+      await setSearchTopics(db, admin, [{ personId: ola, topics: ['Oppdrett', 'Aquaculture'] }]),
+    ).toEqual({ updated: 0 })
+    expect(await statusOf(ola)).toBe('done')
+    expect(await logged()).toBe(1)
+    await db
+      .update(schema.person)
+      .set({ bio: 'Ola er pensjonert og bor på hytta.' })
+      .where(eq(schema.person.id, ola))
+    expect(await setSearchTopics(db, admin, [{ personId: ola, topics: [] }])).toEqual({
+      updated: 1,
+    })
+    expect(await statusOf(ola)).toBe('done')
+
+    await expect(
+      setSearchTopics(db, admin, [
+        { personId: ola, topics: ['a1'] },
+        { personId: ola, topics: ['b2'] },
+      ]),
+    ).rejects.toThrow('Samme person')
   })
 
   it('ES-universet: aktive medlemmer, selskapene og usikre hendelser bare for admins', async () => {

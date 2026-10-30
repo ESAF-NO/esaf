@@ -89,7 +89,14 @@ describe('rettigheter', () => {
   const expected: Record<Role, Permission[]> = {
     member: [],
     moderator: ['content.moderate'],
-    admin: ['content.moderate', 'members.review', 'members.manage', 'profiles.edit', 'audit.read'],
+    admin: [
+      'content.moderate',
+      'members.review',
+      'members.manage',
+      'profiles.edit',
+      'audit.read',
+      'mcp.access',
+    ],
     owner: Object.keys(permissions) as Permission[],
   }
 
@@ -143,6 +150,17 @@ describe('sterk innlogging', () => {
     expect(strongAuth({ ...password, ...passkeyAccountWithPassword })).toBe(false)
     expect(strongAuth({ ...password, ...passkey })).toBe(true)
     expect(strongAuth({ ...password, ...totp })).toBe(true)
+  })
+
+  it('en MCP-nøkkel er sterk, men gir ikke mer enn rollen', () => {
+    const token = { apiToken: { id: 'nøkkel', readOnly: false } }
+    expect(strongAuth({ ...password, ...token })).toBe(true)
+    const admin: Viewer = { ...active('admin')!, ...token }
+    expect(reason(() => assertCan(admin, 'profiles.edit'))).toBe('allowed')
+    expect(reason(() => assertCan(admin, 'roles.manage'))).toBe('forbidden')
+    expect(reason(() => assertCan({ ...active('member')!, ...token }, 'mcp.access'))).toBe(
+      'forbidden',
+    )
   })
 
   it('den første metoden kan legges til fra en vanlig økt, men ikke byttes ut uten sterk økt', () => {

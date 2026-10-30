@@ -5,6 +5,7 @@ import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
+import type { Tx } from './members.ts'
 import { hostLabel, optionalSourceUrl, optionalText, safeHttpUrl } from './validation.ts'
 
 const { auditEvent, company, membership, person, quote } = schema
@@ -248,6 +249,102 @@ export async function confirmQuote(db: Db, viewer: Viewer, quoteId: string): Pro
       action: 'quote.confirm',
       subjectPersonId: current.personId,
       details: { quoteId, speaker: current.speakerName, previous: current.confidence },
+    })
+  })
+}
+
+/** Hvem sitatet er fra og hvilket selskap det gjelder. `null` fjerner koblingen. */
+export const quoteLinksInput = z.object({
+  personId: z.uuid().nullable().optional(),
+  companyId: z.uuid().nullable().optional(),
+})
+
+export type QuoteLinksInput = z.input<typeof quoteLinksInput>
+
+async function assertLinkTargets(
+  db: Db | Tx,
+  links: { personId?: string | null; companyId?: string | null },
+) {
+  if (links.personId) {
+    const [row] = await db
+      .select({ id: person.id })
+      .from(person)
+      .where(eq(person.id, links.personId))
+    if (!row) throw new NotFoundError('Fant ikke personen.')
+  }
+  if (links.companyId) {
+    const [row] = await db
+      .select({ id: company.id })
+      .from(company)
+      .where(eq(company.id, links.companyId))
+    if (!row) throw new NotFoundError('Fant ikke selskapet.')
+  }
+}
+
+/**
+ * Legger inn et sitat for hånd, gjerne med kilde. Bare admins, og det logges
+ * (`quote.add`). Sitater med usikker taler (`confidence = 'low'`) vises bare for
+ * admins til noen bekrefter dem under Gjennomgang.
+ */
+export async function addQuote(
+  db: Db,
+  viewer: Viewer,
+  input: QuoteInput & QuoteLinksInput,
+): Promise<{ quoteId: string }> {
+  assertCan(viewer, 'profiles.edit')
+  const parsed = quoteInput.extend(quoteLinksInput.shape).safeParse(input)
+  if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? 'Ugyldige felt.')
+  const { personId = null, companyId = null, ...values } = parsed.data
+  return db.transaction(async (tx) => {
+    await assertLinkTargets(tx, { personId, companyId })
+    const [created] = await tx
+      .insert(quote)
+      .values({ ...values, personId, companyId })
+      .returning({ id: quote.id })
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'quote.add',
+      subjectPersonId: personId,
+      details: {
+        quoteId: created!.id,
+        speaker: values.speakerName,
+        companyId,
+        confidence: values.confidence,
+      },
+    })
+    return { quoteId: created!.id }
+  })
+}
+
+/** Kobler et sitat til en annen person eller et annet selskap. Bare admins, logges som `quote.edit`. */
+export async function setQuoteLinks(
+  db: Db,
+  viewer: Viewer,
+  quoteId: string,
+  input: QuoteLinksInput,
+): Promise<void> {
+  assertCan(viewer, 'profiles.edit')
+  const parsed = quoteLinksInput.safeParse(input)
+  if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? 'Ugyldige felt.')
+  const links = parsed.data
+  await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(quote).where(eq(quote.id, quoteId)).for('update')
+    if (!current) throw new NotFoundError('Fant ikke sitatet.')
+    await assertLinkTargets(tx, links)
+    const values: { personId?: string | null; companyId?: string | null } = {}
+    if (links.personId !== undefined && links.personId !== current.personId) {
+      values.personId = links.personId
+    }
+    if (links.companyId !== undefined && links.companyId !== current.companyId) {
+      values.companyId = links.companyId
+    }
+    if (!Object.keys(values).length) return
+    await tx.update(quote).set(values).where(eq(quote.id, quoteId))
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'quote.edit',
+      subjectPersonId: values.personId ?? current.personId,
+      details: { quoteId, speaker: current.speakerName, fields: Object.keys(values) },
     })
   })
 }

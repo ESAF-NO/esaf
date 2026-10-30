@@ -13,18 +13,22 @@
     "admin:password-link": "tsx scripts/password-link.ts",
     "profiles:import": "tsx scripts/import-profiles.ts",
     "data:bundle": "tsx scripts/bundle-dataset.ts",
-    "data:import": "tsx scripts/import-dataset.ts"
+    "data:import": "tsx scripts/import-dataset.ts",
+    "search:download-model": "tsx scripts/search-index.ts download",
+    "search:reindex": "tsx scripts/search-index.ts reindex",
+    "search:query": "tsx scripts/search-index.ts query"
   },
   "dependencies": {
     "@esaf/db": "workspace:*",
+    "@huggingface/transformers": "^4.3.2",
     "aws4fetch": "^1.0.20",
     "csv-parse": "^7.0.3",
     "drizzle-orm": "^0.45.4",
     "exceljs": "^4.4.0",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
-    "unified": "^11.0.5",
     "sharp": "^0.35.5",
+    "unified": "^11.0.5",
     "zod": "^4.6.7"
   },
   "devDependencies": {

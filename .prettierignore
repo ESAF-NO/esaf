@@ -5,3 +5,5 @@ dist
 .output
 .astro
 .turbo
+# Bygget av `pnpm --filter @esaf/mcp build:views`.
+**/*.generated.ts

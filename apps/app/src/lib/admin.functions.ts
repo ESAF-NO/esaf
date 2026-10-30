@@ -35,11 +35,11 @@ export const resetPasskeys = createServerFn({ method: 'POST' })
 export const auditPageSize = 50
 
 export const fetchAuditLog = createServerFn({ method: 'GET' })
-  .validator(z.object({ before: z.iso.datetime().optional() }))
+  .validator(z.object({ beforeId: z.uuid().optional() }))
   .handler(({ data }) =>
     run(async (viewer) => {
       const entries = await listAuditEvents(db, viewer, {
-        before: data.before ? new Date(data.before) : undefined,
+        beforeId: data.beforeId,
         limit: auditPageSize,
       })
       // Detaljene er JSON fra databasen; gi dem en type klienten kan serialisere.

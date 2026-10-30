@@ -2,7 +2,7 @@ import type { AuditPerson } from '@esaf/core'
 import type { MemberRole } from '@esaf/db'
 import { createFileRoute, isNotFound, Link, notFound } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { History, Terminal, UserRound } from 'lucide-react'
+import { Bot, History, Terminal, UserRound } from 'lucide-react'
 import { useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { Avatar, Button, Card, EmptyState, ErrorText } from '#/components/ui.tsx'
@@ -49,11 +49,9 @@ function AuditLog() {
     setLoading(true)
     setError(null)
     try {
-      // Tidspunktene har millisekunder her og mikrosekunder i databasen. Med ett
-      // millisekund ekstra kommer også hendelser fra samme millisekund som den
-      // siste med, og de som allerede vises, filtreres bort.
-      const before = new Date(new Date(last.createdAt).getTime() + 1).toISOString()
-      const page = await fetchPage({ data: { before } })
+      // Blar fra den siste hendelsen (tidspunkt og id), så hendelser med samme
+      // tidspunkt, som en import skriver mange av, aldri hoppes over.
+      const page = await fetchPage({ data: { beforeId: last.id } })
       const seen = new Set(entries.map((e) => e.id))
       const fresh = page.filter((e) => !seen.has(e.id))
       const finished = page.length < auditPageSize || fresh.length === 0
@@ -160,7 +158,24 @@ function LogEntry({ entry: e }: { entry: Entry }) {
     <li className="flex gap-3 px-4 py-3.5">
       <ActorMark entry={e} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm leading-6 text-stone-700">{describe(e)}</p>
+        <p className="text-sm leading-6 text-stone-700">
+          {describe(e)}
+          {e.viaMcp && (
+            <span
+              className="ml-1.5 inline-flex items-center gap-1 text-xs text-stone-500"
+              title="Gjort fra en MCP-klient, med nøkkelen til personen"
+            >
+              <Bot className="size-3.5" aria-hidden />
+              via MCP («{e.viaMcp.tokenName}»)
+            </span>
+          )}
+        </p>
+        {count(e.details.revokedTokens) > 0 && (
+          <p className="mt-1 text-sm text-stone-600">
+            {plural(count(e.details.revokedTokens), 'MCP-nøkkel', 'MCP-nøkler')} ble trukket
+            tilbake.
+          </p>
+        )}
         {excerpt && (
           <blockquote className="mt-1 border-l-2 border-stone-200 pl-3 text-sm text-stone-600">
             «{excerpt}»
@@ -565,6 +580,11 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} avslo at {subject} var {linkRole(details.role)} i <Company details={details} />.
     </>
   ),
+  'quote.add': (parts) => (
+    <>
+      {parts.actor} la inn et sitat fra {speaker(parts)}.
+    </>
+  ),
   'quote.confirm': (parts) => (
     <>
       {parts.actor} bekreftet hvem som sa et sitat fra {speaker(parts)}.
@@ -582,7 +602,63 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
   'profile.create': ({ actor, subject, details }) => (
     <>
       {actor} la inn profilen til {subject}
-      {typeof details.via === 'string' && details.via.endsWith('import') && ' under en import'}.
+      {typeof details.via === 'string' && details.via.endsWith('import') && ' under en import'}
+      {details.via === 'batch' && ' sammen med flere'}.
+    </>
+  ),
+  'profile.batch_create': ({ actor, details }) => (
+    <>
+      {actor} la inn {plural(count(details.created), 'profil', 'profiler')} på én gang
+      {Array.isArray(details.cohorts) && details.cohorts.length > 0 && (
+        <> i {details.cohorts.map((y) => `ES ${String(y)}`).join(', ')}</>
+      )}
+      {count(details.withPhoto) > 0 && <>, {count(details.withPhoto)} med bilde</>}.
+    </>
+  ),
+  'profile.delete': ({ actor, details }) => (
+    <>
+      {actor} slettet profilen til {text(details.fullName) ?? 'en person'}, som ingen hadde tatt i
+      bruk.
+    </>
+  ),
+  'profile.admin_contact_fill': ({ actor, subject, details }) => (
+    <>
+      {actor} fylte inn{' '}
+      {Array.isArray(details.fields) && details.fields.length === 2
+        ? 'e-post og telefon'
+        : Array.isArray(details.fields) && details.fields[0] === 'phone'
+          ? 'telefon'
+          : 'e-post'}{' '}
+      på profilen til {subject}, som ingen har tatt i bruk.
+    </>
+  ),
+  'source.add': ({ actor, subject, details }) => {
+    const fields = Array.isArray(details.fields) ? details.fields.map(fieldName) : []
+    return (
+      <>
+        {actor} la inn kilde for {fields.length ? fields.join(', ') : 'felt'}{' '}
+        {details.entityType === 'person' ? <>på profilen til {subject}</> : 'på et selskap'}
+        {Array.isArray(details.labels) && details.labels.length > 0 && (
+          <> ({details.labels.map(String).join(', ')})</>
+        )}
+        .
+      </>
+    )
+  },
+  'profile.search_topics': ({ actor, subject, details }) => (
+    <>
+      {actor} satte søkeordene til {subject}: {list(details.topics)}.
+    </>
+  ),
+  'mcp_token.create': ({ actor, details }) => (
+    <>
+      {actor} laget MCP-nøkkelen «{text(details.name) ?? 'uten navn'}»
+      {details.readOnly === true && ' (bare lesing)'}.
+    </>
+  ),
+  'mcp_token.revoke': ({ actor, details }) => (
+    <>
+      {actor} trakk tilbake MCP-nøkkelen «{text(details.name) ?? 'uten navn'}».
     </>
   ),
   'profile.admin_cohorts': ({ actor, subject, details }) => (

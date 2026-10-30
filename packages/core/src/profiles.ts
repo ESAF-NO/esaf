@@ -10,6 +10,7 @@ import {
 } from './cohort-reps.ts'
 import { deleteOrphanCompanies, resolveCompanies } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
+import type { Tx } from './members.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
@@ -333,7 +334,7 @@ export async function getEditableProfile(
  * personens eget valg.
  */
 export async function updateProfile(
-  db: Db,
+  db: Db | Tx,
   viewer: Viewer,
   personId: string,
   input: ProfileInput,

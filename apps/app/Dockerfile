@@ -4,7 +4,8 @@
 
 FROM node:24-slim AS build
 WORKDIR /repo
-ENV TURBO_TELEMETRY_DISABLED=1
+# Personsøket kjører på CPU; CUDA-filene til onnxruntime trengs ikke.
+ENV TURBO_TELEMETRY_DISABLED=1 ONNXRUNTIME_NODE_INSTALL=skip SEARCH_MODEL_DIR=/repo/.data/models
 RUN corepack enable
 # Pakkene lastes ned i et eget lag som bare bygges på nytt når låsefila endres.
 # Vanlige deployer hopper derfor over nedlastingen.
@@ -14,9 +15,16 @@ COPY . .
 # Bare appen og pakkene den bruker, ikke nettsiden (Astro, Wrangler).
 RUN pnpm install --offline --frozen-lockfile --filter "@esaf/app..." --filter "@esaf/core..."
 RUN pnpm --filter @esaf/app build
+# Embedding-modellen til personsøket legges i bildet, så serveren aldri laster ned noe.
+# Nedlastingen (560 MB) caches på byggeserveren mellom deployer (BuildKit), så
+# den bare skjer første gang eller når modellen byttes.
+RUN --mount=type=cache,id=esaf-search-models,target=/cache/models \
+  SEARCH_MODEL_DIR=/cache/models pnpm search:download-model \
+  && mkdir -p /repo/.data \
+  && cp -R /cache/models /repo/.data/models
 
 FROM node:24-slim
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=production PORT=3000 SEARCH_MODEL_DIR=/repo/.data/models
 # Coolifys helsesjekk kjører curl eller wget inne i containeren; slim-bildet har ingen av dem.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl ca-certificates \

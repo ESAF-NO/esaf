@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Search, SearchX, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useServerFn } from '@tanstack/react-start'
+import { Search, SearchX, Sparkles, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { comparePeople, PersonCard } from '#/components/PersonCard.tsx'
 import { Button, cx, EmptyState, Input, PageHeader, Select, Verified } from '#/components/ui.tsx'
 import { filterMembers } from '#/lib/member-search.ts'
-import { getMembers } from '#/lib/members.functions.ts'
+import { findPeopleByTopic, getMembers } from '#/lib/members.functions.ts'
 
 export const Route = createFileRoute('/_konto/medlemmer/')({
   head: () => ({ meta: [{ title: 'Personer – ESAF' }] }),
@@ -14,14 +15,16 @@ export const Route = createFileRoute('/_konto/medlemmer/')({
     kull: z.coerce.number().int().optional().catch(undefined),
     verifisert: z.boolean().optional().catch(undefined),
   }),
-  loader: () => getMembers(),
+  loader: async () => ({ members: await getMembers() }),
   component: People,
 })
+
+type Found = Awaited<ReturnType<typeof findPeopleByTopic>>
 
 const PAGE = 48
 
 function People() {
-  const members = Route.useLoaderData()
+  const { members } = Route.useLoaderData()
   const search = Route.useSearch()
   const navigate = useNavigate({ from: Route.fullPath })
   const [shown, setShown] = useState(PAGE)
@@ -50,13 +53,52 @@ function People() {
       .map((t) => t.label)
   }, [members])
 
-  const results = useMemo(
+  // Søket på serveren finner også folk på det de kan (også ord som ikke står i
+  // profilen, som «space» for noen i et romfartsselskap), med grunnen til treffet.
+  // Mens det går, vises ordtreffene fra lista med en gang.
+  const find = useServerFn(findPeopleByTopic)
+  const query = search.q?.trim() ?? ''
+  const [ranked, setRanked] = useState<{ q: string; found: Found } | null>(null)
+  useEffect(() => {
+    if (query.length < 2) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      find({ data: { q: query } })
+        .then((found) => {
+          if (!cancelled) setRanked({ q: query, found })
+        })
+        .catch(() => {})
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [query, find])
+  const serverHits = ranked?.q === query && query.length >= 2 ? ranked.found : null
+  const reasons = useMemo(
     () =>
-      filterMembers(members, search)
-        .filter((m) => !search.verifisert || m.claimed)
-        .sort(comparePeople),
-    [members, search],
+      new Map(
+        (serverHits ?? []).map((h) => [h.personId, h.matchedBy === 'name' ? null : h.reason]),
+      ),
+    [serverHits],
   )
+
+  const results = useMemo(() => {
+    const keep = (m: (typeof members)[number]) =>
+      (!search.verifisert || m.claimed) &&
+      (search.kull === undefined || m.cohorts.some((c) => c.graduationYear === search.kull))
+    const local = filterMembers(members, search)
+      .filter((m) => !search.verifisert || m.claimed)
+      .sort(comparePeople)
+    if (!serverHits) return local
+    const byId = new Map(members.map((m) => [m.personId, m]))
+    const fromServer = serverHits.flatMap((h) => {
+      const m = byId.get(h.personId)
+      return m && keep(m) ? [m] : []
+    })
+    const seen = new Set(fromServer.map((m) => m.personId))
+    return [...fromServer, ...local.filter((m) => !seen.has(m.personId))]
+  }, [members, search, serverHits])
   const claimed = members.filter((m) => m.claimed).length
   const setSearch = (patch: Partial<typeof search>) => {
     setShown(PAGE)
@@ -80,7 +122,7 @@ function People() {
             type="search"
             value={search.q ?? ''}
             onChange={(e) => setSearch({ q: e.target.value || undefined })}
-            placeholder="Navn, selskap, bransje, studieretning eller ekspertise"
+            placeholder="Navn, eller hva de kan: «space», «oppdrett», «fintech», «maskinlæring»"
             aria-label="Søk etter personer"
             className="pl-9"
           />
@@ -148,11 +190,20 @@ function People() {
             {results.length === members.length ? 'Alle' : `${results.length} treff`}
           </p>
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {results.slice(0, shown).map((m) => (
-              <li key={m.personId}>
-                <PersonCard member={m} />
-              </li>
-            ))}
+            {results.slice(0, shown).map((m) => {
+              const reason = reasons.get(m.personId)
+              return (
+                <li key={m.personId} className="flex flex-col gap-1.5">
+                  <PersonCard member={m} />
+                  {reason && (
+                    <p className="flex gap-1.5 px-1 text-xs leading-snug text-stone-500">
+                      <Sparkles className="mt-0.5 size-3 shrink-0 text-brand-500" aria-hidden />
+                      <span className="line-clamp-2">{reason}</span>
+                    </p>
+                  )}
+                </li>
+              )
+            })}
           </ul>
           {shown < results.length && (
             <div className="mt-6 text-center">

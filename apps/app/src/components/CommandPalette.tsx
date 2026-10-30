@@ -74,7 +74,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
               <RepresentativeTag years={p.representativeOf} className="ml-1" />
             </span>
             <span className="block truncate text-xs text-stone-500">
-              {[p.jobTitle, p.currentCompany].filter(Boolean).join(' · ')}
+              {p.reason ?? [p.jobTitle, p.currentCompany].filter(Boolean).join(' · ')}
             </span>
           </span>
         </>

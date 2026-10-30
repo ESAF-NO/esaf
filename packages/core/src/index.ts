@@ -289,6 +289,7 @@ export {
 export {
   createCompany,
   deleteCompany,
+  companySlugById,
   listAdminCompanies,
   type AdminCompany,
 } from './company-admin.ts'
@@ -314,9 +315,12 @@ export {
 export {
   addPersonEmail,
   createProfile,
+  deleteProfile,
+  fillUnclaimedContact,
   findSimilarPeople,
   getPersonAdmin,
   listPeopleForAdmin,
+  listPeopleIndex,
   mergePeople,
   newProfileInput,
   normalizePersonName,
@@ -324,6 +328,7 @@ export {
   searchAllPeople,
   setPersonCohorts,
   type AdminPerson,
+  type AdminPersonIndexItem,
   type NewProfileInput,
   type PersonAdminDetails,
 } from './people-admin.ts'
@@ -371,25 +376,62 @@ export {
   type CompanyArticleInput,
 } from './company-articles.ts'
 export {
+  addQuote,
   confirmQuote,
   deleteQuote,
   getEditableQuote,
+  loadQuotes,
   quoteInput,
+  quoteLinksInput,
   randomQuote,
+  setQuoteLinks,
   sourceConfidences,
   updateQuote,
   type EditableQuote,
   type Quote,
   type QuoteInput,
+  type QuoteLinksInput,
 } from './quotes.ts'
 export {
+  addFieldSources,
   companySourceFields,
   confirmProfileFields,
+  fieldSourceInput,
+  loadFieldSources,
   profileSourceFields,
   type CompanySourceField,
   type FieldSource,
+  type FieldSourceInput,
   type ProfileSourceField,
 } from './sources.ts'
+export {
+  batchProfileInput,
+  createProfileBatch,
+  planProfileBatch,
+  PROFILE_BATCH_MAX,
+  type BatchMatch,
+  type BatchMatchReason,
+  type BatchPlan,
+  type BatchProfileInput,
+  type BatchResult,
+  type BatchResultRow,
+  type BatchRowPlan,
+} from './profile-batch.ts'
+export {
+  API_TOKEN_MAX_ACTIVE,
+  API_TOKEN_MAX_DAYS,
+  API_TOKEN_PREFIX,
+  apiTokenInput,
+  authenticateApiToken,
+  createApiToken,
+  hashApiToken,
+  listApiTokens,
+  revokeApiToken,
+  withApiTokenAudit,
+  type ApiTokenInput,
+  type ApiTokenStatus,
+  type ApiTokenView,
+} from './api-tokens.ts'
 export {
   addCohortRepresentative,
   currentRepresentativeOf,
@@ -600,3 +642,33 @@ export {
 export { createTarGz, readTarGz, type TarEntry } from './tar.ts'
 export { putProcessedPhoto } from './photos.ts'
 export { putProcessedLogo } from './logos.ts'
+export {
+  listPeopleForTopics,
+  reindexPeople,
+  searchPeopleByTopic,
+  searchTopicsInput,
+  expandQuery,
+  setSearchTopics,
+  type Embedder,
+  type PeopleSearchHit,
+  type ReindexResult,
+  type SearchChunk,
+  type TopicsStatus,
+} from './people-search.ts'
+export {
+  availableMemory,
+  chooseSearchModel,
+  createLocalEmbedder,
+  defaultSearchModelDir,
+  SEARCH_MODEL,
+  SEARCH_MODEL_MIN_MEMORY,
+  SEARCH_MODEL_SMALL,
+} from './search-embedder.ts'
+export { SEARCH_TAXONOMY } from './search-taxonomy.ts'
+export {
+  getUniverse,
+  type Universe,
+  type UniverseCompany,
+  type UniverseLink,
+  type UniversePerson,
+} from './universe.ts'

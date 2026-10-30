@@ -9,10 +9,14 @@ export default defineConfig({
   server: { port: 3000 },
   plugins: [
     nitro({
-      plugins: ['./src/server/plugins/validate-env.ts', './src/server/plugins/cleanup-assets.ts'],
-      // Bildebehandlingen har native binærfiler som må ligge som egen pakke i
-      // .output, ikke bakes inn i bundelen. `*` tar med hele pakken.
-      traceDeps: ['sharp*'],
+      plugins: [
+        './src/server/plugins/validate-env.ts',
+        './src/server/plugins/cleanup-assets.ts',
+        './src/server/plugins/search-index.ts',
+      ],
+      // Bildebehandlingen og embedding-modellen har native binærfiler som må ligge
+      // som egne pakker i .output, ikke bakes inn i bundelen. `*` tar med hele pakken.
+      traceDeps: ['sharp*', 'onnxruntime-node*', '@huggingface/transformers*'],
     }),
     tanstackStart({
       importProtection: {
@@ -22,6 +26,8 @@ export default defineConfig({
           specifiers: [
             '@esaf/db',
             '@esaf/core',
+            '@esaf/mcp',
+            '@modelcontextprotocol/server',
             'pg',
             'drizzle-orm',
             'better-auth/adapters/drizzle',

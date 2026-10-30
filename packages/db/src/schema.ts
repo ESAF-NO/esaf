@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -208,6 +209,22 @@ export const person = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     linkedinUrl: text(),
+    /**
+     * Søkeord til personsøket, satt av admins (ofte via MCP, der Claude leser
+     * profilen og selskapene og skriver emner på norsk og engelsk, f.eks.
+     * «romfart, space, satellitter» for noen som jobber i NASA). Vises ikke på
+     * profilen, bare som grunn til et treff i søket. Se `people-search.ts`.
+     */
+    searchTopics: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /**
+     * SHA-256 av profilteksten søkeordene ble skrevet fra. Null: aldri vurdert.
+     * Er teksten endret siden, er søkeordene kanskje utdaterte og personen
+     * står i lista over dem som trenger nye (`listPeopleForTopics`).
+     */
+    searchTopicsSource: text(),
     /**
      * Profilbildet: en tilfeldig nøkkel til bildefilene i lagringen (se
      * `photos.ts` i @esaf/core). Hvert nytt bilde får ny nøkkel, så adressene
@@ -960,6 +977,62 @@ export const invitation = pgTable(
   (t) => [index().on(t.email), index().on(t.createdAt)],
 )
 
+/**
+ * MCP-nøkler: personlige nøkler en admin lager på adminsiden «MCP» for å
+ * koble en MCP-klient (f.eks. Claude) til adminverktøyene. Som invitasjoner
+ * lagres bare SHA-256 av nøkkelen; selve nøkkelen vises én gang. En nøkkel gir
+ * aldri mer enn kontoen har akkurat nå: rollen og medlemskapet sjekkes ved hver
+ * forespørsel. Se `api-tokens.ts` i @esaf/core for reglene.
+ */
+export const apiToken = pgTable(
+  'api_token',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Navnet personen ga nøkkelen, f.eks. «Claude Code på laptopen». */
+    name: text().notNull(),
+    /** SHA-256 (hex) av nøkkelen. Nøkkelen selv lagres aldri. */
+    tokenHash: text().notNull().unique(),
+    /** De første tegnene av nøkkelen, så den kan kjennes igjen i oversikten. */
+    prefix: text().notNull(),
+    /** Bare lesing: verktøyene som endrer noe, finnes ikke for denne nøkkelen. */
+    readOnly: boolean().notNull().default(false),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    /** Oppdateres høyst én gang i minuttet. */
+    lastUsedAt: timestamp({ withTimezone: true }),
+    revokedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index().on(t.userId)],
+)
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' })
+
+/**
+ * Indeksen for personsøket: teksten om personen delt i biter (stillinger med
+ * selskapet, bio, emner) og en vektor per bit fra embedding-modellen. Bare felt
+ * medlemmer kan se, aldri kontaktinfo. `contentHash` sier om bitene er
+ * utdaterte; indeksen bygges på nytt i bakgrunnen når noe endres. Se
+ * `people-search.ts` i @esaf/core.
+ */
+export const personSearchIndex = pgTable('person_search_index', {
+  personId: uuid()
+    .primaryKey()
+    .references(() => person.id, { onDelete: 'cascade' }),
+  /** SHA-256 av bitene og modellen. */
+  contentHash: text().notNull(),
+  /** Modellen vektorene kom fra; ny modell betyr ny indeks. */
+  model: text().notNull(),
+  /** Bitene i samme rekkefølge som vektorene. */
+  chunks: jsonb().$type<{ kind: string; text: string }[]>().notNull(),
+  /** Vektorene som float32 (little-endian), bit etter bit. */
+  vectors: bytea().notNull(),
+  dims: integer().notNull(),
+  indexedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+})
+
 /** Hva i et datasett en rad i `import_record` gjelder. */
 export const importRecordKind = pgEnum('import_record_kind', [
   'company',
@@ -1005,6 +1078,15 @@ export const auditEvent = pgTable(
     action: text().notNull(),
     subjectPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
     details: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    /**
+     * MCP-nøkkelen handlingen ble gjort med, ellers null (appen eller CLI-en).
+     * Settes av databasen fra `esaf.api_token_id`, som @esaf/core setter i hver
+     * transaksjon for forespørsler med nøkkel (`withApiTokenAudit`). Da kan ingen
+     * hendelse fra MCP havne i loggen uten merket, uansett hvor den skrives.
+     */
+    apiTokenId: uuid()
+      .references(() => apiToken.id, { onDelete: 'set null' })
+      .default(sql`nullif(current_setting('esaf.api_token_id', true), '')::uuid`),
     createdAt: timestamps.createdAt,
   },
   (t) => [index().on(t.subjectPersonId)],

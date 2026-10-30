@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as KontoRouteImport } from './routes/_konto'
+import { Route as GlemtPassordRouteImport } from './routes/glemt-passord'
 import { Route as LoggInnRouteImport } from './routes/logg-inn'
 import { Route as RegistrerRouteImport } from './routes/registrer'
 import { Route as KontoAdminRouteRouteImport } from './routes/_konto/admin/route'
@@ -70,6 +71,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const KontoRoute = KontoRouteImport.update({
   id: '/_konto',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GlemtPassordRoute = GlemtPassordRouteImport.update({
+  id: '/glemt-passord',
+  path: '/glemt-passord',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoggInnRoute = LoggInnRouteImport.update({
@@ -343,6 +349,7 @@ const ApiSelskaperCompanyIdLogoRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/glemt-passord': typeof GlemtPassordRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
   '/admin': typeof KontoAdminRouteRouteWithChildren
@@ -397,6 +404,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/glemt-passord': typeof GlemtPassordRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
   '/kom-i-gang': typeof KontoKomIGangRoute
@@ -452,6 +460,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_konto': typeof KontoRouteWithChildren
+  '/glemt-passord': typeof GlemtPassordRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
   '/_konto/admin': typeof KontoAdminRouteRouteWithChildren
@@ -508,6 +517,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/glemt-passord'
     | '/logg-inn'
     | '/registrer'
     | '/admin'
@@ -562,6 +572,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/glemt-passord'
     | '/logg-inn'
     | '/registrer'
     | '/kom-i-gang'
@@ -616,6 +627,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_konto'
+    | '/glemt-passord'
     | '/logg-inn'
     | '/registrer'
     | '/_konto/admin'
@@ -672,6 +684,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   KontoRoute: typeof KontoRouteWithChildren
+  GlemtPassordRoute: typeof GlemtPassordRoute
   LoggInnRoute: typeof LoggInnRoute
   RegistrerRoute: typeof RegistrerRoute
   ApiHealthRoute: typeof ApiHealthRoute
@@ -702,6 +715,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof KontoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/glemt-passord': {
+      id: '/glemt-passord'
+      path: '/glemt-passord'
+      fullPath: '/glemt-passord'
+      preLoaderRoute: typeof GlemtPassordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logg-inn': {
@@ -1161,6 +1181,7 @@ const KontoRouteWithChildren = KontoRoute._addFileChildren(KontoRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   KontoRoute: KontoRouteWithChildren,
+  GlemtPassordRoute: GlemtPassordRoute,
   LoggInnRoute: LoggInnRoute,
   RegistrerRoute: RegistrerRoute,
   ApiHealthRoute: ApiHealthRoute,

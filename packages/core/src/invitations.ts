@@ -25,8 +25,10 @@ const {
 } = schema
 
 /**
- * Invitasjoner og lenker for nytt passord, uten e-post. En admin lager en lenke
- * og deler den selv (SMS, Messenger, muntlig). Reglene:
+ * Invitasjoner og lenker for nytt passord. En admin lager en lenke. Med
+ * e-postleverandør sendes den på e-post til adressen; uten deler admin den selv
+ * (SMS, Messenger, muntlig). Med e-post kan man også be om en lenke for nytt
+ * passord selv (`requestPasswordReset`). Reglene:
  *
  * - Å kjenne en e-postadresse gir aldri tilgang. Lenken er det som gir tilgang:
  *   den har et tilfeldig token på 256 bit, og bare SHA-256 av tokenet lagres.
@@ -45,11 +47,23 @@ const {
  *   medlemmer og moderatorer, hovedadmins også for admins og hovedadmins, aldri
  *   en selv. Alle økter logges ut. Tofaktor og passkeys røres ikke, så lenken
  *   kan ikke brukes til å komme forbi tofaktor.
+ * - «Glemt passord?»: lenken sendes bare til adressen kontoen har, går ut etter
+ *   en time, og svaret er det samme om kontoen finnes eller ikke. Den erstatter
+ *   en ventende lenke for nytt passord til samme adresse, også en admin har
+ *   laget: den nye virker og er den personen nettopp ba om. Én forespørsel per
+ *   adresse hvert andre minutt; deaktiverte kontoer får ingen lenke.
  * - Alt logges: `invitation.*` og `password_link.*`.
  */
 
 /** Hvor lenge en lenke virker. */
 export const INVITATION_TTL_DAYS = 7
+const INVITATION_TTL_MS = INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000
+
+/** Hvor lenge en lenke for nytt passord man har bedt om selv, virker. */
+export const PASSWORD_REQUEST_TTL_MINUTES = 60
+
+/** Hvor ofte man kan be om en ny lenke for nytt passord til samme adresse. */
+export const PASSWORD_REQUEST_INTERVAL_MINUTES = 2
 
 /** SHA-256 av tokenet, som hex. Det er bare dette som lagres. */
 export function hashInvitationToken(token: string): string {
@@ -119,12 +133,26 @@ type Creator = { personId: string; role: MemberRole } | 'operator'
 
 export type CreatedLink = {
   id: string
-  /** Vises én gang. Lagres aldri. */
+  /** Vises eller sendes én gang. Lagres aldri. */
   token: string
   email: string
   kind: InvitationKind
   role: MemberRole
   expiresAt: Date
+  /** Navnet til admin som laget lenken, eller null for operatøren (styret). */
+  createdByName: string | null
+  /** Personen ba om lenken for nytt passord selv. */
+  requestedBySelf: boolean
+}
+
+/** Navnet til den som lager lenken, til e-posten. */
+async function nameOf(tx: Tx, personId: string | null) {
+  if (!personId) return null
+  const [row] = await tx
+    .select({ fullName: person.fullName })
+    .from(person)
+    .where(eq(person.id, personId))
+  return row?.fullName ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +207,7 @@ async function createInvitationInTx(
 
   const replaced = await revokePending(tx, email, 'invite')
   const token = newToken()
-  const expiresAt = new Date(Date.now() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000)
+  const expiresAt = new Date(Date.now() + INVITATION_TTL_MS)
   const createdByPersonId = creator === 'operator' ? null : creator.personId
   const [row] = await tx
     .insert(invitation)
@@ -206,7 +234,16 @@ async function createInvitationInTx(
       reason,
     },
   })
-  return { id: row!.id, token, email, kind: 'invite', role: input.role, expiresAt }
+  return {
+    id: row!.id,
+    token,
+    email,
+    kind: 'invite',
+    role: input.role,
+    expiresAt,
+    createdByName: await nameOf(tx, createdByPersonId),
+    requestedBySelf: false,
+  }
 }
 
 /** Trekker tilbake ventende lenker av samme slag til samme adresse. Gir antallet. */
@@ -269,17 +306,25 @@ export async function createInvitationAsOperator(
 // Lenker for nytt passord
 // ---------------------------------------------------------------------------
 
+/**
+ * Lager lenken og logger det. `self` er personen selv, fra «Glemt passord?»: da
+ * står personen som den som laget lenken (eller ingen, for en konto uten person
+ * ennå), så oversikten ikke viser den som laget av operatøren.
+ */
 async function createPasswordLinkInTx(
   tx: Tx,
-  creator: Creator,
-  target: { personId: string; userId: string; email: string },
+  creator: Creator | 'self',
+  target: { personId: string | null; userId: string; email: string },
   reason: string | null,
+  ttlMs = INVITATION_TTL_MS,
 ): Promise<CreatedLink> {
   const email = normalizeEmail(target.email)
   const replaced = await revokePending(tx, email, 'password_reset')
   const token = newToken()
-  const expiresAt = new Date(Date.now() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000)
-  const createdByPersonId = creator === 'operator' ? null : creator.personId
+  const expiresAt = new Date(Date.now() + ttlMs)
+  const requestedBySelf = creator === 'self'
+  const createdByPersonId =
+    creator === 'self' ? target.personId : creator === 'operator' ? null : creator.personId
   const [row] = await tx
     .insert(invitation)
     .values({
@@ -288,16 +333,29 @@ async function createPasswordLinkInTx(
       tokenHash: hashInvitationToken(token),
       personId: target.personId,
       createdByPersonId,
+      requestedBySelf,
       expiresAt,
     })
     .returning({ id: invitation.id })
   await tx.insert(auditEvent).values({
     actorPersonId: createdByPersonId,
-    action: 'password_link.create',
+    action: requestedBySelf ? 'password_link.request' : 'password_link.create',
     subjectPersonId: target.personId,
-    details: { invitationId: row!.id, replaced, reason },
+    // Uten person er adressen det eneste som sier hvem det gjaldt.
+    details: requestedBySelf
+      ? { invitationId: row!.id, replaced, email: target.personId ? undefined : email }
+      : { invitationId: row!.id, replaced, reason },
   })
-  return { id: row!.id, token, email, kind: 'password_reset', role: 'member', expiresAt }
+  return {
+    id: row!.id,
+    token,
+    email,
+    kind: 'password_reset',
+    role: 'member',
+    expiresAt,
+    createdByName: await nameOf(tx, createdByPersonId),
+    requestedBySelf,
+  }
 }
 
 /**
@@ -366,6 +424,69 @@ export async function createPasswordResetLinkAsOperator(
   })
 }
 
+const requestEmail = z.string().trim().toLowerCase().pipe(z.email().max(254))
+
+/**
+ * «Glemt passord?»: lager en lenke for nytt passord til kontoen med adressen,
+ * som appen sender på e-post til den adressen. Gir null når ingen lenke skal
+ * sendes: ukjent eller ugyldig adresse, deaktivert eller avslått konto, eller en
+ * lenke er bedt om for mindre enn to minutter siden. Den som spør, skal få samme
+ * svar uansett, så det ikke kan brukes til å finne ut hvem som har konto.
+ *
+ * Lenken virker i en time, og ellers som en lenke fra en admin: én gang, logger
+ * ut alle økter, og logger ikke inn (tofaktor gjelder fortsatt). Den erstatter
+ * en ventende lenke for nytt passord til samme adresse, også en fra en admin.
+ * Kontoer som aldri ble bekreftet, får også en: lenken beviser at personen leser
+ * innboksen, slik bekreftelseslenken ville gjort.
+ */
+export async function requestPasswordReset(
+  db: Db,
+  input: { email: string },
+): Promise<CreatedLink | null> {
+  const parsed = requestEmail.safeParse(input.email)
+  if (!parsed.success) return null
+  const email = parsed.data
+  return db.transaction(async (tx) => {
+    // Kontoen låses, så to forespørsler samtidig ikke begge kommer forbi grensen.
+    const [target] = await tx
+      .select({
+        userId: user.id,
+        email: user.email,
+        personId: person.id,
+        status: membership.status,
+      })
+      .from(user)
+      .leftJoin(person, eq(person.userId, user.id))
+      .leftJoin(membership, eq(membership.personId, person.id))
+      .where(eq(user.email, email))
+      .for('update', { of: user })
+    if (!target) return null
+    // Deaktiverte og avslåtte har ingen tilgang å komme tilbake til; styret avgjør det.
+    if (target.status === 'inactive') return null
+    const since = new Date(Date.now() - PASSWORD_REQUEST_INTERVAL_MINUTES * 60 * 1000)
+    const [recent] = await tx
+      .select({ id: invitation.id })
+      .from(invitation)
+      .where(
+        and(
+          eq(invitation.email, email),
+          eq(invitation.kind, 'password_reset'),
+          eq(invitation.requestedBySelf, true),
+          gt(invitation.createdAt, since),
+        ),
+      )
+      .limit(1)
+    if (recent) return null
+    return createPasswordLinkInTx(
+      tx,
+      'self',
+      { userId: target.userId, email: target.email, personId: target.personId },
+      null,
+      PASSWORD_REQUEST_TTL_MINUTES * 60 * 1000,
+    )
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Oversikt og tilbaketrekking
 // ---------------------------------------------------------------------------
@@ -380,6 +501,8 @@ export type InvitationView = {
   profile: { personId: string; fullName: string } | null
   /** Null betyr operatør på kommandolinjen (eller en slettet person). */
   createdBy: { personId: string; fullName: string } | null
+  /** Personen ba om lenken for nytt passord selv («Glemt passord?»). */
+  requestedBySelf: boolean
   createdAt: Date
   expiresAt: Date
   usedAt: Date | null
@@ -424,6 +547,7 @@ export async function listInvitations(
       row.createdByPersonId && creatorName
         ? { personId: row.createdByPersonId, fullName: creatorName }
         : null,
+    requestedBySelf: row.requestedBySelf,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     usedAt: row.usedAt,
@@ -839,7 +963,7 @@ export async function acceptInvitationAsUser(
 }
 
 /**
- * Setter nytt passord med en lenke fra en admin. Kalles av Better Auth-endepunktet
+ * Setter nytt passord med en lenke fra en admin, eller en personen ba om selv. Kalles av Better Auth-endepunktet
  * i appen, som har hashet passordet. Alle økter slettes, også den som eventuelt
  * er åpen i nettleseren nå; personen logger inn med det nye passordet (og
  * tofaktor, om kontoen har det).

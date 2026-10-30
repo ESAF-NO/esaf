@@ -1,4 +1,11 @@
-import { acceptInvitation, InvitationError, resetPasswordWithLink } from '@esaf/core'
+import {
+  acceptInvitation,
+  EmailError,
+  InvitationError,
+  requestPasswordReset,
+  resetPasswordWithLink,
+  type CreatedLink,
+} from '@esaf/core'
 import type { Db } from '@esaf/db'
 import type { BetterAuthPlugin } from 'better-auth'
 import { APIError, createAuthEndpoint } from 'better-auth/api'
@@ -9,6 +16,7 @@ import { z } from 'zod'
 export const INVITATION_PATHS = {
   accept: '/invitation/accept',
   resetPassword: '/invitation/reset-password',
+  requestPasswordReset: '/invitation/request-password-reset',
 } as const
 
 const token = z.string().min(1).max(100)
@@ -53,8 +61,17 @@ function rethrow(error: unknown): never {
  *   uten (da legger personen til en passkey rett etterpå), og logger inn.
  * - `POST /invitation/reset-password` setter nytt passord og logger ut alle
  *   økter. Den logger ikke inn: da kunne lenken brukes til å komme forbi tofaktor.
+ * - `POST /invitation/request-password-reset` («Glemt passord?») sender en lenke
+ *   for nytt passord til adressen, om den har en konto. Svaret er alltid det
+ *   samme, og e-posten sendes etter at svaret er gitt, så verken innholdet eller
+ *   tiden svaret tar sier om kontoen finnes. Finnes bare med e-postleverandør
+ *   (`sendPasswordReset`).
  */
-export function invitations(db: Db) {
+export function invitations(
+  db: Db,
+  options: { sendPasswordReset?: (link: CreatedLink) => Promise<void> } = {},
+) {
+  const { sendPasswordReset } = options
   return {
     id: 'esaf-invitations',
     endpoints: {
@@ -101,6 +118,26 @@ export function invitations(db: Db) {
           await resetPasswordWithLink(db, { token: ctx.body.token, passwordHash }).catch(rethrow)
           // Alle økter er slettet; også cookien i denne nettleseren fjernes.
           deleteSessionCookie(ctx)
+          return ctx.json({ status: true })
+        },
+      ),
+      requestPasswordReset: createAuthEndpoint(
+        INVITATION_PATHS.requestPasswordReset,
+        { method: 'POST', body: z.object({ email: z.string().max(254) }) },
+        async (ctx) => {
+          if (!sendPasswordReset) {
+            throw APIError.from('NOT_FOUND', { code: 'NOT_FOUND', message: 'Not found' })
+          }
+          const link = await requestPasswordReset(db, { email: ctx.body.email })
+          if (link) {
+            // Ikke ventet på: svaret skal ta like lang tid uansett. Feil logges, men
+            // vises ikke; personen kan be om en ny lenke.
+            void sendPasswordReset(link).catch((error: unknown) => {
+              // `EmailError` er allerede logget med detaljene fra leverandøren.
+              if (error instanceof EmailError) return
+              console.error('[esaf/e-post] Kunne ikke sende lenke for nytt passord:', error)
+            })
+          }
           return ctx.json({ status: true })
         },
       ),

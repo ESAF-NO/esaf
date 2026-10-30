@@ -4,18 +4,24 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { AuthCard, AuthShell } from '#/components/AuthLayout.tsx'
 import { Button, buttonClass, ErrorText, Field, Input } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
-import { longDay } from '#/lib/format.ts'
-import { fetchLinkDetails } from '#/lib/invitations.functions.ts'
+import { timestamp } from '#/lib/format.ts'
+import { fetchAuthOptions, fetchLinkDetails } from '#/lib/invitations.functions.ts'
 import { linkError, noReferrer } from '#/lib/links.ts'
 
 /**
- * Nytt passord med en lenke fra en admin. Som invitasjonen: tokenet i adressen
- * sendes aldri videre, og bare i innholdet av POST-forespørsler. Etterpå er alle
- * økter logget ut, og personen logger inn med det nye passordet (og tofaktor).
+ * Nytt passord med en lenke fra en admin, eller en personen ba om selv på
+ * e-post. Som invitasjonen: tokenet i adressen sendes aldri videre, og bare i
+ * innholdet av POST-forespørsler. Etterpå er alle økter logget ut, og personen
+ * logger inn med det nye passordet (og tofaktor).
  */
 export const Route = createFileRoute('/nytt-passord/$token')({
-  loader: ({ params }) =>
-    fetchLinkDetails({ data: { token: params.token, kind: 'password_reset' } }),
+  loader: async ({ params }) => {
+    const [details, { emailEnabled }] = await Promise.all([
+      fetchLinkDetails({ data: { token: params.token, kind: 'password_reset' } }),
+      fetchAuthOptions(),
+    ])
+    return { details, emailEnabled }
+  },
   staleTime: Infinity,
   headers: () => noReferrer.headers,
   head: () => ({ meta: [{ title: 'Nytt passord – ESAF' }, noReferrer.meta] }),
@@ -37,7 +43,7 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 function NewPassword() {
-  const details = Route.useLoaderData()
+  const { details, emailEnabled } = Route.useLoaderData()
   const { token } = Route.useParams()
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'busy' | 'done'>('idle')
@@ -65,7 +71,7 @@ function NewPassword() {
     const text = {
       invalid: 'Sjekk at du har fått med hele lenken. Virker den fortsatt ikke, be om en ny.',
       used: 'Lenken er allerede brukt. Logg inn med passordet du valgte, eller be om en ny lenke.',
-      expired: 'En slik lenke varer i sju dager. Be en admin om en ny.',
+      expired: 'Lenken er utløpt. Be om en ny.',
       revoked:
         'Den er erstattet av en nyere lenke eller trukket tilbake. Be om en ny om du trenger det.',
     }[details.status]
@@ -76,10 +82,28 @@ function NewPassword() {
             <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-stone-100 text-stone-500 ring-1 ring-stone-200 ring-inset">
               <Link2Off className="size-5" aria-hidden />
             </span>
-            <Link to="/logg-inn" className={buttonClass({ variant: 'secondary' })}>
-              Til innlogging
-            </Link>
+            {emailEnabled && details.status !== 'used' ? (
+              <Link to="/glemt-passord" className={buttonClass({ variant: 'secondary' })}>
+                Be om en ny lenke
+              </Link>
+            ) : (
+              <Link to="/logg-inn" className={buttonClass({ variant: 'secondary' })}>
+                Til innlogging
+              </Link>
+            )}
           </div>
+          {!emailEnabled && (
+            <p className="mt-4 text-sm text-stone-500">
+              En ny lenke får du av styret, på{' '}
+              <a
+                href="mailto:styret@esaf.no"
+                className="font-medium text-brand-600 hover:underline"
+              >
+                styret@esaf.no
+              </a>
+              .
+            </p>
+          )}
         </AuthCard>
       </Shell>
     )
@@ -112,7 +136,7 @@ function NewPassword() {
         subtitle={
           <>
             For <strong className="text-stone-900">{details.email}</strong>. Lenken virker én gang,
-            til {longDay(details.expiresAt)}. Du blir logget ut på alle enheter. Har du tofaktor,
+            til {timestamp(details.expiresAt)}. Du blir logget ut på alle enheter. Har du tofaktor,
             trenger du fortsatt koden når du logger inn.
           </>
         }

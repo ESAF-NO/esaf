@@ -7,6 +7,7 @@ import {
   mayChangeSignInMethods,
   permissions,
   roleAtLeast,
+  searchPeopleByTopic,
   searchUnclaimedProfiles,
   strongAuth,
   strongAuthRequired,
@@ -80,6 +81,25 @@ export const findUnclaimedProfiles = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     try {
       return await searchUnclaimedProfiles(db, await getRequestViewer(), data.query)
+    } catch (error) {
+      return rethrowForClient(error)
+    }
+  })
+
+/**
+ * Personsøket på hva folk kan: ord i profilen og likhet i mening (se
+ * `people-search.ts` i @esaf/core). Gir personene i rekkefølge, med grunnen.
+ */
+export const findPeopleByTopic = createServerFn({ method: 'GET' })
+  .validator(z.object({ q: z.string().max(200) }))
+  .handler(async ({ data }) => {
+    try {
+      const { embedder } = await import('#/server/search.server.ts')
+      const hits = await searchPeopleByTopic(db, await getRequestViewer(), data.q, {
+        embedder,
+        limit: 60,
+      })
+      return hits.map(({ personId, reason, matchedBy }) => ({ personId, reason, matchedBy }))
     } catch (error) {
       return rethrowForClient(error)
     }

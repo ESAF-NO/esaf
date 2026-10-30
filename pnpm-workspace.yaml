@@ -5,6 +5,9 @@ packages:
 allowBuilds:
   esbuild: true
   lightningcss: true
+  # Lokal embedding-modell for personsøket (@huggingface/transformers).
+  onnxruntime-node: true
+  protobufjs: false
   sharp: true
   workerd: true
 

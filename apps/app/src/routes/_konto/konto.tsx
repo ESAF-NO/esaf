@@ -1,6 +1,6 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { Check, Copy, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Bot, Check, Copy, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
@@ -96,6 +96,7 @@ function Account() {
           <SetPassword mayChange={viewer.mayChangeSignInMethods} />
         )}
         <Sessions />
+        {viewer.permissions.includes('mcp.access') && <McpPointer />}
       </div>
     </div>
   )
@@ -787,6 +788,26 @@ function Sessions() {
         </Button>
         {done && <span className="text-sm text-emerald-700">Ferdig.</span>}
       </div>
+    </Section>
+  )
+}
+
+/** MCP-nøklene har sin egen side under Admin; her er bare veien dit. */
+function McpPointer() {
+  return (
+    <Section
+      id="mcp"
+      title="MCP-tilgang"
+      description="Koble Claude Code, Codex eller Claude Desktop til adminverktøyene."
+    >
+      <p className="text-sm text-stone-600">
+        Nøklene, oppsettet for hver klient og hva du kan be om, står under Admin. Siden krever
+        passkey eller tofaktor.
+      </p>
+      <Link to="/admin/mcp" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+        <Bot className="size-4" aria-hidden />
+        Til MCP-siden
+      </Link>
     </Section>
   )
 }

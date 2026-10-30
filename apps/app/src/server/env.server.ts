@@ -46,6 +46,12 @@ const schema = z
     S3_ACCESS_KEY_ID: optional(z.string()),
     S3_SECRET_ACCESS_KEY: optional(z.string()),
     UPLOAD_DIR: optional(z.string()),
+    // Personsøket: mappen med embedding-modellen. I produksjon lastes den ned når
+    // bildet bygges (se Dockerfile); lokalt lastes den ned første gang til .data/models.
+    SEARCH_MODEL_DIR: optional(z.string()),
+    // Modellen. Uten den: Xenova/bge-m3, eller Xenova/multilingual-e5-small på en server
+    // med under 3 GB minne. Begge ligger i bildet; en annen modell må også lastes ned der.
+    SEARCH_MODEL: optional(z.string()),
   })
   .superRefine((env, ctx) => {
     const production = env.NODE_ENV === 'production'

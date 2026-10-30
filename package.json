@@ -27,7 +27,10 @@
     "profiles:import": "pnpm --filter @esaf/core profiles:import",
     "data:bundle": "pnpm --filter @esaf/core data:bundle",
     "data:import": "pnpm --filter @esaf/core data:import",
-    "verify:site": "node scripts/verify-site-build.mjs"
+    "verify:site": "node scripts/verify-site-build.mjs",
+    "search:download-model": "pnpm --filter @esaf/core search:download-model",
+    "search:reindex": "pnpm --filter @esaf/core search:reindex",
+    "search:query": "pnpm --filter @esaf/core search:query"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

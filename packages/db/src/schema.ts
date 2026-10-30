@@ -725,6 +725,53 @@ export const cohortRepresentative = pgTable(
 )
 
 /**
+ * Rollen i styret. `member` er et vanlig styremedlem, og er standard: styret
+ * fordeler gjerne rollene internt etter generalforsamlingen.
+ */
+export const boardRole = pgEnum('board_role', ['chair', 'vice_chair', 'member', 'deputy'])
+
+/**
+ * Styret i ESAF, med historikk. Én rad er ett verv: en person i en rolle fra
+ * `startYear` til `endYear`. Uten `endYear` sitter personen i styret nå. Bytter
+ * noen rolle, avsluttes det gamle vervet og et nytt startes, så historikken
+ * står. Reglene står i @esaf/core (board.ts).
+ */
+export const boardMember = pgTable(
+  'board_member',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    role: boardRole().notNull().default('member'),
+    /** Ansvarsområde, f.eks. «Økonomi» eller «Arrangementer». Vises for medlemmer. */
+    responsibility: text(),
+    /** Null når det ikke er kjent når vervet startet (f.eks. fra en gammel liste). */
+    startYear: integer(),
+    /** Null betyr at personen sitter i styret nå. */
+    endYear: integer(),
+    /** Notat fra styret, f.eks. «Valgt for to år». Vises bare for admins. */
+    note: text(),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.personId),
+    // Samme person sitter bare én gang i styret om gangen.
+    uniqueIndex('board_member_current_index')
+      .on(t.personId)
+      .where(sql`${t.endYear} is null`),
+    // Styret har én leder og én nestleder om gangen.
+    uniqueIndex('board_member_current_lead_index')
+      .on(t.role)
+      .where(sql`${t.endYear} is null and ${t.role} in ('chair', 'vice_chair')`),
+    check(
+      'board_member_years',
+      sql`(${t.startYear} is null or ${t.startYear} between 1990 and 2100) and (${t.endYear} is null or ${t.endYear} between 1990 and 2100) and (${t.startYear} is null or ${t.endYear} is null or ${t.endYear} >= ${t.startYear})`,
+    ),
+  ],
+)
+
+/**
  * Typer arrangementer: ESAF-helgen (lagt inn av migreringen), og det admins
  * legger til, f.eks. «Generalforsamling» eller «Fagkveld». `slug` er adressen
  * (`/arrangementer/esaf-helgen`) og endres ikke etter at typen er laget, så
@@ -880,15 +927,17 @@ export const accessRequest = pgTable(
 
 /**
  * `invite` gir tilgang til appen. `password_reset` lar en eksisterende konto
- * velge nytt passord, uten e-post.
+ * velge nytt passord.
  */
 export const invitationKind = pgEnum('invitation_kind', ['invite', 'password_reset'])
 
 /**
- * Lenker en admin (eller en operatør på kommandolinjen) lager og deler selv, for
- * eksempel på SMS. Bare SHA-256 av tokenet lagres; selve tokenet vises én gang
- * når lenken lages. En lenke er bundet til én e-postadresse, virker én gang og
- * går ut etter sju dager. Se `invitations.ts` i @esaf/core for reglene.
+ * Lenker en admin (eller en operatør på kommandolinjen) lager, og som sendes på
+ * e-post eller deles for eksempel på SMS, og lenker for nytt passord personen
+ * ber om selv («Glemt passord?»). Bare SHA-256 av tokenet lagres; selve tokenet
+ * vises eller sendes én gang når lenken lages. En lenke er bundet til én
+ * e-postadresse, virker én gang og går ut etter sju dager (en time når personen
+ * ba om den selv). Se `invitations.ts` i @esaf/core for reglene.
  */
 export const invitation = pgTable(
   'invitation',
@@ -906,8 +955,13 @@ export const invitation = pgTable(
     personId: uuid().references(() => person.id, { onDelete: 'set null' }),
     /** Rollen den inviterte får. Bare hovedadmins kan invitere med en annen rolle enn medlem. */
     role: memberRole().notNull().default('member'),
-    /** Null betyr lokal operatør (admin-CLI). */
+    /**
+     * Null betyr lokal operatør (admin-CLI), eller at personen ba om lenken selv
+     * og ikke har noen person ennå (se `requestedBySelf`).
+     */
     createdByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    /** Personen ba om lenken for nytt passord selv, fra «Glemt passord?». Da er `createdByPersonId` dem selv. */
+    requestedBySelf: boolean().notNull().default(false),
     expiresAt: timestamp({ withTimezone: true }).notNull(),
     usedAt: timestamp({ withTimezone: true }),
     usedByUserId: text().references(() => user.id, { onDelete: 'set null' }),
@@ -1071,6 +1125,7 @@ export type ReviewDismissalKind = (typeof reviewDismissalKind.enumValues)[number
 export type ParticipationRole = (typeof participationRole.enumValues)[number]
 export type EventDatePrecision = (typeof eventDatePrecision.enumValues)[number]
 export type ParticipationSource = (typeof participationSource.enumValues)[number]
+export type BoardRole = (typeof boardRole.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)
@@ -1228,3 +1283,105 @@ export const notification = pgTable(
 )
 
 export type NotificationType = (typeof notificationType.enumValues)[number]
+
+// ---------------------------------------------------------------------------
+// Vedlegg: bilder og dokumenter på innlegg, kommentarer, arrangementer og selskaper
+// ---------------------------------------------------------------------------
+
+/** Bilder behandles og lagres som WebP i to størrelser; dokumenter lagres som de er. */
+export const assetKind = pgEnum('asset_kind', ['image', 'document'])
+
+/**
+ * Hva fila ble lastet opp til. Bestemmes ved opplasting, så tilgangen kan sjekkes
+ * før fila leses, og avgjør hvilken forelder den kan festes til.
+ */
+export const assetPurpose = pgEnum('asset_purpose', [
+  /** Vedlegg i et innlegg. */
+  'post',
+  /** Vedlegg i en kommentar. */
+  'comment',
+  /** «Bilder» på et arrangement. */
+  'event_photo',
+  /** «Dokumenter» på et arrangement (program, referat). */
+  'event_document',
+  /** «Dokumenter» på et selskap (pitch deck, pressemateriale). */
+  'company_document',
+])
+
+/**
+ * En opplastet fil. Hører til høyst én forelder (innlegg, kommentar, arrangement
+ * eller selskap). Vedlegg til innlegg og kommentarer lastes opp før innlegget
+ * finnes, og står uten forelder til det lagres; de som aldri blir festet, ryddes
+ * bort etter et døgn. Slettes forelderen, blir nøkkelen null, og filene ryddes
+ * bort på samme måte (se `assets.ts` i @esaf/core).
+ *
+ * Sletting er myk: `deleted_at` skjuler fila med en gang, og `purged_at` settes
+ * når filene er fjernet fra lagringen. Raden blir stående, så grensen per døgn
+ * ikke kan omgås ved å slette og laste opp på nytt.
+ */
+export const asset = pgTable(
+  'asset',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** Tilfeldig nøkkel (128 bit) i adressene: `/api/vedlegg/<nøkkel>…`. */
+    fileKey: text().notNull().unique(),
+    /** Den som lastet opp. Null hvis personen er slettet. */
+    ownerPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    purpose: assetPurpose().notNull(),
+    kind: assetKind().notNull(),
+    postId: uuid().references(() => post.id, { onDelete: 'set null' }),
+    commentId: uuid().references(() => comment.id, { onDelete: 'set null' }),
+    eventId: uuid().references(() => event.id, { onDelete: 'set null' }),
+    companyId: uuid().references(() => company.id, { onDelete: 'set null' }),
+    /** Rekkefølgen blant vedleggene til samme forelder. */
+    position: integer().notNull().default(0),
+    /** Filnavnet slik det vises og lastes ned, renset og med riktig filendelse. */
+    originalName: text().notNull(),
+    /** Typen fila serveres med, avgjort ut fra innholdet. */
+    contentType: text().notNull(),
+    /** Størrelsen på fila som ble lastet opp. */
+    byteSize: integer().notNull(),
+    /** Nøklene i lagringen per variant: `400` og `1600` for bilder, `original` for dokumenter. */
+    storageKeys: jsonb().$type<Record<string, string>>().notNull(),
+    /** Den store varianten av bildet, slik det står. Null for dokumenter. */
+    width: integer(),
+    height: integer(),
+    /** SHA-256 av fila som ble lastet opp. */
+    sha256: text().notNull(),
+    /** Når fila ble festet til en forelder. */
+    attachedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    deletedAt: timestamp({ withTimezone: true }),
+    /** Når filene ble slettet fra lagringen. */
+    purgedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    index().on(t.postId),
+    index().on(t.commentId),
+    index().on(t.eventId),
+    index().on(t.companyId),
+    // Grensen per døgn teller det personen har lastet opp.
+    index().on(t.ownerPersonId, t.createdAt),
+    // Oppryddingen ser bare på filer som fortsatt ligger i lagringen.
+    index('asset_unpurged_index')
+      .on(t.createdAt)
+      .where(sql`${t.purgedAt} is null`),
+    check(
+      'asset_one_parent',
+      sql`num_nonnulls(${t.postId}, ${t.commentId}, ${t.eventId}, ${t.companyId}) <= 1`,
+    ),
+    check(
+      'asset_parent_purpose',
+      sql`(${t.postId} is null or ${t.purpose} = 'post') and (${t.commentId} is null or ${t.purpose} = 'comment') and (${t.eventId} is null or ${t.purpose} in ('event_photo', 'event_document')) and (${t.companyId} is null or ${t.purpose} = 'company_document')`,
+    ),
+    check('asset_album_images', sql`${t.purpose} <> 'event_photo' or ${t.kind} = 'image'`),
+    check('asset_byte_size', sql`${t.byteSize} > 0`),
+    check(
+      'asset_image_size',
+      sql`(${t.kind} = 'image') = (${t.width} is not null and ${t.height} is not null)`,
+    ),
+  ],
+)
+
+export type AssetKind = (typeof assetKind.enumValues)[number]
+export type AssetPurpose = (typeof assetPurpose.enumValues)[number]

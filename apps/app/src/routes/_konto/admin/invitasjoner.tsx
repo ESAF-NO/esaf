@@ -20,6 +20,7 @@ import {
 import { kull, longDay, timeAgo } from '#/lib/format.ts'
 import {
   createInvite,
+  fetchAuthOptions,
   fetchInvitations,
   inviteTarget,
   revokeLink,
@@ -32,7 +33,13 @@ export const Route = createFileRoute('/_konto/admin/invitasjoner')({
   beforeLoad: ({ context: { viewer } }) => {
     if (!viewer.permissions.includes('members.review')) throw notFound()
   },
-  loader: () => fetchInvitations(),
+  loader: async () => {
+    const [invitations, { emailEnabled }] = await Promise.all([
+      fetchInvitations(),
+      fetchAuthOptions(),
+    ])
+    return { invitations, emailEnabled }
+  },
   head: () => ({ meta: [{ title: 'Invitasjoner – Admin – ESAF' }] }),
   component: Invitations,
   errorComponent: ({ error }) => (
@@ -48,7 +55,7 @@ function errorMessage(error: unknown) {
 }
 
 function Invitations() {
-  const invitations = Route.useLoaderData()
+  const { invitations, emailEnabled } = Route.useLoaderData()
   const [created, setCreated] = useState<ShareableLink | null>(null)
   const [revoking, setRevoking] = useState<InvitationView | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -56,15 +63,21 @@ function Invitations() {
   return (
     <div className="max-w-3xl space-y-8">
       <p className="text-sm text-stone-500">
-        En invitasjon er en personlig lenke du sender selv, for eksempel på SMS. Den som åpner den,
-        velger passord eller passkey og er inne, uten å bekrefte e-post. Lenken er bundet til én
-        e-postadresse, virker én gang og går ut etter sju dager. Lenker for nytt passord lages under
-        Medlemmer.
+        {emailEnabled
+          ? 'En invitasjon er en personlig lenke som sendes på e-post til adressen du skriver inn. Lenken vises også her, så du kan sende den selv om e-posten ikke kommer fram.'
+          : 'En invitasjon er en personlig lenke du sender selv, for eksempel på SMS.'}{' '}
+        Den som åpner den, velger passord eller passkey og er inne, uten å bekrefte e-post. Lenken
+        er bundet til én e-postadresse, virker én gang og går ut etter sju dager. Lenker for nytt
+        passord lages under Medlemmer.
       </p>
 
       <Card className="p-5 sm:p-6">
         <h2 className="text-base font-semibold text-stone-950">
-          {created ? 'Invitasjonen er klar' : 'Inviter noen'}
+          {created
+            ? created.emailed
+              ? 'Invitasjonen er sendt'
+              : 'Invitasjonen er klar'
+            : 'Inviter noen'}
         </h2>
         <div className="mt-4">
           {created ? (
@@ -75,7 +88,7 @@ function Invitations() {
               </Button>
             </div>
           ) : (
-            <InviteForm onCreated={setCreated} />
+            <InviteForm onCreated={setCreated} emailEnabled={emailEnabled} />
           )}
         </div>
       </Card>
@@ -122,7 +135,13 @@ function Invitations() {
 
 type Profile = { personId: string; fullName: string; years: number[] }
 
-function InviteForm({ onCreated }: { onCreated: (link: ShareableLink) => void }) {
+function InviteForm({
+  onCreated,
+  emailEnabled,
+}: {
+  onCreated: (link: ShareableLink) => void
+  emailEnabled: boolean
+}) {
   const { viewer } = Route.useRouteContext()
   const router = useRouter()
   const create = useServerFn(createInvite)
@@ -335,12 +354,16 @@ function InviteForm({ onCreated }: { onCreated: (link: ShareableLink) => void })
         <Button type="submit" form="invite" variant="brand" disabled={busy}>
           <MailPlus className="size-4" aria-hidden />
           {busy
-            ? 'Lager lenke …'
-            : chosen
-              ? `Lag invitasjon for ${chosen.fullName}`
-              : role === 'member'
-                ? 'Lag invitasjon'
-                : `Lag invitasjon som ${roleNames[role]}`}
+            ? emailEnabled
+              ? 'Sender …'
+              : 'Lager lenke …'
+            : `${emailEnabled ? 'Send invitasjon' : 'Lag invitasjon'}${
+                chosen
+                  ? ` for ${chosen.fullName}`
+                  : role === 'member'
+                    ? ''
+                    : ` som ${roleNames[role]}`
+              }`}
         </Button>
       </div>
     </div>
@@ -394,7 +417,9 @@ function InvitationRow({
           </span>
         </p>
         <p className="truncate text-xs text-stone-500">
-          {what} · {i.createdBy ? i.createdBy.fullName : 'Operatør'}, {timeAgo(i.createdAt)}
+          {what} ·{' '}
+          {i.requestedBySelf ? 'Bedt om selv' : i.createdBy ? i.createdBy.fullName : 'Operatør'},{' '}
+          {timeAgo(i.createdAt)}
         </p>
         <p className="text-xs text-stone-500">{when}</p>
       </div>

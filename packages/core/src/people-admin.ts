@@ -19,8 +19,10 @@ import type { ObjectStorage } from './storage.ts'
 
 const {
   accessRequest,
+  asset,
   auditEvent,
   cohort,
+  boardMember,
   cohortRepresentative,
   comment,
   eventParticipation,
@@ -48,9 +50,9 @@ const {
  *   medlemmer. Adressen kontoen logger inn med, kan ikke fjernes.
  * - Sammenslåing flytter alt fra duplikatet til personen som beholdes: erfaring,
  *   kull, e-post, sitater, kilder, innlegg, kommentarer, stemmer, varsler,
- *   forslag, forespørsler, verv som kullrepresentant og deltakelse på arrangementer.
- *   Tomme felt fylles fra duplikatet. Har en av dem
- *   konto, er det den som beholdes; to kontoer slås aldri sammen.
+ *   forslag, forespørsler, verv som kullrepresentant og i styret, og deltakelse
+ *   på arrangementer. Tomme felt fylles fra duplikatet. Har en av dem konto, er
+ *   det den som beholdes; to kontoer slås aldri sammen.
  * - Alt logges (`profile.create`, `profile.admin_cohorts`,
  *   `profile.admin_email_add`, `profile.admin_email_remove`, `person.merge`).
  */
@@ -598,6 +600,23 @@ export async function mergePeople(
       .where(eq(cohortRepresentative.personId, from))
       .returning({ id: cohortRepresentative.id })
 
+    // Styret: sitter begge i styret nå, er det samme person i samme styre, og
+    // målets verv gjelder. Ellers flyttes vervene.
+    await tx
+      .delete(boardMember)
+      .where(
+        and(
+          eq(boardMember.personId, from),
+          isNull(boardMember.endYear),
+          sql`exists (select 1 from ${boardMember} other where other.person_id = ${into} and other.end_year is null)`,
+        ),
+      )
+    const movedBoard = await tx
+      .update(boardMember)
+      .set({ personId: into })
+      .where(eq(boardMember.personId, from))
+      .returning({ id: boardMember.id })
+
     // Arrangementer: deltakelsen til begge, én gang per arrangement. Har den som
     // beholdes ingen rolle eller notat der, tas duplikatets med.
     const movedEvents = await tx.execute(
@@ -618,6 +637,7 @@ export async function mergePeople(
     // Innhold og stemmer. Profiler uten konto har sjelden noe, men ingenting skal gå tapt.
     await tx.update(post).set({ authorPersonId: into }).where(eq(post.authorPersonId, from))
     await tx.update(comment).set({ authorPersonId: into }).where(eq(comment.authorPersonId, from))
+    await tx.update(asset).set({ ownerPersonId: into }).where(eq(asset.ownerPersonId, from))
     await tx.execute(
       sql`insert into ${postVote} (post_id, person_id, created_at) select post_id, ${into}, created_at from ${postVote} where person_id = ${from} on conflict do nothing`,
     )
@@ -781,6 +801,7 @@ export async function mergePeople(
         experience: movedJobs,
         cohorts: movedCohorts.rows.length,
         representatives: movedReps.length,
+        board: movedBoard.length,
         events: movedEvents.rows.filter((r) => r.inserted).length,
         emails: emails.length,
         quotes: quotes.length,

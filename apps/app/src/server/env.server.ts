@@ -1,5 +1,13 @@
 import { fileURLToPath } from 'node:url'
-import { storageConfigFromEnv, storageEnvIssues, type StorageConfig } from '@esaf/core'
+import {
+  emailConfigFromEnv,
+  emailEnvIssues,
+  EMAIL_PROVIDERS,
+  storageConfigFromEnv,
+  storageEnvIssues,
+  type EmailConfig,
+  type StorageConfig,
+} from '@esaf/core'
 import { loadRootEnv } from '@esaf/db'
 import { z } from 'zod'
 
@@ -18,10 +26,17 @@ const schema = z
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
     BETTER_AUTH_SECRET: z.string().min(32, 'må være minst 32 tegn (openssl rand -base64 32)'),
     BETTER_AUTH_URL: z.url(),
-    // E-postleverandør. Uten den er appen bare åpen for invitasjoner: registrering
-    // er slått av, og ingen e-post sendes. `console` skriver bekreftelseslenkene i
-    // terminalen og er bare lov utenfor produksjon. Se README, «Veien inn».
-    EMAIL_PROVIDER: optional(z.enum(['console'])),
+    // E-postleverandør. Uten den er appen bare åpen for invitasjoner som admin
+    // deler selv: registrering og «Glemt passord?» er slått av, og ingen e-post
+    // sendes. `console` skriver e-postene i terminalen og er bare lov utenfor
+    // produksjon; `cloudflare` sender med Cloudflare Email Service. Reglene ligger
+    // i @esaf/core (emailEnvIssues). Se README, «E-post».
+    EMAIL_PROVIDER: optional(z.enum(EMAIL_PROVIDERS)),
+    CLOUDFLARE_ACCOUNT_ID: optional(z.string()),
+    CLOUDFLARE_EMAIL_API_TOKEN: optional(z.string()),
+    // «Navn <adresse>» eller bare adressen. Standard er `ESAF <post@esaf.no>`.
+    EMAIL_FROM: optional(z.string()),
+    EMAIL_REPLY_TO: optional(z.string()),
     // Profilbilder og logoer: S3-kompatibel lagring (Cloudflare R2) når S3_-variablene
     // er satt, ellers filer på disk. Disk er bare lov utenfor produksjon. Reglene
     // ligger i @esaf/core (storageEnvIssues), så importen på kommandolinjen følger dem.
@@ -44,18 +59,13 @@ const schema = z
   })
   .superRefine((env, ctx) => {
     const production = env.NODE_ENV === 'production'
-    for (const issue of storageEnvIssues(env, { production })) {
+    for (const issue of [
+      ...storageEnvIssues(env, { production }),
+      ...emailEnvIssues(env, { production }),
+    ]) {
       ctx.addIssue({ code: 'custom', path: [issue.variable], message: issue.message })
     }
     if (!production) return
-    if (env.EMAIL_PROVIDER === 'console') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['EMAIL_PROVIDER'],
-        message:
-          'console skriver lenkene i loggen og kan ikke brukes i produksjon. La den stå tom (bare invitasjoner)',
-      })
-    }
     if (env.BETTER_AUTH_SECRET === EXAMPLE_SECRET) {
       ctx.addIssue({
         code: 'custom',
@@ -84,7 +94,7 @@ if (!parsed.success) {
 
 export const env = parsed.data
 
-export type { StorageConfig }
+export type { EmailConfig, StorageConfig }
 
 /** Hvor bildene lagres. Valideringen over sørger for S3 i produksjon. */
 export const storageConfig: StorageConfig = storageConfigFromEnv(
@@ -93,8 +103,12 @@ export const storageConfig: StorageConfig = storageConfigFromEnv(
   fileURLToPath(new URL('../../../../.data/uploads', import.meta.url)),
 )
 
+/** E-postleverandøren, eller null. Valideringen over sørger for at den er gyldig. */
+export const emailConfig: EmailConfig | null = emailConfigFromEnv(env)
+
 /**
- * Om appen kan sende e-post. Uten det er registrering slått av, og veien inn er
- * en invitasjon fra en admin (se `invitations.ts` i @esaf/core).
+ * Om appen kan sende e-post. Uten det er registrering og «Glemt passord?» slått
+ * av, og veien inn er en invitasjon fra en admin som deler lenken selv (se
+ * `invitations.ts` i @esaf/core).
  */
-export const emailEnabled = env.EMAIL_PROVIDER !== undefined
+export const emailEnabled = emailConfig !== null

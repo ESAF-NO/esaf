@@ -18,6 +18,7 @@ import { z } from 'zod'
 import { channelKeys } from '#/lib/channels.ts'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
+import { storage } from '#/server/photos.server.ts'
 
 export const fetchPosts = createServerFn({ method: 'GET' })
   .validator(
@@ -35,12 +36,16 @@ export const fetchPost = createServerFn({ method: 'GET' })
   .validator(z.object({ postId: z.uuid() }))
   .handler(({ data }) => run((viewer) => getPost(db, viewer, data.postId)))
 
+/** Vedleggene, lastet opp på forhånd (`/api/vedlegg`). Grensen sjekkes i @esaf/core. */
+const attachmentIds = z.array(z.uuid()).max(50)
+
 // Full validering av innholdet skjer i @esaf/core (postInput). Her sjekkes bare formen.
 const postFields = z.object({
   channel: z.enum(channelKeys),
   title: z.string(),
   body: z.string(),
   url: z.string(),
+  attachmentIds,
 })
 
 export const submitPost = createServerFn({ method: 'POST' })
@@ -55,30 +60,32 @@ export const fetchEditablePost = createServerFn({ method: 'GET' })
 export const editPost = createServerFn({ method: 'POST' })
   .validator(postFields.extend({ postId: z.uuid() }))
   .handler(({ data: { postId, ...fields } }) =>
-    run((viewer) => updatePost(db, viewer, postId, fields)),
+    run((viewer) => updatePost(db, viewer, postId, fields, storage)),
   )
 
 export const removePost = createServerFn({ method: 'POST' })
   .validator(z.object({ postId: z.uuid() }))
-  .handler(({ data }) => run((viewer) => deletePost(db, viewer, data.postId)))
+  .handler(({ data }) => run((viewer) => deletePost(db, viewer, data.postId, storage)))
 
 export const pinPost = createServerFn({ method: 'POST' })
   .validator(z.object({ postId: z.uuid(), pinned: z.boolean() }))
   .handler(({ data }) => run((viewer) => setPostPinned(db, viewer, data.postId, data.pinned)))
 
 export const submitComment = createServerFn({ method: 'POST' })
-  .validator(z.object({ postId: z.uuid(), body: z.string() }))
-  .handler(({ data }) => run((viewer) => addComment(db, viewer, data.postId, { body: data.body })))
+  .validator(z.object({ postId: z.uuid(), body: z.string(), attachmentIds }))
+  .handler(({ data: { postId, ...input } }) =>
+    run((viewer) => addComment(db, viewer, postId, input)),
+  )
 
 export const editComment = createServerFn({ method: 'POST' })
-  .validator(z.object({ commentId: z.uuid(), body: z.string() }))
-  .handler(({ data }) =>
-    run((viewer) => updateComment(db, viewer, data.commentId, { body: data.body })),
+  .validator(z.object({ commentId: z.uuid(), body: z.string(), attachmentIds }))
+  .handler(({ data: { commentId, ...input } }) =>
+    run((viewer) => updateComment(db, viewer, commentId, input, storage)),
   )
 
 export const removeComment = createServerFn({ method: 'POST' })
   .validator(z.object({ commentId: z.uuid() }))
-  .handler(({ data }) => run((viewer) => deleteComment(db, viewer, data.commentId)))
+  .handler(({ data }) => run((viewer) => deleteComment(db, viewer, data.commentId, storage)))
 
 export const vote = createServerFn({ method: 'POST' })
   .validator(z.object({ postId: z.uuid() }))

@@ -35,13 +35,13 @@ export const IMAGE_FILE_NAME = /^([A-Za-z0-9_-]{22})-(\d{1,4})\.webp$/
 /** 128 tilfeldige bit: kan ikke gjettes, og blir aldri gjenbrukt. */
 export const newImageKey = () => randomBytes(16).toString('base64url')
 
-type Format = 'jpeg' | 'png' | 'webp'
+export type ImageFormat = 'jpeg' | 'png' | 'webp'
 
 /**
  * Filtypen ut fra de første bytene i fila. Avgjør hva som slippes videre til
  * bildebiblioteket, så SVG, PDF og andre formater aldri blir tolket.
  */
-function sniffFormat(bytes: Uint8Array): Format | null {
+export function sniffImageFormat(bytes: Uint8Array): ImageFormat | null {
   const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to))
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg'
   if (ascii(0, 8) === '\x89PNG\r\n\x1a\n') return 'png'
@@ -64,11 +64,17 @@ export const readOptions = {
 /**
  * Sjekker en opplastet fil og gir bredden og høyden slik bildet står. Kaster
  * `DomainError` med en melding brukeren kan lese hvis fila ikke kan brukes.
+ * `maxBytes` er grensen for profilbilder og logoer, med mindre en annen gis.
  */
-export async function inspectUpload(file: Uint8Array): Promise<{ width: number; height: number }> {
+export async function inspectUpload(
+  file: Uint8Array,
+  maxBytes = IMAGE_MAX_BYTES,
+): Promise<{ width: number; height: number }> {
   if (file.byteLength === 0) throw new DomainError('Fila er tom.')
-  if (file.byteLength > IMAGE_MAX_BYTES) throw new DomainError('Bildet er for stort. Maks 10 MB.')
-  const format = sniffFormat(file)
+  if (file.byteLength > maxBytes) {
+    throw new DomainError(`Bildet er for stort. Maks ${Math.round(maxBytes / 1024 / 1024)} MB.`)
+  }
+  const format = sniffImageFormat(file)
   if (!format) throw new DomainError('Bildet må være JPEG, PNG eller WebP.')
 
   let metadata: Metadata
@@ -84,17 +90,34 @@ export async function inspectUpload(file: Uint8Array): Promise<{ width: number; 
   return { width, height }
 }
 
+let queue: Promise<unknown> = Promise.resolve()
+
 /**
- * Lagrer alle filene til ett bilde. Feiler én, ryddes det opp først når alle er
- * ferdige; ellers kunne en fil som ennå var under skriving, blitt liggende igjen.
+ * Kjører bildebehandlingen ett bilde om gangen i prosessen. Et stort bilde kan
+ * bruke et par hundre MB mens det dekodes (målt: rundt 230 MB for 100 megapiksler
+ * i PNG med rotasjon, 110 MB for 48 megapiksler i JPEG); flere samtidig kunne
+ * tømt minnet på en liten server. libvips bruker uansett alle kjernene på hvert
+ * bilde, så det går ikke tregere totalt.
+ */
+export function oneImageAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const run = queue.then(work, work)
+  // Køen går videre også når et bilde feiler.
+  queue = run.catch(() => {})
+  return run
+}
+
+/**
+ * Lagrer alle filene til ett bilde (eller et dokument). Feiler én, ryddes det
+ * opp først når alle er ferdige; ellers kunne en fil som ennå var under
+ * skriving, blitt liggende igjen. Uten `contentType` er fila WebP.
  */
 export async function putImageFiles(
   storage: ObjectStorage,
-  files: { key: string; body: Uint8Array }[],
+  files: { key: string; body: Uint8Array; contentType?: string }[],
   label: string,
 ) {
   const saved = await Promise.allSettled(
-    files.map((f) => storage.put(f.key, f.body, IMAGE_CONTENT_TYPE)),
+    files.map((f) => storage.put(f.key, f.body, f.contentType ?? IMAGE_CONTENT_TYPE)),
   )
   const failed = saved.find((r) => r.status === 'rejected')
   if (failed) {

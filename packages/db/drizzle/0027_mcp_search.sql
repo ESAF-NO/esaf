@@ -12,7 +12,28 @@ CREATE TABLE "api_token" (
 	CONSTRAINT "api_token_tokenHash_unique" UNIQUE("token_hash")
 );
 --> statement-breakpoint
+CREATE TABLE "person_ai_topics" (
+	"person_id" uuid PRIMARY KEY NOT NULL,
+	"topics" text[] DEFAULT '{}'::text[] NOT NULL,
+	"source_hash" text NOT NULL,
+	"model" text NOT NULL,
+	"generated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "person_search_index" (
+	"person_id" uuid PRIMARY KEY NOT NULL,
+	"content_hash" text NOT NULL,
+	"model" text NOT NULL,
+	"chunks" jsonb NOT NULL,
+	"vectors" "bytea" NOT NULL,
+	"dims" integer NOT NULL,
+	"indexed_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "audit_event" ADD COLUMN "api_token_id" uuid DEFAULT nullif(current_setting('esaf.api_token_id', true), '')::uuid;--> statement-breakpoint
+ALTER TABLE "person" ADD COLUMN "search_topics" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
 ALTER TABLE "api_token" ADD CONSTRAINT "api_token_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "person_ai_topics" ADD CONSTRAINT "person_ai_topics_person_id_person_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."person"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "person_search_index" ADD CONSTRAINT "person_search_index_person_id_person_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."person"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "api_token_user_id_index" ON "api_token" USING btree ("user_id");--> statement-breakpoint
 ALTER TABLE "audit_event" ADD CONSTRAINT "audit_event_api_token_id_api_token_id_fk" FOREIGN KEY ("api_token_id") REFERENCES "public"."api_token"("id") ON DELETE set null ON UPDATE no action;

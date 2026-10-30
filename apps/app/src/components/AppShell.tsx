@@ -5,6 +5,7 @@ import {
   GraduationCap,
   House,
   KeyRound,
+  Landmark,
   LogOut,
   Menu,
   PenSquare,
@@ -119,6 +120,13 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             icon={GraduationCap}
             label="Kull"
             active={path === '/kull' || path.startsWith('/kull/')}
+            onNavigate={onNavigate}
+          />
+          <NavItem
+            to="/styret"
+            icon={Landmark}
+            label="Styret"
+            active={path === '/styret'}
             onNavigate={onNavigate}
           />
           <NavItem

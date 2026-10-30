@@ -1,6 +1,7 @@
 import {
   acceptInvitationAsUser,
   createInvitation,
+  EmailError,
   createPasswordResetLink,
   describeInvitation,
   describeInviteTarget,
@@ -17,7 +18,8 @@ import { z } from 'zod'
 import { rethrowForClient, withViewer as run } from '#/server/access.server.ts'
 import { auth } from '#/server/auth.server.ts'
 import { db } from '#/server/db.server.ts'
-import { emailEnabled, env } from '#/server/env.server.ts'
+import { linkUrl, logEmailFailure, mailer, sendLinkEmail } from '#/server/email.server.ts'
+import { emailEnabled } from '#/server/env.server.ts'
 import { getRequestViewer } from '#/server/viewer.server.ts'
 
 /**
@@ -30,22 +32,51 @@ import { getRequestViewer } from '#/server/viewer.server.ts'
 
 const tokenInput = z.string().min(1).max(100)
 
-/** Lenken slik den deles: appens egen adresse og tokenet, som bare vises nå. */
-function shareable(link: CreatedLink) {
-  const path = link.kind === 'invite' ? '/invitasjon/' : '/nytt-passord/'
-  return {
-    url: new URL(path + link.token, env.BETTER_AUTH_URL).href,
+export type ShareableLink = {
+  /** Appens egen adresse og tokenet, som bare vises nå. */
+  url: string
+  email: string
+  role: CreatedLink['role']
+  expiresAt: Date
+  /** Lenken er sendt på e-post til adressen. */
+  emailed: boolean
+  /** Hvorfor e-posten ikke ble sendt, når appen har e-post. Lenken må da deles på annen måte. */
+  emailError?: string
+}
+
+/**
+ * Lenken som nettopp er laget, sendt på e-post når appen har det. Sendingen skjer
+ * etter at lenken er lagret, og en feil stopper ikke noe: admin får lenken
+ * uansett, og kan dele den selv.
+ */
+async function deliver(link: CreatedLink): Promise<ShareableLink> {
+  const shared = {
+    url: linkUrl(link),
     email: link.email,
     role: link.role,
     expiresAt: link.expiresAt,
   }
+  if (!mailer) return { ...shared, emailed: false }
+  try {
+    await sendLinkEmail(link)
+    return { ...shared, emailed: true }
+  } catch (error) {
+    logEmailFailure(error, link.kind === 'invite' ? 'invitasjon' : 'lenke for nytt passord')
+    return {
+      ...shared,
+      emailed: false,
+      emailError: error instanceof EmailError ? error.message : 'Noe gikk galt under sendingen.',
+    }
+  }
 }
 
-export type ShareableLink = ReturnType<typeof shareable>
-
-/** Om folk kan registrere seg selv (krever e-post), eller bare kommer inn med invitasjon. */
+/**
+ * Hva appen kan uten admin: registrering og «Glemt passord?» krever e-post.
+ * Uten e-post kommer folk inn med invitasjon, og lenker deles av admin.
+ */
 export const fetchAuthOptions = createServerFn({ method: 'GET' }).handler(() => ({
   selfSignUp: emailEnabled,
+  emailEnabled,
 }))
 
 /** Det siden for en lenke viser. Tokenet er hemmeligheten; ingen innlogging kreves. */
@@ -74,12 +105,12 @@ export const createInvite = createServerFn({ method: 'POST' })
       personId: z.uuid().nullable(),
     }),
   )
-  .handler(({ data }) => run(async (viewer) => shareable(await createInvitation(db, viewer, data))))
+  .handler(({ data }) => run(async (viewer) => deliver(await createInvitation(db, viewer, data))))
 
 export const createPasswordLink = createServerFn({ method: 'POST' })
   .validator(z.object({ personId: z.uuid(), reason: z.string().max(500) }))
   .handler(({ data }) =>
-    run(async (viewer) => shareable(await createPasswordResetLink(db, viewer, data))),
+    run(async (viewer) => deliver(await createPasswordResetLink(db, viewer, data))),
   )
 
 export const revokeLink = createServerFn({ method: 'POST' })

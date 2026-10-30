@@ -34,6 +34,8 @@ export const quickSearch = createServerFn({ method: 'GET' })
             jobTitle: null,
             currentCompany: null,
             representativeOf: [] as number[],
+            // Treff på tema har ikke vervene med; merket vises bare ved treff på navn.
+            boardRole: null,
             reason: h.reason,
           })),
       ].slice(0, 6)

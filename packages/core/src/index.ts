@@ -553,3 +553,43 @@ export {
 export { createTarGz, readTarGz, type TarEntry } from './tar.ts'
 export { putProcessedPhoto } from './photos.ts'
 export { putProcessedLogo } from './logos.ts'
+export {
+  askPeople,
+  ASK_PER_HOUR,
+  describeFilters,
+  listPeopleForTopics,
+  planTerms,
+  refreshAiTopics,
+  reindexPeople,
+  searchPeopleByTopic,
+  searchPeopleInterpreted,
+  searchTopicsInput,
+  expandQuery,
+  setSearchTopics,
+  type AiTopicsResult,
+  type AskHit,
+  type AskResult,
+  type Embedder,
+  type PeopleSearchHit,
+  type ReindexResult,
+  type SearchChunk,
+} from './people-search.ts'
+export {
+  createClaudeSearchAi,
+  interpretQuery,
+  resetSearchAiState,
+  SEARCH_AI_MODEL,
+  SearchAiError,
+  tidyPlan,
+  type QueryPlan,
+  type SearchAi,
+} from './search-ai.ts'
+export { createLocalEmbedder, defaultSearchModelDir, SEARCH_MODEL } from './search-embedder.ts'
+export { SEARCH_TAXONOMY } from './search-taxonomy.ts'
+export {
+  getUniverse,
+  type Universe,
+  type UniverseCompany,
+  type UniverseLink,
+  type UniversePerson,
+} from './universe.ts'

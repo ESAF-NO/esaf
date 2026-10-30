@@ -4,7 +4,8 @@
 
 FROM node:24-slim AS build
 WORKDIR /repo
-ENV TURBO_TELEMETRY_DISABLED=1
+# Personsøket kjører på CPU; CUDA-filene til onnxruntime trengs ikke.
+ENV TURBO_TELEMETRY_DISABLED=1 ONNXRUNTIME_NODE_INSTALL=skip SEARCH_MODEL_DIR=/repo/.data/models
 RUN corepack enable
 # Pakkene lastes ned i et eget lag som bare bygges på nytt når låsefila endres.
 # Vanlige deployer hopper derfor over nedlastingen.
@@ -14,9 +15,11 @@ COPY . .
 # Bare appen og pakkene den bruker, ikke nettsiden (Astro, Wrangler).
 RUN pnpm install --offline --frozen-lockfile --filter "@esaf/app..." --filter "@esaf/core..."
 RUN pnpm --filter @esaf/app build
+# Embedding-modellen til personsøket legges i bildet, så serveren aldri laster ned noe.
+RUN pnpm search:download-model
 
 FROM node:24-slim
-ENV NODE_ENV=production PORT=3000
+ENV NODE_ENV=production PORT=3000 SEARCH_MODEL_DIR=/repo/.data/models
 WORKDIR /repo
 # Hele arbeidsområdet følger med, slik at migrering og admin-verktøy
 # (`pnpm admin:grant`, `pnpm profiles:import`) kan kjøres i containeren.

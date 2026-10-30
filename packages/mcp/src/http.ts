@@ -2,7 +2,9 @@ import {
   authenticateApiToken,
   can,
   hashApiToken,
+  type Embedder,
   type ObjectStorage,
+  type SearchAi,
   type Viewer,
 } from '@esaf/core'
 import type { Db } from '@esaf/db'
@@ -31,6 +33,8 @@ export type AdminMcpHttpOptions = {
   /** `BETTER_AUTH_URL`: appens adresse, for lenker og opprinnelsessjekken. */
   appUrl: string
   fetchImage?: ImageFetcher
+  embedder?: Embedder | null
+  ai?: SearchAi | null
   /** IP-adressen bak forespørselen, til grensen for avviste forsøk. */
   clientAddress?: (request: Request) => string | null
   onError?: (error: Error) => void
@@ -95,6 +99,8 @@ export function createAdminMcpHttpHandler(options: AdminMcpHttpOptions) {
         viewer,
         appUrl: options.appUrl,
         fetchImage: options.fetchImage,
+        embedder: options.embedder,
+        ai: options.ai,
       })
     },
     { maxRequestBodySize: MAX_BODY_BYTES, onerror: options.onError },

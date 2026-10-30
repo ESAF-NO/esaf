@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -208,6 +209,16 @@ export const person = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     linkedinUrl: text(),
+    /**
+     * Søkeord til personsøket, satt av admins (ofte via MCP, der Claude leser
+     * profilen og selskapene og skriver emner på norsk og engelsk, f.eks.
+     * «romfart, space, satellitter» for noen som jobber i NASA). Vises ikke på
+     * profilen, bare som grunn til et treff i søket. Se `people-search.ts`.
+     */
+    searchTopics: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /**
      * Profilbildet: en tilfeldig nøkkel til bildefilene i lagringen (se
      * `photos.ts` i @esaf/core). Hvert nytt bilde får ny nøkkel, så adressene
@@ -936,6 +947,50 @@ export const apiToken = pgTable(
   },
   (t) => [index().on(t.userId)],
 )
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' })
+
+/**
+ * Indeksen for personsøket: teksten om personen delt i biter (stillinger med
+ * selskapet, bio, emner) og en vektor per bit fra embedding-modellen. Bare felt
+ * medlemmer kan se, aldri kontaktinfo. `contentHash` sier om bitene er
+ * utdaterte; indeksen bygges på nytt i bakgrunnen når noe endres. Se
+ * `people-search.ts` i @esaf/core.
+ */
+export const personSearchIndex = pgTable('person_search_index', {
+  personId: uuid()
+    .primaryKey()
+    .references(() => person.id, { onDelete: 'cascade' }),
+  /** SHA-256 av bitene og modellen. */
+  contentHash: text().notNull(),
+  /** Modellen vektorene kom fra; ny modell betyr ny indeks. */
+  model: text().notNull(),
+  /** Bitene i samme rekkefølge som vektorene. */
+  chunks: jsonb().$type<{ kind: string; text: string }[]>().notNull(),
+  /** Vektorene som float32 (little-endian), bit etter bit. */
+  vectors: bytea().notNull(),
+  dims: integer().notNull(),
+  indexedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+})
+
+/**
+ * Søkeord skrevet av Claude fra det som står på profilen (se `search-ai.ts` i
+ * @esaf/core). Holdes adskilt fra `person.search_topics`, som admins setter: har
+ * en person søkeord fra en admin, brukes de i stedet for disse.
+ */
+export const personAiTopics = pgTable('person_ai_topics', {
+  personId: uuid()
+    .primaryKey()
+    .references(() => person.id, { onDelete: 'cascade' }),
+  topics: text()
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
+  /** SHA-256 av teksten søkeordene ble skrevet fra; ny tekst betyr nye søkeord. */
+  sourceHash: text().notNull(),
+  model: text().notNull(),
+  generatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+})
 
 /** Hva i et datasett en rad i `import_record` gjelder. */
 export const importRecordKind = pgEnum('import_record_kind', [

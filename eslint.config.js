@@ -14,6 +14,7 @@ export default tseslint.config(
       '**/.nitro/**',
       '**/.tanstack/**',
       '**/routeTree.gen.ts',
+      '**/*.generated.ts',
       // Lokale data og verktøy (gitignorert), som `.data/uploads`.
       '.data/**',
     ],

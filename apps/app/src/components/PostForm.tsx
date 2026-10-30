@@ -1,5 +1,7 @@
+import type { AssetView } from '@esaf/core'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { channelOrder, channels, type ChannelKey } from '#/lib/channels.ts'
+import { AttachmentEditor, useAttachments } from './Attachments.tsx'
 import { MarkdownEditor } from './MarkdownEditor.tsx'
 import { Button, Card, cx, ErrorText, Field, Input } from './ui.tsx'
 
@@ -11,6 +13,7 @@ const linkChannels: ChannelKey[] = ['lansering', 'jobb', 'arrangement']
 /** Skjemaet for nye innlegg og for å redigere et innlegg. Valideringen skjer i @esaf/core. */
 export function PostForm({
   initial,
+  initialAttachments = [],
   submitLabel,
   savingLabel,
   onSubmit,
@@ -18,10 +21,12 @@ export function PostForm({
   autoFocus = false,
 }: {
   initial: PostFormValues
+  /** Vedleggene innlegget har fra før, når det redigeres. */
+  initialAttachments?: AssetView[]
   submitLabel: string
   savingLabel: string
   /** Kaster en feil med en melding til brukeren hvis noe er galt. */
-  onSubmit: (values: PostFormValues) => Promise<void>
+  onSubmit: (values: PostFormValues & { attachmentIds: string[] }) => Promise<void>
   /** Lenken tilbake, ved siden av lagreknappen. */
   cancel: ReactNode
   autoFocus?: boolean
@@ -29,6 +34,7 @@ export function PostForm({
   const [values, setValues] = useState(initial)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const attachments = useAttachments({ til: 'innlegg' }, initialAttachments)
   const set = (patch: Partial<PostFormValues>) => setValues((v) => ({ ...v, ...patch }))
   const c = channels[values.channel]
   // Har innlegget allerede en lenke, vises feltet uansett kanal, så den kan endres eller fjernes.
@@ -39,7 +45,11 @@ export function PostForm({
     setSaving(true)
     setError(null)
     try {
-      await onSubmit({ ...values, url: wantsUrl ? values.url : '' })
+      await onSubmit({
+        ...values,
+        url: wantsUrl ? values.url : '',
+        attachmentIds: attachments.ids,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kunne ikke lagre innlegget.')
       setSaving(false)
@@ -47,7 +57,8 @@ export function PostForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6">
+    // Filer kan slippes og bilder limes inn hvor som helst i skjemaet.
+    <form onSubmit={submit} className="space-y-6" {...attachments.drop.props}>
       <fieldset>
         <legend className="mb-2 text-sm font-medium text-stone-800">Hva slags innlegg?</legend>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -88,7 +99,12 @@ export function PostForm({
         </div>
       </fieldset>
 
-      <Card className="space-y-5 p-5">
+      <Card
+        className={cx(
+          'space-y-5 p-5 transition',
+          attachments.drop.dragging && 'ring-2 ring-brand-400',
+        )}
+      >
         <Field label="Tittel">
           <Input
             name="title"
@@ -111,6 +127,7 @@ export function PostForm({
           placeholder="Gi nok kontekst til at folk kan hjelpe. Hold det kort og konkret."
           className="min-h-44"
         />
+        <AttachmentEditor attachments={attachments} />
         {wantsUrl && (
           <Field
             label="Lenke"
@@ -132,8 +149,8 @@ export function PostForm({
         <p className="text-xs text-stone-500">Synlig for alle godkjente ESAF-medlemmer.</p>
         <div className="flex gap-2">
           {cancel}
-          <Button type="submit" variant="brand" disabled={saving}>
-            {saving ? savingLabel : submitLabel}
+          <Button type="submit" variant="brand" disabled={saving || attachments.busy}>
+            {saving ? savingLabel : attachments.busy ? 'Laster opp …' : submitLabel}
           </Button>
         </div>
       </div>

@@ -11,6 +11,7 @@ import {
   IMAGE_MAX_BYTES,
   inspectUpload,
   newImageKey,
+  oneImageAtATime,
   putImageFiles,
   readOptions,
   unreadable,
@@ -93,18 +94,20 @@ export async function processCompanyLogo(file: Uint8Array): Promise<ProcessedLog
   // Skaleres aldri opp: den lengste siden blir sida i kvadratet, eller mindre.
   const side = (size: LogoSize) => Math.min(longest, LOGO_SIZES[size])
 
-  try {
-    // Som for profilbilder skriver sharp ingen metadata, og fargene gjøres om til sRGB.
-    const large = await sharp(file, readOptions)
-      .timeout({ seconds: 20 })
-      .resize(side('large'), side('large'), { fit: 'contain', background: transparent })
-      .webp(webp)
-      .toBuffer()
-    const small = await sharp(large).resize(side('small'), side('small')).webp(webp).toBuffer()
-    return { small, large }
-  } catch {
-    throw unreadable()
-  }
+  return oneImageAtATime(async () => {
+    try {
+      // Som for profilbilder skriver sharp ingen metadata, og fargene gjøres om til sRGB.
+      const large = await sharp(file, readOptions)
+        .timeout({ seconds: 20 })
+        .resize(side('large'), side('large'), { fit: 'contain', background: transparent })
+        .webp(webp)
+        .toBuffer()
+      const small = await sharp(large).resize(side('small'), side('small')).webp(webp).toBuffer()
+      return { small, large }
+    } catch {
+      throw unreadable()
+    }
+  })
 }
 
 /**

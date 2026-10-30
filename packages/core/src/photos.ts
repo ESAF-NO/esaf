@@ -10,6 +10,7 @@ import {
   IMAGE_MAX_BYTES,
   inspectUpload,
   newImageKey,
+  oneImageAtATime,
   putImageFiles,
   readOptions,
   unreadable,
@@ -113,27 +114,29 @@ export async function processProfilePhoto(file: Uint8Array): Promise<ProcessedPh
     )
   }
 
-  try {
-    // Uten `keepMetadata()` og lignende skriver sharp verken EXIF (med GPS), XMP,
-    // IPTC eller fargeprofil, og fargene gjøres om til sRGB. Testene sjekker det.
-    const large = await sharp(file, readOptions)
-      .timeout({ seconds: 20 })
-      // `autoOrient` i `readOptions` roterer før utsnittet, så det gjelder bildet
-      // slik det står, akkurat som målene fra `inspectUpload`.
-      .extract(crop)
-      .resize(Math.min(side, PHOTO_SIZES.large), Math.min(side, PHOTO_SIZES.large))
-      // Gjennomsiktig bakgrunn blir hvit, så alle avatarer er hele sirkler.
-      .flatten({ background: '#ffffff' })
-      .webp({ quality: 82 })
-      .toBuffer()
-    const small = await sharp(large)
-      .resize(Math.min(side, PHOTO_SIZES.small), Math.min(side, PHOTO_SIZES.small))
-      .webp({ quality: 82 })
-      .toBuffer()
-    return { small, large }
-  } catch {
-    throw unreadable()
-  }
+  return oneImageAtATime(async () => {
+    try {
+      // Uten `keepMetadata()` og lignende skriver sharp verken EXIF (med GPS), XMP,
+      // IPTC eller fargeprofil, og fargene gjøres om til sRGB. Testene sjekker det.
+      const large = await sharp(file, readOptions)
+        .timeout({ seconds: 20 })
+        // `autoOrient` i `readOptions` roterer før utsnittet, så det gjelder bildet
+        // slik det står, akkurat som målene fra `inspectUpload`.
+        .extract(crop)
+        .resize(Math.min(side, PHOTO_SIZES.large), Math.min(side, PHOTO_SIZES.large))
+        // Gjennomsiktig bakgrunn blir hvit, så alle avatarer er hele sirkler.
+        .flatten({ background: '#ffffff' })
+        .webp({ quality: 82 })
+        .toBuffer()
+      const small = await sharp(large)
+        .resize(Math.min(side, PHOTO_SIZES.small), Math.min(side, PHOTO_SIZES.small))
+        .webp({ quality: 82 })
+        .toBuffer()
+      return { small, large }
+    } catch {
+      throw unreadable()
+    }
+  })
 }
 
 /**

@@ -77,6 +77,8 @@ const sentences = (text: string) =>
 
 const firstSentence = (text: string | null) => (text ? (sentences(text)[0] ?? null) : null)
 
+const YEAR_RANGE = /^\(?(?:19|20)\d{2}\s*-\s*(?:19|20)\d{2}\)?$/
+
 /**
  * Fjerner e-postadresser og telefonnumre fra fritekst (noen bioer fra import har
  * dem), så søket aldri viser kontaktinfo personen har skjult på profilen.
@@ -85,7 +87,8 @@ export function redact(text: string) {
   return text
     .replace(/[^\s<>(),;:"'[\]]+@[^\s<>(),;:"'[\]]+\.[a-z]{2,}/gi, '[e-post]')
     .replace(/(?:\+?\d[\d ().-]{6,}\d)/g, (m) =>
-      m.replace(/\D/g, '').length >= 8 ? '[telefon]' : m,
+      // Årstall fra–til («2015-2019», «(2015 - 2019)») har også åtte sifre, men er ikke et nummer.
+      m.replace(/\D/g, '').length >= 8 && !YEAR_RANGE.test(m) ? '[telefon]' : m,
     )
 }
 
@@ -218,28 +221,36 @@ export type ReindexResult = { indexed: number; removed: number; unchanged: numbe
  * Oppdaterer indeksen: personer der bitene eller modellen er endret, får nye
  * vektorer. Personer uten tekst å søke i, tas ut. `limit` begrenser hvor mange
  * som embeddes per runde, så en stor første indeksering ikke blokkerer lenge.
+ * `personIds` gjør det bare for dem (f.eks. de som nettopp fikk nye søkeord).
  * Ingen rettighetssjekk: kalles av serveren selv (bakgrunnsjobb og CLI).
  */
 export async function reindexPeople(
   db: Db,
   embedder: Embedder,
-  { limit = 200, batchSize = 32 }: { limit?: number; batchSize?: number } = {},
+  {
+    limit = 200,
+    batchSize = 32,
+    personIds,
+  }: { limit?: number; batchSize?: number; personIds?: string[] } = {},
 ): Promise<ReindexResult> {
+  if (personIds && !personIds.length) return { indexed: 0, removed: 0, unchanged: 0, total: 0 }
   const [docs, existing] = await Promise.all([
-    buildSearchDocs(db),
+    buildSearchDocs(db, personIds),
     db
       .select({
         personId: personSearchIndex.personId,
         contentHash: personSearchIndex.contentHash,
       })
-      .from(personSearchIndex),
+      .from(personSearchIndex)
+      .where(personIds ? inArray(personSearchIndex.personId, personIds) : undefined),
   ])
   const known = new Map(existing.map((r) => [r.personId, r.contentHash]))
   const stale = docs.filter(
     (d) => d.chunks.length > 0 && known.get(d.personId) !== hashDoc(d, embedder.model),
   )
   const empty = docs.filter((d) => d.chunks.length === 0 && known.has(d.personId))
-  const gone = existing.filter((r) => !docs.some((d) => d.personId === r.personId))
+  const present = new Set(docs.map((d) => d.personId))
+  const gone = existing.filter((r) => !present.has(r.personId))
   const removeIds = [...empty.map((d) => d.personId), ...gone.map((r) => r.personId)]
   if (removeIds.length) {
     await db.delete(personSearchIndex).where(inArray(personSearchIndex.personId, removeIds))
@@ -464,6 +475,8 @@ export async function searchPeopleByTopic(
   const terms = expandQuery(q)
   const everyone = can(viewer, 'profiles.edit')
 
+  // Bygges på nytt for hvert søk (rundt 30 ms for 700 personer), så treffene
+  // alltid følger hvem som er aktive og det som står på profilene nå.
   const docs = (await buildSearchDocs(db)).filter((d) => everyone || d.status === 'active')
   const visible = new Map(docs.map((d) => [d.personId, d]))
 

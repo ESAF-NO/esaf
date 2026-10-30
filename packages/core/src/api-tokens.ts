@@ -6,7 +6,7 @@ import { assertCan, assertMember, type Viewer } from './access.ts'
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { loadViewer, type Tx } from './members.ts'
 
-const { apiToken, auditEvent } = schema
+const { apiToken, auditEvent, user } = schema
 
 /**
  * MCP-nøkler: personlige nøkler som kobler en MCP-klient (f.eks. Claude) til
@@ -111,7 +111,10 @@ export async function createApiToken(
   const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
 
   const row = await db.transaction(async (tx) => {
-    // Lås kontoens nøkler, så to samtidige forespørsler ikke går forbi grensen.
+    // Lås kontoen, så to samtidige forespørsler ikke går forbi grensen. Å låse
+    // nøklene alene holder ikke: en ny nøkkel fra den andre forespørselen er
+    // ikke låst, og telles ikke.
+    await tx.select({ id: user.id }).from(user).where(eq(user.id, viewer.userId)).for('update')
     const active = await tx
       .select({ id: apiToken.id })
       .from(apiToken)
@@ -122,7 +125,6 @@ export async function createApiToken(
           gt(apiToken.expiresAt, new Date()),
         ),
       )
-      .for('update')
     if (active.length >= API_TOKEN_MAX_ACTIVE) {
       throw new DomainError(
         `Du har allerede ${API_TOKEN_MAX_ACTIVE} gyldige nøkler. Trekk tilbake en du ikke bruker.`,

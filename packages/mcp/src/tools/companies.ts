@@ -13,6 +13,7 @@ import {
   DomainError,
   getCompany,
   getEditableCompany,
+  companySlugById,
   listAdminCompanies,
   mergeCompanies,
   NotFoundError,
@@ -97,14 +98,9 @@ const articleFields = {
   mentionsEs: z.boolean().default(false).describe('The article mentions Entreprenørskolen.'),
 }
 
-async function companyById(ctx: ToolContext, companyId: string) {
-  const found = (await listAdminCompanies(ctx.db, ctx.viewer)).find((c) => c.id === companyId)
-  if (!found) throw new NotFoundError('Fant ikke selskapet.')
-  return found
-}
-
 async function companyDetails(ctx: ToolContext, ref: { companyId?: string; slug?: string }) {
-  let slug = ref.slug ?? (ref.companyId ? (await companyById(ctx, ref.companyId)).slug : null)
+  let slug =
+    ref.slug ?? (ref.companyId ? await companySlugById(ctx.db, ctx.viewer, ref.companyId) : null)
   if (!slug) throw new DomainError('Oppgi companyId eller slug.')
   let details = await getCompany(ctx.db, ctx.viewer, slug)
   if ('movedTo' in details) {
@@ -314,7 +310,7 @@ export function registerCompanyTools(server: McpServer, ctx: ToolContext) {
     effect: 'write',
     idempotent: true,
     run: async ({ companyId, sources, ...changes }, ctx) => {
-      const { slug } = await companyById(ctx, companyId)
+      const slug = await companySlugById(ctx.db, ctx.viewer, companyId)
       const current = await getEditableCompany(ctx.db, ctx.viewer, slug)
       if ('movedTo' in current) throw new NotFoundError('Fant ikke selskapet.')
       const set = Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined))

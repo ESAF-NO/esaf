@@ -3,7 +3,7 @@ import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import { assertCan, type Viewer } from './access.ts'
 import { deleteAssetsOf, purgeAssets } from './assets.ts'
 import { companyInput, companySlug, lockCompany, pgCode, type CompanyInput } from './companies.ts'
-import { DomainError } from './errors.ts'
+import { DomainError, NotFoundError } from './errors.ts'
 import { deleteLogoFiles, logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { deleteFieldSources, recordFieldEdits } from './sources.ts'
 import type { ObjectStorage } from './storage.ts'
@@ -51,6 +51,17 @@ export type AdminCompany = {
   /** Sist noen redigerte selskapsinfoen. Null: bare opprettet fra et navn. */
   editedAt: Date | null
   createdAt: Date
+}
+
+/** Sluggen til et selskap, fra id-en (til adresser og oppslag). Bare admins. */
+export async function companySlugById(db: Db, viewer: Viewer, companyId: string) {
+  assertCan(viewer, 'profiles.edit')
+  const [row] = await db
+    .select({ slug: company.slug })
+    .from(company)
+    .where(eq(company.id, companyId))
+  if (!row) throw new NotFoundError('Fant ikke selskapet.')
+  return row.slug
 }
 
 export async function listAdminCompanies(db: Db, viewer: Viewer): Promise<AdminCompany[]> {

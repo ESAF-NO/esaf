@@ -919,7 +919,7 @@ export async function deleteProfile(
  * `profile.admin_contact_fill`.
  */
 export async function fillUnclaimedContact(
-  db: Db,
+  db: Db | Tx,
   viewer: Viewer,
   personId: string,
   input: { contactEmail?: string | null; phone?: string | null },

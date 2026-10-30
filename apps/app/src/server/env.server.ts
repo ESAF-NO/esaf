@@ -49,7 +49,8 @@ const schema = z
     // Personsøket: mappen med embedding-modellen. I produksjon lastes den ned når
     // bildet bygges (se Dockerfile); lokalt lastes den ned første gang til .data/models.
     SEARCH_MODEL_DIR: optional(z.string()),
-    // Modellen, f.eks. Xenova/multilingual-e5-small på en liten server. Standard Xenova/bge-m3.
+    // Modellen. Uten den: Xenova/bge-m3, eller Xenova/multilingual-e5-small på en server
+    // med under 3 GB minne. Begge ligger i bildet; en annen modell må også lastes ned der.
     SEARCH_MODEL: optional(z.string()),
   })
   .superRefine((env, ctx) => {

@@ -1,7 +1,7 @@
 /**
  * Personsøket fra kommandolinjen. Se README, «Personsøk».
  *
- *   pnpm search:download-model     # laster ned modellen (gjøres når Docker-bildet bygges)
+ *   pnpm search:download-model     # laster ned modellene (gjøres når Docker-bildet bygges)
  *   pnpm search:reindex            # bygger indeksen for alle som er endret
  *   pnpm search:reindex --alle     # også de som ikke er endret (ny modell e.l.)
  *   pnpm search:query "space"      # prøv et søk som admin (bare lokalt)
@@ -12,6 +12,8 @@ import {
   createLocalEmbedder,
   defaultSearchModelDir,
   reindexPeople,
+  SEARCH_MODEL,
+  SEARCH_MODEL_SMALL,
   searchPeopleByTopic,
   type Viewer,
 } from '../src/index.ts'
@@ -25,8 +27,15 @@ const command = positionals[0]
 const embedder = createLocalEmbedder({ cacheDir: defaultSearchModelDir() })
 
 if (command === 'download') {
-  await embedder.ready()
-  console.log(`Modellen ${embedder.model} ligger i ${defaultSearchModelDir()}.`)
+  // Begge modellene, så appen kan velge den lille på en server med lite minne
+  // (se `chooseSearchModel`), og den som er satt med SEARCH_MODEL.
+  const models = [...new Set([SEARCH_MODEL, SEARCH_MODEL_SMALL, embedder.model])]
+  for (const model of models) {
+    const one = createLocalEmbedder({ cacheDir: defaultSearchModelDir(), model, idleMs: 0 })
+    await one.ready()
+    await one.unload()
+    console.log(`Modellen ${model} ligger i ${defaultSearchModelDir()}.`)
+  }
   process.exit(0)
 }
 if (!process.env.DATABASE_URL) {

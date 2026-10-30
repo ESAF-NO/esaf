@@ -100,9 +100,12 @@ export function registerDiscoveryTools(server: McpServer, ctx: ToolContext) {
     idempotent: true,
     run: async ({ people }, ctx) => {
       const { updated } = await setSearchTopics(ctx.db, ctx.viewer, people)
-      // De endrede personene indekseres med en gang, så søket finner dem nå.
+      // Personene indekseres med en gang, så søket finner dem nå. De som ikke er
+      // endret, har samme hash og embeddes ikke på nytt.
       const index = ctx.embedder
-        ? await reindexPeople(ctx.db, ctx.embedder, { limit: Math.max(updated, 1) })
+        ? await reindexPeople(ctx.db, ctx.embedder, {
+            personIds: people.map((p) => p.personId),
+          })
         : null
       return { updated, indexed: index?.indexed ?? 0 }
     },

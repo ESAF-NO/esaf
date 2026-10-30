@@ -9,7 +9,7 @@ import { cohortsInput, emailInput, insertProfile, normalizePersonName } from './
 import { deletePhotoFiles, processProfilePhoto, putProcessedPhoto } from './photos.ts'
 import { normalizePhone } from './profile-import.ts'
 import { experienceInput, profileInput } from './profiles.ts'
-import { fieldSourceInput, writeFieldSources } from './sources.ts'
+import { fieldSourceInput, profileSourceFields, writeFieldSources } from './sources.ts'
 import type { ObjectStorage } from './storage.ts'
 
 const { auditEvent, cohort, experience, person, personCohort, personEmail } = schema
@@ -241,6 +241,27 @@ function planRows(
       return
     }
     const p = result.data
+    // Samme sjekk som når kildene skrives, så en ugyldig kilde stopper raden i
+    // planen og ikke hele oppgaven når den kjøres.
+    const sourceErrors = p.sources
+      .filter((s) => !(profileSourceFields as readonly string[]).includes(s.field))
+      .map(
+        (s) =>
+          `sources: Feltet «${s.field}» kan ikke ha kilde. Gyldige felt: ${profileSourceFields.join(', ')}.`,
+      )
+    if (sourceErrors.length) {
+      parsed.push(null)
+      plans.push({
+        row,
+        ref: p.ref ?? null,
+        fullName: p.fullName,
+        status: 'invalid',
+        blocked: false,
+        errors: sourceErrors,
+        matches: [],
+      })
+      return
+    }
     const errors: string[] = []
     const matches: BatchMatch[] = []
     let blocked = false

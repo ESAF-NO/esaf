@@ -297,7 +297,7 @@ export async function writeFieldSources(
  * Logges som `source.add`.
  */
 export async function addFieldSources(
-  db: Db,
+  db: Db | Tx,
   viewer: Viewer,
   input: {
     entityType: FieldSourceEntity

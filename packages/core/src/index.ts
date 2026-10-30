@@ -289,6 +289,7 @@ export {
 export {
   createCompany,
   deleteCompany,
+  companySlugById,
   listAdminCompanies,
   type AdminCompany,
 } from './company-admin.ts'
@@ -654,7 +655,15 @@ export {
   type SearchChunk,
   type TopicsStatus,
 } from './people-search.ts'
-export { createLocalEmbedder, defaultSearchModelDir, SEARCH_MODEL } from './search-embedder.ts'
+export {
+  availableMemory,
+  chooseSearchModel,
+  createLocalEmbedder,
+  defaultSearchModelDir,
+  SEARCH_MODEL,
+  SEARCH_MODEL_MIN_MEMORY,
+  SEARCH_MODEL_SMALL,
+} from './search-embedder.ts'
 export { SEARCH_TAXONOMY } from './search-taxonomy.ts'
 export {
   getUniverse,

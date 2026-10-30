@@ -916,15 +916,17 @@ export const accessRequest = pgTable(
 
 /**
  * `invite` gir tilgang til appen. `password_reset` lar en eksisterende konto
- * velge nytt passord, uten e-post.
+ * velge nytt passord.
  */
 export const invitationKind = pgEnum('invitation_kind', ['invite', 'password_reset'])
 
 /**
- * Lenker en admin (eller en operatør på kommandolinjen) lager og deler selv, for
- * eksempel på SMS. Bare SHA-256 av tokenet lagres; selve tokenet vises én gang
- * når lenken lages. En lenke er bundet til én e-postadresse, virker én gang og
- * går ut etter sju dager. Se `invitations.ts` i @esaf/core for reglene.
+ * Lenker en admin (eller en operatør på kommandolinjen) lager, og som sendes på
+ * e-post eller deles for eksempel på SMS, og lenker for nytt passord personen
+ * ber om selv («Glemt passord?»). Bare SHA-256 av tokenet lagres; selve tokenet
+ * vises eller sendes én gang når lenken lages. En lenke er bundet til én
+ * e-postadresse, virker én gang og går ut etter sju dager (en time når personen
+ * ba om den selv). Se `invitations.ts` i @esaf/core for reglene.
  */
 export const invitation = pgTable(
   'invitation',
@@ -942,8 +944,13 @@ export const invitation = pgTable(
     personId: uuid().references(() => person.id, { onDelete: 'set null' }),
     /** Rollen den inviterte får. Bare hovedadmins kan invitere med en annen rolle enn medlem. */
     role: memberRole().notNull().default('member'),
-    /** Null betyr lokal operatør (admin-CLI). */
+    /**
+     * Null betyr lokal operatør (admin-CLI), eller at personen ba om lenken selv
+     * og ikke har noen person ennå (se `requestedBySelf`).
+     */
     createdByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    /** Personen ba om lenken for nytt passord selv, fra «Glemt passord?». Da er `createdByPersonId` dem selv. */
+    requestedBySelf: boolean().notNull().default(false),
     expiresAt: timestamp({ withTimezone: true }).notNull(),
     usedAt: timestamp({ withTimezone: true }),
     usedByUserId: text().references(() => user.id, { onDelete: 'set null' }),

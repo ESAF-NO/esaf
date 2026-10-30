@@ -183,6 +183,13 @@
       "when": 1793396085703,
       "tag": "0025_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793396378922,
+      "tag": "0026_password_requests",
+      "breakpoints": true
     }
   ]
 }

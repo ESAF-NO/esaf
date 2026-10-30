@@ -1,7 +1,8 @@
-import { schema, type Db } from '@esaf/db'
+import { schema, type BoardRole, type Db } from '@esaf/db'
 import { and, asc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { assertCan, assertMember, type Viewer } from './access.ts'
+import { currentBoardRole, loadBoardTerms } from './board.ts'
 import { currentRepresentativeOf, loadRepresentativeTerms } from './cohort-reps.ts'
 import { DomainError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
@@ -139,6 +140,8 @@ export type MemberListItem = {
   cohorts: { graduationYear: number; relation: schema.CohortRelation }[]
   /** Kullene personen er kullrepresentant for nå. */
   representativeOf: number[]
+  /** Rollen i styret nå, ellers null. */
+  boardRole: BoardRole | null
 }
 
 /**
@@ -193,9 +196,10 @@ export async function listActiveMembers(
     .where(and(eq(membership.status, 'active'), inCohort))
     .orderBy(asc(person.fullName), asc(cohort.graduationYear))
   const ids = rows.map((r) => r.personId)
-  const [experiences, terms] = await Promise.all([
+  const [experiences, terms, boardTerms] = await Promise.all([
     loadExperience(db, ids),
     loadRepresentativeTerms(db, ids),
+    loadBoardTerms(db, ids),
   ])
 
   const byPerson = new Map<string, MemberListItem>()
@@ -220,6 +224,7 @@ export async function listActiveMembers(
       })),
       cohorts: [],
       representativeOf: currentRepresentativeOf(terms.get(row.personId)),
+      boardRole: currentBoardRole(boardTerms.get(row.personId)),
     }
     if (row.graduationYear !== null && row.relation !== null) {
       item.cohorts.push({ graduationYear: row.graduationYear, relation: row.relation })
@@ -394,6 +399,8 @@ export type PersonHit = {
   currentCompany: string | null
   /** Kullene personen er kullrepresentant for nå. */
   representativeOf: number[]
+  /** Rollen i styret nå, ellers null. */
+  boardRole: BoardRole | null
 }
 
 /**
@@ -430,9 +437,10 @@ export async function searchPeople(
     .orderBy(sql`${person.userId} is null`, asc(person.fullName))
     .limit(limit)
   const ids = rows.map((r) => r.personId)
-  const [experiences, terms] = await Promise.all([
+  const [experiences, terms, boardTerms] = await Promise.all([
     loadExperience(db, ids),
     loadRepresentativeTerms(db, ids),
+    loadBoardTerms(db, ids),
   ])
   return rows.map(({ userId, photoKey, ...r }) => ({
     ...r,
@@ -440,6 +448,7 @@ export async function searchPeople(
     ...currentRole(experiences.get(r.personId) ?? []),
     claimed: userId !== null,
     representativeOf: currentRepresentativeOf(terms.get(r.personId)),
+    boardRole: currentBoardRole(boardTerms.get(r.personId)),
   }))
 }
 

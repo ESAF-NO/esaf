@@ -328,7 +328,7 @@ const {
 } = schema
 
 await db.execute(
-  sql`truncate ${schema.event}, ${schema.eventType}, ${schema.cohortRepresentative}, ${schema.fieldSource}, ${schema.reviewDismissal}, ${schema.companySuggestion}, ${schema.companyLinkRequest}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
+  sql`truncate ${schema.event}, ${schema.eventType}, ${schema.cohortRepresentative}, ${schema.boardMember}, ${schema.fieldSource}, ${schema.reviewDismissal}, ${schema.companySuggestion}, ${schema.companyLinkRequest}, ${schema.notification}, ${postVote}, ${comment}, ${post}, ${schema.accessRequest}, ${auditEvent}, ${experience}, ${membership}, ${personCohort}, ${personEmail}, ${person}, ${schema.company}, ${cohort}, ${schema.session}, ${account}, ${schema.verification}, ${user} cascade`,
 )
 
 /** En innloggingskonto med bekreftet e-post og passord, som om personen hadde registrert seg. */
@@ -847,6 +847,27 @@ async function seedDemo() {
     },
   )
   await db.insert(schema.cohortRepresentative).values(reps)
+
+  // Styret: leder, nestleder, tre styremedlemmer og vara nå, og noen som har
+  // sittet før. Sara er nestleder; hun var styremedlem før hun byttet rolle.
+  const board = some(
+    people.filter((p) => p.id !== sara!.id),
+    9,
+  )
+  const seat = (i: number) => board[i]!.id
+  await db.insert(schema.boardMember).values([
+    { personId: seat(0), role: 'chair', startYear: 2024, note: 'Valgt for to år' },
+    { personId: sara!.id, role: 'member', startYear: 2023, endYear: 2025 },
+    { personId: sara!.id, role: 'vice_chair', responsibility: 'Økonomi', startYear: 2025 },
+    { personId: seat(1), role: 'member', responsibility: 'Arrangementer', startYear: 2025 },
+    { personId: seat(2), role: 'member', responsibility: 'Kommunikasjon', startYear: 2024 },
+    { personId: seat(3), role: 'member', startYear: 2026 },
+    { personId: seat(4), role: 'deputy', startYear: 2026 },
+    { personId: seat(5), role: 'chair', startYear: 2020, endYear: 2023 },
+    { personId: seat(6), role: 'member', startYear: 2019, endYear: 2022 },
+    { personId: seat(7), role: 'vice_chair', startYear: 2021, endYear: 2023 },
+    { personId: seat(8), role: 'member', startYear: 2018, endYear: 2020 },
+  ])
 
   // Arrangementer. ESAF-helgen legges inn av migreringen, men tabellen ble tømt
   // over, så typene lages på nytt her med samme adresser.

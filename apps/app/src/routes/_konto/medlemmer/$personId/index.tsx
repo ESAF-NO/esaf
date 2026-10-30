@@ -22,6 +22,7 @@ import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
 import { RoleBadge } from '#/components/EventCharts.tsx'
+import { BoardBadge } from '#/components/Board.tsx'
 import { RepresentativeBadges } from '#/components/Representatives.tsx'
 import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
 import {
@@ -317,7 +318,12 @@ function ProfilePage() {
               )}
               <ProfileStatus claimed={p.claimed} />
             </div>
-            <RepresentativeBadges badges={p.representative} />
+            {(p.board || p.representative.length > 0) && (
+              <ul className="mt-3 flex flex-wrap gap-2" aria-label="Verv">
+                <BoardBadge badge={p.board} />
+                <RepresentativeBadges badges={p.representative} />
+              </ul>
+            )}
             {note('photo', { label: 'Bildet', className: 'mt-2' })}
           </div>
         </div>

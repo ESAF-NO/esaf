@@ -1,6 +1,7 @@
 import type { MemberListItem } from '@esaf/core'
 import { Link } from '@tanstack/react-router'
 import { MapPin } from 'lucide-react'
+import { BoardTag } from './Board.tsx'
 import { RepresentativeTag } from './Representatives.tsx'
 import { Avatar, Tag, Verified } from './ui.tsx'
 
@@ -38,6 +39,7 @@ export function PersonCard({ member: m }: { member: MemberListItem }) {
               ES {m.cohorts.map((c) => c.graduationYear).join(', ')}
             </span>
           )}
+          <BoardTag role={m.boardRole} />
           <RepresentativeTag years={m.representativeOf} />
           {m.city && (
             <span className="inline-flex items-center gap-1">

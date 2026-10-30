@@ -3,6 +3,7 @@ import { Building2, CornerDownLeft, FileText, Search, Users } from 'lucide-react
 import { useEffect, useMemo, useState } from 'react'
 import { channels, type ChannelKey } from '#/lib/channels.ts'
 import { quickSearch } from '#/lib/search.functions.ts'
+import { BoardTag } from './Board.tsx'
 import { RepresentativeTag } from './Representatives.tsx'
 import { Avatar, CompanyLogo, cx, Verified } from './ui.tsx'
 
@@ -69,6 +70,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1 font-medium text-stone-900">
               {p.fullName} <Verified claimed={p.claimed} />
+              <BoardTag role={p.boardRole} className="ml-1" />
               <RepresentativeTag years={p.representativeOf} className="ml-1" />
             </span>
             <span className="block truncate text-xs text-stone-500">

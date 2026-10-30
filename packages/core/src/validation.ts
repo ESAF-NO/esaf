@@ -78,3 +78,24 @@ export function hostLabel(url: string | null): string | null {
     return null
   }
 }
+
+const collapseSpaces = (v: string) => v.replace(/\s+/g, ' ')
+const hasLetterOrDigit = (v: string) => /[\p{L}\p{N}]/u.test(v)
+
+/** Om teksten kan være et selskapsnavn: den har bokstaver eller tall. */
+export const isCompanyName = (name: string | null | undefined): name is string =>
+  typeof name === 'string' && hasLetterOrDigit(name)
+
+/** Et selskapsnavn slik noen skriver det: trimmet og uten doble mellomrom. */
+export const companyName = z
+  .string()
+  .trim()
+  .min(1, 'Skriv inn selskapet.')
+  .max(120, 'Maks 120 tegn.')
+  .transform(collapseSpaces)
+  .refine(hasLetterOrDigit, 'Selskapsnavnet må ha bokstaver eller tall.')
+
+/** Som `companyName`, men tomt felt betyr «ingen». */
+export const optionalCompanyName = optionalText(120)
+  .transform((v) => (v === null ? null : collapseSpaces(v)))
+  .refine((v) => v === null || hasLetterOrDigit(v), 'Selskapsnavnet må ha bokstaver eller tall.')

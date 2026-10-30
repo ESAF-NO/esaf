@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { AuthCard, AuthShell } from '#/components/AuthLayout.tsx'
 import { Button, ErrorText, Field, Input } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { fetchAuthOptions } from '#/lib/invitations.functions.ts'
 import { noReferrer, safeRedirect } from '#/lib/links.ts'
 import {
   passkeyAutofillSupported,
@@ -21,6 +22,8 @@ export const Route = createFileRoute('/logg-inn')({
       throw search.til ? redirect({ href: search.til }) : redirect({ to: '/feed' })
     }
   },
+  // Med e-post kan man be om en lenke for nytt passord selv; ellers spør man styret.
+  loader: () => fetchAuthOptions(),
   // Adressen kan inneholde en invitasjon (`til`), så den sendes ikke videre.
   headers: () => noReferrer.headers,
   head: () => ({ meta: [{ title: 'Logg inn – ESAF' }, noReferrer.meta] }),
@@ -28,6 +31,7 @@ export const Route = createFileRoute('/logg-inn')({
 })
 
 function SignIn() {
+  const { emailEnabled } = Route.useLoaderData()
   const router = useRouter()
   const { til } = Route.useSearch()
   const [error, setError] = useState<string | null>(null)
@@ -109,7 +113,9 @@ function SignIn() {
       setPending(false)
       setError(
         error.status === 403
-          ? 'Du må bekrefte e-postadressen din før du kan logge inn. Sjekk innboksen.'
+          ? emailEnabled
+            ? 'Du må bekrefte e-postadressen din før du kan logge inn. Vi har sendt deg en ny lenke; sjekk innboksen.'
+            : 'Du må bekrefte e-postadressen din før du kan logge inn. Sjekk innboksen.'
           : 'Feil e-post eller passord.',
       )
       return
@@ -193,7 +199,15 @@ function SignIn() {
           </Field>
           <Field
             label="Passord"
-            hint="Glemt passordet? Be en i styret om en lenke for å velge nytt."
+            hint={
+              emailEnabled ? (
+                <Link to="/glemt-passord" className="font-medium text-brand-600 hover:underline">
+                  Glemt passordet?
+                </Link>
+              ) : (
+                'Glemt passordet? Be en i styret om en lenke for å velge nytt.'
+              )
+            }
           >
             <Input name="password" type="password" autoComplete="current-password" required />
           </Field>

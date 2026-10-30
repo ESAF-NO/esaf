@@ -1,12 +1,12 @@
 import { getAuthenticatorName, passkey } from '@better-auth/passkey'
-import { mayChangeSignInMethods } from '@esaf/core'
+import { mayChangeSignInMethods, type CreatedLink } from '@esaf/core'
 import { schema, type Db } from '@esaf/db'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { twoFactor } from 'better-auth/plugins'
 import { tanstackStartCookies } from 'better-auth/tanstack-start'
-import { invitations } from './invitations-plugin.server.ts'
+import { INVITATION_PATHS, invitations } from './invitations-plugin.server.ts'
 
 /** Stiene der en passkey-innlogging skjer. Bare her kan en økt bli merket som passkey-økt. */
 const PASSKEY_SIGN_IN = '/passkey/verify-authentication'
@@ -36,6 +36,13 @@ export type AuthConfig = {
    * er registrering slått av på serveren, og veien inn er en invitasjon.
    */
   sendVerificationEmail?: (data: { user: { email: string }; url: string }) => Promise<void>
+  /** Hvor lenge bekreftelseslenken virker, i sekunder. */
+  verificationTtlSeconds?: number
+  /**
+   * Sender en lenke for nytt passord personen ba om selv («Glemt passord?»).
+   * Uten den (ingen e-postleverandør) finnes ikke endepunktet.
+   */
+  sendPasswordReset?: (link: CreatedLink) => Promise<void>
 }
 
 /**
@@ -78,7 +85,10 @@ export function createAuth(config: AuthConfig) {
     },
     emailVerification: {
       sendOnSignUp: selfSignUp,
+      // Gikk lenken ut før den ble brukt, sendes en ny når personen prøver å logge inn.
+      sendOnSignIn: selfSignUp,
       autoSignInAfterVerification: true,
+      expiresIn: config.verificationTtlSeconds ?? 60 * 60,
       sendVerificationEmail: config.sendVerificationEmail,
     },
     session: {
@@ -93,8 +103,12 @@ export function createAuth(config: AuthConfig) {
       },
     },
     rateLimit: {
-      // Som Better Auths egne grenser for /sign-in/*: tre forsøk per ti sekunder.
-      customRules: { [PASSKEY_SIGN_IN]: { window: 10, max: 3 } },
+      customRules: {
+        // Som Better Auths egne grenser for /sign-in/*: tre forsøk per ti sekunder.
+        [PASSKEY_SIGN_IN]: { window: 10, max: 3 },
+        // Hver forespørsel kan sende en e-post. Grensen per adresse står i @esaf/core.
+        [INVITATION_PATHS.requestPasswordReset]: { window: 60, max: 3 },
+      },
     },
     databaseHooks: {
       session: {
@@ -155,7 +169,7 @@ export function createAuth(config: AuthConfig) {
       }),
     },
     plugins: [
-      invitations(config.db),
+      invitations(config.db, { sendPasswordReset: config.sendPasswordReset }),
       twoFactor({
         issuer: 'ESAF',
         // Ti feil koder på rad låser tofaktor i et kvarter.

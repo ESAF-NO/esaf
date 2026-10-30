@@ -18,6 +18,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { eq, isNotNull, sql } from 'drizzle-orm'
 import sharp from 'sharp'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { MCP_RECIPES, MCP_TOOL_GROUPS } from '../src/catalog.ts'
 import { createAdminMcpHttpHandler } from '../src/index.ts'
 
 loadRootEnv()
@@ -209,14 +210,12 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
         expect(tool.inputSchema.type, tool.name).toBe('object')
       }
       const { prompts } = await full.listPrompts()
-      expect(prompts.map((p) => p.name)).toEqual(
-        expect.arrayContaining([
-          'onboard_cohort',
-          'enrich_person',
-          'enrich_company',
-          'work_review_queue',
-        ]),
+      // Oversikten på adminsiden «MCP» viser nøyaktig det serveren har.
+      const sorted = (names: readonly string[]) => [...names].sort()
+      expect(sorted(MCP_TOOL_GROUPS.flatMap((g) => g.tools))).toEqual(
+        sorted(all.map((t) => t.name)),
       )
+      expect(sorted(MCP_RECIPES.map((r) => r.name))).toEqual(sorted(prompts.map((p) => p.name)))
       await full.close()
       await read.close()
     })
@@ -527,12 +526,15 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       })
       expect(before.hits).toEqual([])
 
-      const todo = await call<{ items: { personId: string; text: string[] }[] }>(
+      const todo = await call<{ items: { personId: string; status: string; text: string[] }[] }>(
         client,
         'list_people_for_tagging',
         {},
       )
-      expect(todo.items.find((i) => i.personId === ola)!.text[0]).toContain('kaffe')
+      expect(todo.items.find((i) => i.personId === ola)).toMatchObject({
+        status: 'missing',
+        text: [expect.stringContaining('kaffe')],
+      })
 
       const tagged = await call<{ updated: number; indexed: number }>(client, 'set_search_topics', {
         people: [
@@ -549,11 +551,12 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       expect(after.semantic).toBe(true)
       expect(after.hits.map((h) => h.personId)).toEqual([kari])
       expect(after.hits[0]!.link).toBe(`${APP_URL}/medlemmer/${kari}`)
-      // Uten Claude på serveren: ingen tolkning, og Spør ESAF sier fra.
-      expect(after).toMatchObject({ interpreted: null })
-      expect(await callError(client, 'ask_people', { question: 'hvem kan romfart?' })).toContain(
-        'ikke slått på',
+      const left = await call<{ items: { personId: string }[] }>(
+        client,
+        'list_people_for_tagging',
+        {},
       )
+      expect(left.items.map((i) => i.personId)).not.toContain(kari)
       await client.close()
     })
 

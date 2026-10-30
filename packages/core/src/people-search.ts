@@ -7,13 +7,6 @@ import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 import { normalizePersonName } from './people-admin.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
-import {
-  interpretQuery,
-  takeQuota,
-  TAGGING_VERSION,
-  type QueryPlan,
-  type SearchAi,
-} from './search-ai.ts'
 import { SEARCH_TAXONOMY } from './search-taxonomy.ts'
 import { tidyTag } from './validation.ts'
 
@@ -24,7 +17,6 @@ const {
   experience,
   membership,
   person,
-  personAiTopics,
   personCohort,
   personSearchIndex,
 } = schema
@@ -47,15 +39,12 @@ const {
  *   store bokstaver) og likhet i mening slås sammen (reciprocal rank fusion).
  *   Navnetreff kommer først. Uten modell (f.eks. før den er lastet ned) virker
  *   ordsøket alene.
- * - **Søkeord:** for det modellen ikke klarer alene, skriver Claude emner på
- *   norsk og engelsk fra profilteksten, også bredere begreper: NASA → romfart,
- *   space, aerospace, satellitter (`refreshAiTopics`, i bakgrunnen). Admins kan
- *   sette egne (`person.search_topics`); da brukes de i stedet.
- * - **Tolkning:** med Claude blir søket gjort om til emner med beslektede ord
- *   og filtre (by, kull, gründer) før det søkes (`interpretQuery` i
- *   `search-ai.ts`). Uten Claude brukes begrepslista i `search-taxonomy.ts`.
- * - **Spør ESAF** (`askPeople`): søket finner kandidatene, Claude leser dem og
- *   velger dem som passer, med en setning om hvorfor.
+ * - **Søkeord:** for det modellen ikke klarer alene, setter admins emner på
+ *   norsk og engelsk, også bredere begreper: NASA → romfart, space, aerospace,
+ *   satellitter (`person.search_topics`). Appen kaller aldri en språkmodell
+ *   selv; søkeordene skrives utenfra, typisk av Claude Code eller Codex via
+ *   MCP (`listPeopleForTopics`, `setSearchTopics`). Søket utvider ord med
+ *   begrepslista i `search-taxonomy.ts`.
  * - **Indeksen** oppdateres i bakgrunnen (`reindexPeople`): bitene bygges for
  *   alle, og bare personer der bitene eller modellen er endret, får nye vektorer.
  *   Vektorene holdes i minnet og hentes på nytt når indeksen endres.
@@ -76,8 +65,6 @@ type PersonDoc = {
   fullName: string
   city: string | null
   status: string | null
-  /** Admins har satt søkeord; da brukes ikke de fra Claude. */
-  manualTopics: boolean
   chunks: SearchChunk[]
 }
 
@@ -104,8 +91,8 @@ export function redact(text: string) {
 
 /**
  * Bitene for alle personer, eller noen. Rekkefølgen er fast, så hashen blir
- * stabil. `withTopics: false` gir teksten uten søkeord (det Claude skriver
- * søkeord fra).
+ * stabil. `withTopics: false` gir teksten uten søkeord (det søkeordene skrives
+ * fra).
  */
 export async function buildSearchDocs(
   db: Db | Tx,
@@ -113,7 +100,7 @@ export async function buildSearchDocs(
   { withTopics = true }: { withTopics?: boolean } = {},
 ): Promise<PersonDoc[]> {
   const where = personIds ? inArray(person.id, personIds) : undefined
-  const [people, jobs, aiTopics] = await Promise.all([
+  const [people, jobs] = await Promise.all([
     db
       .select({
         id: person.id,
@@ -150,14 +137,7 @@ export async function buildSearchDocs(
       .innerJoin(company, eq(company.id, experience.companyId))
       .where(personIds ? inArray(experience.personId, personIds) : undefined)
       .orderBy(asc(experience.personId), asc(experience.position)),
-    withTopics
-      ? db
-          .select({ personId: personAiTopics.personId, topics: personAiTopics.topics })
-          .from(personAiTopics)
-          .where(personIds ? inArray(personAiTopics.personId, personIds) : undefined)
-      : Promise.resolve([]),
   ])
-  const aiOf = new Map(aiTopics.map((t) => [t.personId, t.topics]))
   const jobsOf = new Map<string, typeof jobs>()
   for (const j of jobs) jobsOf.set(j.personId, [...(jobsOf.get(j.personId) ?? []), j])
 
@@ -195,7 +175,7 @@ export async function buildSearchDocs(
     }
     if (part.length >= 25) chunks.push({ kind: 'bio', text: part })
     // Korte opplysninger samles i én bit: alene ligner de på nesten alt.
-    const own = !withTopics ? [] : p.searchTopics.length ? p.searchTopics : (aiOf.get(p.id) ?? [])
+    const own = withTopics ? p.searchTopics : []
     const topics = [...new Set([...own, ...p.expertise, ...p.industries])]
     const profile = [
       topics.length ? `Emner: ${topics.join(', ')}` : null,
@@ -209,7 +189,6 @@ export async function buildSearchDocs(
       fullName: p.fullName,
       city: p.city,
       status: p.status,
-      manualTopics: p.searchTopics.length > 0,
       chunks,
     }
   })
@@ -312,99 +291,6 @@ export async function reindexPeople(
 }
 
 // ---------------------------------------------------------------------------
-// Søkeord fra Claude
-// ---------------------------------------------------------------------------
-
-/** Teksten Claude skriver søkeord fra: alt unntatt søkeordene selv. */
-const taggingText = (doc: PersonDoc) => doc.chunks.map((c) => c.text)
-
-/** Om det står nok om personen til at søkeord gir mening (mer enn et navn og en studieretning). */
-const worthTagging = (doc: PersonDoc) => doc.chunks.some((c) => c.kind !== 'study')
-
-const hashSource = (doc: PersonDoc) =>
-  createHash('sha256')
-    .update(JSON.stringify([TAGGING_VERSION, taggingText(doc)]))
-    .digest('hex')
-
-export type AiTopicsResult = { tagged: number; removed: number; pending: number }
-
-/**
- * Lar Claude skrive søkeord for personer der profilteksten er ny eller endret.
- * Personer med søkeord fra en admin hoppes over (de brukes i stedet), og
- * personer uten tekst får ingen. `limit` per runde, `groupSize` profiler per
- * kall til Claude. Etterpå må søkeindeksen oppdateres (`reindexPeople`), siden
- * søkeordene er en del av teksten. Ingen rettighetssjekk: kalles av serveren.
- */
-export async function refreshAiTopics(
-  db: Db,
-  ai: SearchAi,
-  {
-    limit = 40,
-    groupSize = 10,
-    concurrency = 2,
-  }: { limit?: number; groupSize?: number; concurrency?: number } = {},
-): Promise<AiTopicsResult> {
-  const [docs, existing] = await Promise.all([
-    buildSearchDocs(db, undefined, { withTopics: false }),
-    db
-      .select({ personId: personAiTopics.personId, sourceHash: personAiTopics.sourceHash })
-      .from(personAiTopics),
-  ])
-  const known = new Map(existing.map((r) => [r.personId, r.sourceHash]))
-  const wanted = docs.filter((d) => !d.manualTopics && worthTagging(d))
-  const wantedIds = new Set(wanted.map((d) => d.personId))
-  const removeIds = existing.map((r) => r.personId).filter((id) => !wantedIds.has(id))
-  if (removeIds.length) {
-    await db.delete(personAiTopics).where(inArray(personAiTopics.personId, removeIds))
-  }
-  const stale = wanted.filter((d) => known.get(d.personId) !== hashSource(d))
-  const todo = stale.slice(0, limit)
-  const groups: PersonDoc[][] = []
-  for (let i = 0; i < todo.length; i += groupSize) groups.push(todo.slice(i, i + groupSize))
-
-  let tagged = 0
-  const work = async (group: PersonDoc[]) => {
-    const topics = await ai.tagProfiles(
-      group.map((d) => ({ personId: d.personId, text: taggingText(d) })),
-    )
-    // Søkeordene ryddes som de en admin skriver; det som ikke passer, droppes.
-    // Også personer Claude ikke ga søkeord, lagres (tomt), så de ikke spørres
-    // om igjen før teksten endres.
-    const rows = group.map((d) => {
-      const raw = (topics.get(d.personId) ?? [])
-        .map((t) => t.trim())
-        .filter((t) => t.length >= 2 && t.length <= 40)
-      const parsed = searchTopicsInput.safeParse(raw.slice(0, 25))
-      return {
-        personId: d.personId,
-        topics: parsed.success ? parsed.data : [],
-        sourceHash: hashSource(d),
-        model: ai.model,
-        generatedAt: new Date(),
-      }
-    })
-    await db
-      .insert(personAiTopics)
-      .values(rows)
-      .onConflictDoUpdate({
-        target: personAiTopics.personId,
-        set: {
-          topics: sql`excluded.topics`,
-          sourceHash: sql`excluded.source_hash`,
-          model: sql`excluded.model`,
-          generatedAt: sql`excluded.generated_at`,
-        },
-      })
-    tagged += rows.length
-  }
-  // Noen kall om gangen; feiler ett, stopper runden (neste runde prøver igjen).
-  for (let i = 0; i < groups.length; i += concurrency) {
-    await Promise.all(groups.slice(i, i + concurrency).map(work))
-  }
-  return { tagged, removed: removeIds.length, pending: stale.length - tagged }
-}
-
-// ---------------------------------------------------------------------------
 // Vektorene i minnet
 // ---------------------------------------------------------------------------
 
@@ -462,11 +348,8 @@ export type PeopleSearchHit = {
   cohortYears: number[]
   /** Teksten som passet best, til å vise hvorfor personen kom med. */
   reason: string | null
-  /**
-   * `name`: navnet, `text`: ordene står i profilen, `meaning`: lik i mening,
-   * `filter`: søket var bare filtre (by, kull, gründer), og personen passer.
-   */
-  matchedBy: 'name' | 'text' | 'meaning' | 'filter'
+  /** `name`: navnet, `text`: ordene står i profilen, `meaning`: lik i mening. */
+  matchedBy: 'name' | 'text' | 'meaning'
   score: number
 }
 
@@ -539,78 +422,6 @@ function lexicalScore(terms: ReturnType<typeof expandQuery>, text: string) {
   return { score: fraction >= 0.5 ? fraction : 0, direct }
 }
 
-/**
- * Søkeordene fra Claudes tolkning av søket, i samme form som `expandQuery`:
- * hvert emne er ett ord som må treffes, med de beslektede ordene og begrepene
- * fra begrepslista som synonymer.
- */
-export function planTerms(plan: QueryPlan): ReturnType<typeof expandQuery> {
-  return plan.topics.map(({ term, related }) => {
-    const token = norm(term)
-    const fromTaxonomy = expandQuery(term).flatMap((t) => [t.token, ...t.synonyms])
-    const synonyms = [...new Set([...related.map(norm), ...fromTaxonomy])].filter(
-      (s) => s.length > 1 && s !== token,
-    )
-    return { token, synonyms }
-  })
-}
-
-const hasFilters = (plan: QueryPlan | null | undefined): plan is QueryPlan =>
-  !!plan &&
-  (plan.cities.length > 0 || plan.cohortFrom !== null || plan.cohortTo !== null || plan.founder)
-
-/** Filtrene som tekst, til grunnen for et treff: «Oslo · ES 2015 · gründer». */
-export function describeFilters(plan: QueryPlan) {
-  const years =
-    plan.cohortFrom === null && plan.cohortTo === null
-      ? null
-      : plan.cohortFrom === plan.cohortTo
-        ? `ES ${plan.cohortFrom}`
-        : plan.cohortFrom === null
-          ? `ES til ${plan.cohortTo}`
-          : plan.cohortTo === null
-            ? `ES fra ${plan.cohortFrom}`
-            : `ES ${plan.cohortFrom}–${plan.cohortTo}`
-  return [...plan.cities, years, plan.founder ? 'gründer' : null].filter(Boolean).join(' · ')
-}
-
-/** Personene som passer filtrene i tolkningen (by, kull, gründer). */
-async function filterByPlan(db: Db, docs: PersonDoc[], plan: QueryPlan) {
-  const ids = docs.map((d) => d.personId)
-  if (!ids.length) return docs
-  const cohortFilter = plan.cohortFrom !== null || plan.cohortTo !== null
-  const [years, founders] = await Promise.all([
-    cohortFilter
-      ? db
-          .select({ personId: personCohort.personId, year: cohort.graduationYear })
-          .from(personCohort)
-          .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
-      : Promise.resolve([]),
-    plan.founder
-      ? db
-          .selectDistinct({ personId: experience.personId })
-          .from(experience)
-          .where(eq(experience.founder, true))
-      : Promise.resolve([]),
-  ])
-  const from = plan.cohortFrom ?? -Infinity
-  const to = plan.cohortTo ?? Infinity
-  const inCohort = new Set(
-    years.filter((y) => y.year >= from && y.year <= to).map((y) => y.personId),
-  )
-  const founder = new Set(founders.map((f) => f.personId))
-  const cities = plan.cities.map(norm).filter(Boolean)
-  return docs.filter((d) => {
-    if (cohortFilter && !inCohort.has(d.personId)) return false
-    if (plan.founder && !founder.has(d.personId)) return false
-    if (cities.length) {
-      const city = norm(d.city ?? '')
-      if (!city || !cities.some((c) => city === c || city.split(' ').includes(c))) return false
-    }
-    return true
-  })
-}
-
 /** Ordtreff veier så mye mer enn likhet i mening (målt i standardavvik). */
 const LEXICAL_WEIGHT = 6
 /** Et ordtreff teller bare når biten også ligner litt på søket (ikke metaforer som «an impatient rocket»). */
@@ -622,9 +433,6 @@ const MEANING_CUTOFF_UNKNOWN = 3.5
 /** Høyst så mange treff bare på mening (og når søket ikke treffer noe kjent). */
 const MEANING_MAX = 10
 const MEANING_MAX_UNKNOWN = 5
-/** Kandidater til Spør ESAF: lavere krav og flere, Claude sorterer bort det som ikke passer. */
-const MEANING_CUTOFF_BROAD = 1
-const MEANING_MAX_BROAD = 30
 
 let embedderWarned = false
 
@@ -647,37 +455,21 @@ export async function searchPeopleByTopic(
   db: Db,
   viewer: Viewer,
   query: string,
-  {
-    embedder,
-    limit = 20,
-    plan,
-    broad = false,
-  }: {
-    embedder?: Embedder | null
-    limit?: number
-    /** Claudes tolkning av søket (`interpretQuery`). Uten den brukes begrepslista. */
-    plan?: QueryPlan | null
-    /** Flere og svakere treff på mening, som kandidater til `askPeople`. */
-    broad?: boolean
-  } = {},
+  { embedder, limit = 20 }: { embedder?: Embedder | null; limit?: number } = {},
 ): Promise<PeopleSearchHit[]> {
   assertMember(viewer)
   const q = query.trim().slice(0, 200)
   const nameTokens = norm(q).split(' ').filter(Boolean)
   if (!nameTokens.length) return []
-  // En tolkning uten emner og filtre (et navn, f.eks.) gir ingenting å gå på.
-  const usePlan = plan && (plan.topics.length > 0 || hasFilters(plan)) ? plan : null
-  const terms = usePlan ? planTerms(usePlan) : expandQuery(q)
+  const terms = expandQuery(q)
   const everyone = can(viewer, 'profiles.edit')
 
-  let docs = (await buildSearchDocs(db)).filter((d) => everyone || d.status === 'active')
+  const docs = (await buildSearchDocs(db)).filter((d) => everyone || d.status === 'active')
   const visible = new Map(docs.map((d) => [d.personId, d]))
-  const filtered = hasFilters(usePlan)
-  if (filtered) docs = await filterByPlan(db, docs, usePlan)
 
   // Navn: alle ordene i søket står i navnet.
   const byName = new Set(
-    (filtered ? [...visible.values()] : docs)
+    docs
       .filter((d) => {
         const words = norm(d.fullName).split(' ')
         return nameTokens.every((t) =>
@@ -708,12 +500,11 @@ export async function searchPeopleByTopic(
 
   // Mening: søket alene, med begrepene, og begrepene alene; beste bit per person.
   const synonyms = [...new Set(terms.flatMap((t) => t.synonyms))].slice(0, 12)
-  const topicText = usePlan ? usePlan.topics.map((t) => t.term).join(', ') : q
   const queryTexts = !terms.length
     ? []
     : synonyms.length
-      ? [topicText, `${topicText} (${synonyms.join(', ')})`, synonyms.join(', ')]
-      : [topicText]
+      ? [q, `${q} (${synonyms.join(', ')})`, synonyms.join(', ')]
+      : [q]
   const queryVectors =
     embedder && queryTexts.length
       ? await embedder.embed(queryTexts, 'query').catch((error: unknown) => {
@@ -728,9 +519,8 @@ export async function searchPeopleByTopic(
   const allSims: number[] = []
   if (embedder && queryVectors?.length) {
     const vectors = await loadVectors(db, embedder.model)
-    const inScope = new Set(docs.map((d) => d.personId))
     for (const [personId, v] of vectors.byPerson) {
-      if (!inScope.has(personId) || v.dims !== queryVectors[0]!.length) continue
+      if (!visible.has(personId) || v.dims !== queryVectors[0]!.length) continue
       let best = { sim: -1, chunk: '' }
       for (let c = 0; c < v.chunks.length; c++) {
         const off = c * v.dims
@@ -760,7 +550,7 @@ export async function searchPeopleByTopic(
   // personer kan ingen ligge mer enn √(n−1) standardavvik over snittet, så med
   // få personer (en ny database, testene) skaleres kravet ned.
   const known = synonyms.length > 0 || lexical.size > 0
-  const base = broad ? MEANING_CUTOFF_BROAD : known ? MEANING_CUTOFF : MEANING_CUTOFF_UNKNOWN
+  const base = known ? MEANING_CUTOFF : MEANING_CUTOFF_UNKNOWN
   const cutoff = Math.min(base, Math.max(1, 0.6 * Math.sqrt(Math.max(personSims.length - 1, 1))))
 
   const scored: {
@@ -769,14 +559,7 @@ export async function searchPeopleByTopic(
     matchedBy: PeopleSearchHit['matchedBy']
     reason: string | null
   }[] = []
-  // Bare filtre («folk i Oslo fra ES 2015»): alle som passer, etter navn.
-  if (filtered && !terms.length) {
-    const label = describeFilters(usePlan)
-    for (const d of [...docs].sort((a, b) => a.fullName.localeCompare(b.fullName, 'nb'))) {
-      scored.push({ id: d.personId, score: 0, matchedBy: 'filter', reason: label })
-    }
-  }
-  for (const d of filtered && !terms.length ? [] : docs) {
+  for (const d of docs) {
     const id = d.personId
     const s = semantic.get(id)
     const z = s ? (s.sim - pm) / ps : -Infinity
@@ -807,11 +590,11 @@ export async function searchPeopleByTopic(
   }
   // Høyst så mange treff bare på mening: de beste, resten er støy.
   let meaningOnly = 0
-  const meaningMax = broad ? MEANING_MAX_BROAD : known ? MEANING_MAX : MEANING_MAX_UNKNOWN
+  const meaningMax = known ? MEANING_MAX : MEANING_MAX_UNKNOWN
   const ranked = scored
     .sort((a, b) => b.score - a.score)
     .filter((r) => r.matchedBy !== 'meaning' || ++meaningOnly <= meaningMax)
-    .slice(0, Math.min(limit, filtered && !terms.length ? 500 : 100))
+    .slice(0, Math.min(limit, 100))
   if (!ranked.length) return []
 
   const ids = ranked.map((r) => r.id)
@@ -840,139 +623,6 @@ export async function searchPeopleByTopic(
   }))
 }
 
-/**
- * Søket med Claudes tolkning når `ai` er satt (se `interpretQuery`): emner med
- * beslektede ord, og filtre for by, kull og gründer. Tolkningen er med i
- * svaret, så den kan vises («helse · Oslo · ES 2015»). Går tolkningen ikke
- * (ingen nøkkel, kvote, feil), er det vanlig søk.
- */
-export async function searchPeopleInterpreted(
-  db: Db,
-  viewer: Viewer,
-  query: string,
-  {
-    embedder,
-    ai,
-    limit = 20,
-  }: { embedder?: Embedder | null; ai?: SearchAi | null; limit?: number } = {},
-): Promise<{
-  hits: PeopleSearchHit[]
-  interpreted: { topics: string[]; filters: string | null } | null
-}> {
-  assertMember(viewer)
-  const plan = query.trim().length >= 2 ? await interpretQuery(ai, query, viewer.personId) : null
-  const hits = await searchPeopleByTopic(db, viewer, query, { embedder, limit, plan })
-  const used = plan && (plan.topics.length > 0 || hasFilters(plan))
-  return {
-    hits,
-    interpreted: used
-      ? {
-          topics: plan.topics.map((t) => t.term),
-          filters: hasFilters(plan) ? describeFilters(plan) : null,
-        }
-      : null,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Spør ESAF
-// ---------------------------------------------------------------------------
-
-/** Spørsmål til Spør ESAF per person per time. */
-export const ASK_PER_HOUR = 30
-/** Så mange kandidater fra søket leser Claude. */
-const ASK_CANDIDATES = 30
-/** Så mye tekst per kandidat (tegn). */
-const ASK_TEXT = 900
-
-export type AskHit = PeopleSearchHit & {
-  /** Claudes begrunnelse, fra det som står på profilen. */
-  why: string
-  /** Passer tydelig (`false`: delvis eller indirekte). */
-  strong: boolean
-}
-
-export type AskResult = {
-  question: string
-  summary: string
-  /** Filtrene Claude fant i spørsmålet, som tekst («Oslo · ES 2015»), eller `null`. */
-  filters: string | null
-  hits: AskHit[]
-}
-
-/**
- * Spør ESAF: «Hvem kan hjelpe meg å selge til sykehus?». Søket finner opptil
- * 30 kandidater (tolket av Claude, med lavere krav enn vanlig), Claude leser
- * utdrag av profilene deres og velger dem som passer, best først, med en
- * setning om hvorfor. Medlemmer får bare kandidater de ellers kan se. Kvote per
- * person (`ASK_PER_HOUR`).
- */
-export async function askPeople(
-  db: Db,
-  viewer: Viewer,
-  question: string,
-  { embedder, ai }: { embedder?: Embedder | null; ai: SearchAi | null | undefined },
-): Promise<AskResult> {
-  assertMember(viewer)
-  const q = question.replace(/\s+/g, ' ').trim().slice(0, 300)
-  if (q.length < 3) throw new DomainError('Skriv litt mer om hva du leter etter.')
-  if (!ai) throw new DomainError('Spør ESAF er ikke slått på.')
-  if (!takeQuota(`ask:${viewer.personId}`, ASK_PER_HOUR)) {
-    throw new DomainError('Du har spurt mange ganger den siste timen. Prøv igjen litt senere.')
-  }
-  const plan = await interpretQuery(ai, q, viewer.personId)
-  const candidates = await searchPeopleByTopic(db, viewer, q, {
-    embedder,
-    plan,
-    broad: true,
-    limit: ASK_CANDIDATES,
-  })
-  const filters = plan && hasFilters(plan) ? describeFilters(plan) : null
-  if (!candidates.length) return { question: q, summary: '', filters, hits: [] }
-
-  const docs = new Map(
-    (
-      await buildSearchDocs(
-        db,
-        candidates.map((c) => c.personId),
-      )
-    ).map((d) => [d.personId, d]),
-  )
-  const input = candidates.map((c) => {
-    const lines: string[] = []
-    let used = 0
-    for (const chunk of docs.get(c.personId)?.chunks ?? []) {
-      if (used + chunk.text.length > ASK_TEXT) {
-        if (used < ASK_TEXT - 80) lines.push(`${chunk.text.slice(0, ASK_TEXT - used)}…`)
-        break
-      }
-      lines.push(chunk.text)
-      used += chunk.text.length
-    }
-    if (c.cohortYears.length) lines.push(`ES ${c.cohortYears.join(', ')}`)
-    const city = docs.get(c.personId)?.city
-    if (city) lines.push(`Bor i ${city}`)
-    return { personId: c.personId, text: lines }
-  })
-  let ranked
-  try {
-    ranked = await ai.rankCandidates(q, input)
-  } catch (error) {
-    console.error('[esaf/search] Spør ESAF feilet:', error)
-    throw new DomainError('Fikk ikke svar fra Claude akkurat nå. Prøv igjen om litt.')
-  }
-  const byId = new Map(candidates.map((c) => [c.personId, c]))
-  return {
-    question: q,
-    summary: ranked.summary,
-    filters,
-    hits: ranked.matches.flatMap((m) => {
-      const hit = byId.get(m.personId)
-      return hit ? [{ ...hit, why: m.why, strong: m.strong }] : []
-    }),
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Søkeord
 // ---------------------------------------------------------------------------
@@ -987,9 +637,21 @@ export const searchTopicsInput = z
     ),
   )
 
+/** Hashen av teksten søkeordene skrives fra (bitene uten søkeord). */
+const topicsSource = (doc: PersonDoc) =>
+  createHash('sha256')
+    .update(JSON.stringify(doc.chunks.map((c) => c.text)))
+    .digest('hex')
+
+/** Om det står nok om personen til at søkeord gir mening (mer enn et navn og en studieretning). */
+const worthTagging = (doc: PersonDoc) => doc.chunks.some((c) => c.kind !== 'study')
+
 /**
  * Setter søkeordene til personer (erstatter dem). Bare admins med `profiles.edit`.
- * Logges som `profile.search_topics`, én hendelse per person som endres.
+ * Husker hvilken profiltekst de ble skrevet fra, så personen kommer tilbake i
+ * `listPeopleForTopics` når teksten endres. En tom liste betyr «vurdert, ingen
+ * søkeord». Logges som `profile.search_topics`, én hendelse per person der
+ * søkeordene endres.
  */
 export async function setSearchTopics(
   db: Db,
@@ -1005,25 +667,40 @@ export async function setSearchTopics(
       throw new DomainError(topics.error.issues[0]?.message ?? 'Ugyldige søkeord.')
     return { personId: row.personId, topics: topics.data }
   })
+  if (new Set(parsed.map((r) => r.personId)).size !== parsed.length)
+    throw new DomainError('Samme person står flere ganger.')
   return db.transaction(async (tx) => {
     const ids = parsed.map((r) => r.personId)
     const current = await tx
-      .select({ id: person.id, topics: person.searchTopics })
+      .select({ id: person.id, topics: person.searchTopics, source: person.searchTopicsSource })
       .from(person)
       .where(inArray(person.id, ids))
       .for('update')
-    const byId = new Map(current.map((r) => [r.id, r.topics]))
+    const byId = new Map(current.map((r) => [r.id, r]))
+    const sources = new Map(
+      (await buildSearchDocs(tx, ids, { withTopics: false })).map((d) => [
+        d.personId,
+        topicsSource(d),
+      ]),
+    )
     let updated = 0
     for (const row of parsed) {
       const before = byId.get(row.personId)
       if (!before) throw new NotFoundError('Fant ikke personen.')
-      if (JSON.stringify(before) === JSON.stringify(row.topics)) continue
-      await tx.update(person).set({ searchTopics: row.topics }).where(eq(person.id, row.personId))
+      const source = sources.get(row.personId) ?? null
+      const changed = JSON.stringify(before.topics) !== JSON.stringify(row.topics)
+      if (!changed && before.source === source) continue
+      await tx
+        .update(person)
+        .set({ searchTopics: row.topics, searchTopicsSource: source })
+        .where(eq(person.id, row.personId))
+      // Samme søkeord for ny tekst er bare en bekreftelse; den logges ikke.
+      if (!changed) continue
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'profile.search_topics',
         subjectPersonId: row.personId,
-        details: { topics: row.topics, previous: before },
+        details: { topics: row.topics, previous: before.topics },
       })
       updated++
     }
@@ -1032,54 +709,71 @@ export async function setSearchTopics(
 }
 
 /**
+ * `missing`: aldri vurdert. `outdated`: profilteksten er endret siden
+ * søkeordene ble skrevet. `done`: skrevet fra teksten som står nå.
+ */
+export type TopicsStatus = 'missing' | 'outdated' | 'done'
+
+/**
  * Det som står om personene, til å skrive søkeord: bitene fra søkeindeksen og
- * søkeordene som står nå. `missingOnly` gir dem uten søkeord. Bare admins.
+ * søkeordene som står nå. `status: 'todo'` (standard) gir dem som mangler
+ * søkeord eller har utdaterte. Personer uten noe å gå på (bare navn og
+ * studieretning) er ikke med. Bare admins.
  */
 export async function listPeopleForTopics(
   db: Db,
   viewer: Viewer,
   {
-    missingOnly = true,
+    status = 'todo',
     cohort: year,
     limit = 50,
     offset = 0,
   }: {
-    missingOnly?: boolean
+    status?: TopicsStatus | 'todo' | 'all'
     cohort?: number
     limit?: number
     offset?: number
   } = {},
 ) {
   assertCan(viewer, 'profiles.edit')
-  const [docs, topics, years, ai] = await Promise.all([
+  const [docs, saved, years] = await Promise.all([
     buildSearchDocs(db, undefined, { withTopics: false }),
-    db.select({ id: person.id, topics: person.searchTopics }).from(person),
+    db
+      .select({ id: person.id, topics: person.searchTopics, source: person.searchTopicsSource })
+      .from(person),
     db
       .select({ personId: personCohort.personId, year: cohort.graduationYear })
       .from(personCohort)
       .innerJoin(cohort, eq(cohort.id, personCohort.cohortId)),
-    db
-      .select({ personId: personAiTopics.personId, topics: personAiTopics.topics })
-      .from(personAiTopics),
   ])
-  const aiOf = new Map(ai.map((t) => [t.personId, t.topics]))
-  const topicsOf = new Map(topics.map((t) => [t.id, t.topics]))
+  const savedOf = new Map(saved.map((t) => [t.id, t]))
   const yearsOf = new Map<string, number[]>()
   for (const y of years) yearsOf.set(y.personId, [...(yearsOf.get(y.personId) ?? []), y.year])
-  const list = docs.filter(
-    (d) =>
-      d.chunks.some((c) => c.kind !== 'study') &&
-      (!missingOnly || !(topicsOf.get(d.personId) ?? []).length) &&
-      (year === undefined || (yearsOf.get(d.personId) ?? []).includes(year)),
+  const statusOf = (d: PersonDoc): TopicsStatus => {
+    const own = savedOf.get(d.personId)
+    if (!own?.source) return own?.topics.length ? 'outdated' : 'missing'
+    return own.source === topicsSource(d) ? 'done' : 'outdated'
+  }
+  const rows = docs
+    .filter(
+      (d) =>
+        worthTagging(d) && (year === undefined || (yearsOf.get(d.personId) ?? []).includes(year)),
+    )
+    .map((d) => ({ doc: d, status: statusOf(d) }))
+  const counts = { missing: 0, outdated: 0, done: 0 }
+  for (const r of rows) counts[r.status]++
+  const list = rows.filter((r) =>
+    status === 'all' ? true : status === 'todo' ? r.status !== 'done' : r.status === status,
   )
   return {
     total: list.length,
-    items: list.slice(offset, offset + limit).map((d) => ({
+    counts,
+    items: list.slice(offset, offset + limit).map(({ doc: d, status }) => ({
       personId: d.personId,
       fullName: d.fullName,
       cohorts: yearsOf.get(d.personId) ?? [],
-      currentTopics: topicsOf.get(d.personId) ?? [],
-      aiTopics: aiOf.get(d.personId) ?? [],
+      status,
+      currentTopics: savedOf.get(d.personId)?.topics ?? [],
       text: d.chunks.map((c) => c.text),
     })),
   }

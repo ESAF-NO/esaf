@@ -51,11 +51,6 @@ const schema = z
     SEARCH_MODEL_DIR: optional(z.string()),
     // Modellen, f.eks. Xenova/multilingual-e5-small på en liten server. Standard Xenova/bge-m3.
     SEARCH_MODEL: optional(z.string()),
-    // Claude i personsøket: søkeord fra profilene, tolkning av søk og «Spør ESAF».
-    // Uten nøkkel er det av, og søket er helt lokalt. Se README, «Personsøk».
-    ANTHROPIC_API_KEY: optional(z.string().startsWith('sk-ant-', 'skal starte med sk-ant-')),
-    // Modellen. Standard claude-opus-5-5.
-    SEARCH_AI_MODEL: optional(z.string()),
   })
   .superRefine((env, ctx) => {
     const production = env.NODE_ENV === 'production'

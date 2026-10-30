@@ -3,7 +3,6 @@ import {
   DomainError,
   type Embedder,
   type ObjectStorage,
-  type SearchAi,
   type Viewer,
 } from '@esaf/core'
 import type { Db } from '@esaf/db'
@@ -20,8 +19,6 @@ export type ToolContext = {
   fetchImage: ImageFetcher
   /** Embedding-modellen for personsøket. Uten den er søket et rent ordsøk. */
   embedder: Embedder | null
-  /** Claude i personsøket (tolkning av søk). Uten den søkes det uten tolkning. */
-  ai: SearchAi | null
   /** Adressen til appen, for lenker i svarene, f.eks. `https://app.esaf.no`. */
   appUrl: string
 }
@@ -65,7 +62,7 @@ export function toolError(error: unknown): CallToolResult {
   if (error instanceof AccessDeniedError) {
     return errorResult(
       {
-        unauthenticated: 'MCP-nøkkelen gjelder ikke lenger. Lag en ny under Konto og sikkerhet.',
+        unauthenticated: 'MCP-nøkkelen gjelder ikke lenger. Lag en ny på MCP-siden under Admin.',
         not_member: 'Kontoen bak MCP-nøkkelen er ikke aktivt medlem.',
         forbidden: 'Rollen din gir ikke tilgang til dette.',
         strong_auth_required: 'Kontoen må ha passkey eller tofaktor for å bruke adminverktøyene.',

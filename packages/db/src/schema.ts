@@ -220,6 +220,12 @@ export const person = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     /**
+     * SHA-256 av profilteksten søkeordene ble skrevet fra. Null: aldri vurdert.
+     * Er teksten endret siden, er søkeordene kanskje utdaterte og personen
+     * står i lista over dem som trenger nye (`listPeopleForTopics`).
+     */
+    searchTopicsSource: text(),
+    /**
      * Profilbildet: en tilfeldig nøkkel til bildefilene i lagringen (se
      * `photos.ts` i @esaf/core). Hvert nytt bilde får ny nøkkel, så adressene
      * aldri endrer innhold og kan caches lenge. Null betyr initialer.
@@ -972,7 +978,7 @@ export const invitation = pgTable(
 )
 
 /**
- * MCP-nøkler: personlige nøkler en admin lager under «Konto og sikkerhet» for å
+ * MCP-nøkler: personlige nøkler en admin lager på adminsiden «MCP» for å
  * koble en MCP-klient (f.eks. Claude) til adminverktøyene. Som invitasjoner
  * lagres bare SHA-256 av nøkkelen; selve nøkkelen vises én gang. En nøkkel gir
  * aldri mer enn kontoen har akkurat nå: rollen og medlemskapet sjekkes ved hver
@@ -1025,25 +1031,6 @@ export const personSearchIndex = pgTable('person_search_index', {
   vectors: bytea().notNull(),
   dims: integer().notNull(),
   indexedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-})
-
-/**
- * Søkeord skrevet av Claude fra det som står på profilen (se `search-ai.ts` i
- * @esaf/core). Holdes adskilt fra `person.search_topics`, som admins setter: har
- * en person søkeord fra en admin, brukes de i stedet for disse.
- */
-export const personAiTopics = pgTable('person_ai_topics', {
-  personId: uuid()
-    .primaryKey()
-    .references(() => person.id, { onDelete: 'cascade' }),
-  topics: text()
-    .array()
-    .notNull()
-    .default(sql`'{}'::text[]`),
-  /** SHA-256 av teksten søkeordene ble skrevet fra; ny tekst betyr nye søkeord. */
-  sourceHash: text().notNull(),
-  model: text().notNull(),
-  generatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 })
 
 /** Hva i et datasett en rad i `import_record` gjelder. */

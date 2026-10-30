@@ -19,7 +19,6 @@
     "search:query": "tsx scripts/search-index.ts query"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.3.0",
     "@esaf/db": "workspace:*",
     "@huggingface/transformers": "^4.3.2",
     "aws4fetch": "^1.0.20",

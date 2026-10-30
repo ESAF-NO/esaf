@@ -43,6 +43,10 @@ describe.skipIf(!url)('migrering 0019: ESAF-helgen blir arrangementer', () => {
 
   it('flytter helgene og oppmøtet med samme id-er og sletter de gamle tabellene', async () => {
     const db = createDb(scratch.href)
+    // `pool.end()` kan svare før tilkoblingen er helt lukket. Da avbryter
+    // `drop database … with (force)` i afterAll den, og feilen fra Postgres
+    // (57P01) ville ellers blitt en uhåndtert feil i testkjøringen.
+    db.$client.on('error', () => {})
     try {
       await migrate(db, { migrationsFolder: dir })
       const people = await db.execute<{ id: string }>(

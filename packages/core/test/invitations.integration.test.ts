@@ -20,8 +20,10 @@ import {
   InvitationError,
   listInvitations,
   loadViewer,
+  requestPasswordReset,
   resetPasswordWithLink,
   revokeInvitation,
+  setMemberAccess,
   submitAccessRequest,
   type Viewer,
 } from '../src/index.ts'
@@ -115,6 +117,8 @@ describe.skipIf(!url)('invitasjoner og lenker for nytt passord', () => {
       expect(link.token).toMatch(/^[A-Za-z0-9_-]{43}$/)
       expect(Buffer.from(link.token, 'base64url')).toHaveLength(32)
       expect(link.email).toBe('ny@example.test')
+      // Til e-posten: hvem som inviterte.
+      expect(link.createdByName).toBe('Admin')
       const rows = await db.select().from(invitation)
       expect(rows).toHaveLength(1)
       expect(rows[0]!.tokenHash).toBe(createHash('sha256').update(link.token).digest('hex'))
@@ -568,6 +572,160 @@ describe.skipIf(!url)('invitasjoner og lenker for nytt passord', () => {
     })
   })
 
+  describe('«Glemt passord?»', () => {
+    const minutes = (n: number) => n * 60 * 1000
+
+    it('en ukjent eller ugyldig adresse gir ingen lenke, og ingenting lagres', async () => {
+      expect(await requestPasswordReset(db, { email: 'ingen@example.test' })).toBeNull()
+      expect(await requestPasswordReset(db, { email: 'ikke en adresse' })).toBeNull()
+      expect(await requestPasswordReset(db, { email: '' })).toBeNull()
+      expect(await db.select().from(invitation)).toEqual([])
+      expect(await audit('password_link.request')).toEqual([])
+    })
+
+    it('en kjent adresse får en lenke som virker i en time, og det logges', async () => {
+      const before = Date.now()
+      const link = await requestPasswordReset(db, { email: '  MEDLEM@example.test ' })
+      expect(link).toMatchObject({
+        kind: 'password_reset',
+        email: 'medlem@example.test',
+        requestedBySelf: true,
+        createdByName: 'Medlem',
+      })
+      const ttl = link!.expiresAt.getTime() - before
+      expect(ttl).toBeGreaterThan(minutes(59))
+      expect(ttl).toBeLessThanOrEqual(minutes(60) + 5000)
+
+      const [row] = await db.select().from(invitation)
+      expect(row).toMatchObject({
+        kind: 'password_reset',
+        personId: member!.personId,
+        // Personen selv, ikke operatøren, står som den som laget lenken.
+        createdByPersonId: member!.personId,
+        requestedBySelf: true,
+      })
+      expect(await audit('password_link.request')).toMatchObject([
+        { actorPersonId: member!.personId, subjectPersonId: member!.personId },
+      ])
+      expect(await audit('password_link.create')).toEqual([])
+
+      const [view] = await listInvitations(db, admin)
+      expect(view).toMatchObject({
+        requestedBySelf: true,
+        createdBy: { fullName: 'Medlem' },
+        status: 'pending',
+      })
+    })
+
+    it('lenken setter nytt passord og logger ut alle økter, uten å logge inn', async () => {
+      await db.insert(schema.session).values({
+        id: randomUUID(),
+        token: randomUUID(),
+        userId: ids.Medlem!,
+        expiresAt: new Date(Date.now() + 60_000),
+      })
+      const link = await requestPasswordReset(db, { email: 'medlem@example.test' })
+      expect(await describeInvitation(db, link!.token, 'password_reset')).toMatchObject({
+        status: 'pending',
+        email: 'medlem@example.test',
+      })
+      expect(await describeInvitation(db, link!.token, 'invite')).toEqual({ status: 'invalid' })
+      const { userId } = await resetPasswordWithLink(db, {
+        token: link!.token,
+        passwordHash: 'ny-hash',
+      })
+      expect(userId).toBe(ids.Medlem)
+      expect(await db.select().from(schema.session)).toEqual([])
+      const [credential] = await db
+        .select()
+        .from(schema.account)
+        .where(eq(schema.account.userId, ids.Medlem!))
+      expect(credential!.password).toBe('ny-hash')
+      expect(
+        await outcome(resetPasswordWithLink(db, { token: link!.token, passwordHash: 'x' })),
+      ).toBe('used')
+    })
+
+    it('én forespørsel per adresse hvert andre minutt', async () => {
+      const first = await requestPasswordReset(db, { email: 'medlem@example.test' })
+      expect(first).not.toBeNull()
+      expect(await requestPasswordReset(db, { email: 'medlem@example.test' })).toBeNull()
+      // Grensen gjelder adressen, ikke alle.
+      expect(await requestPasswordReset(db, { email: 'admin@example.test' })).not.toBeNull()
+      expect(await db.select().from(invitation)).toHaveLength(2)
+
+      // En lenke fra en admin teller ikke med.
+      await db
+        .update(invitation)
+        .set({ createdAt: new Date(Date.now() - minutes(3)) })
+        .where(eq(invitation.id, first!.id))
+      await createPasswordResetLink(db, admin, {
+        personId: member!.personId!,
+        reason: 'Glemt passord',
+      })
+      const second = await requestPasswordReset(db, { email: 'medlem@example.test' })
+      expect(second).not.toBeNull()
+      expect(await audit('password_link.request')).toHaveLength(3)
+    })
+
+    it('erstatter en ventende lenke til samme adresse, også fra en admin', async () => {
+      const fromAdmin = await createPasswordResetLink(db, admin, {
+        personId: member!.personId!,
+        reason: 'Glemt passord',
+      })
+      const own = await requestPasswordReset(db, { email: 'medlem@example.test' })
+      expect(await describeInvitation(db, fromAdmin.token, 'password_reset')).toEqual({
+        status: 'revoked',
+      })
+      expect(await describeInvitation(db, own!.token, 'password_reset')).toMatchObject({
+        status: 'pending',
+      })
+      expect((await audit('password_link.request'))[0]!.details).toMatchObject({ replaced: 1 })
+    })
+
+    it('deaktiverte og avslåtte kontoer får ingen lenke', async () => {
+      await setMemberAccess(db, admin, {
+        personId: member!.personId!,
+        active: false,
+        reason: 'Sluttet',
+      })
+      expect(await requestPasswordReset(db, { email: 'medlem@example.test' })).toBeNull()
+      expect(await db.select().from(invitation)).toEqual([])
+    })
+
+    it('en konto uten person (aldri bekreftet) får en lenke uten person, og blir bekreftet når den brukes', async () => {
+      await account('Ubekreftet', { verified: false, twoFactor: false })
+      const link = await requestPasswordReset(db, { email: 'ubekreftet@example.test' })
+      expect(link).toMatchObject({ requestedBySelf: true, createdByName: null })
+      const [row] = await db.select().from(invitation)
+      expect(row).toMatchObject({ personId: null, createdByPersonId: null, requestedBySelf: true })
+      expect(await audit('password_link.request')).toMatchObject([
+        {
+          actorPersonId: null,
+          subjectPersonId: null,
+          details: { email: 'ubekreftet@example.test' },
+        },
+      ])
+      // Oversikten viser den ikke som laget av operatøren.
+      const [view] = await listInvitations(db, admin)
+      expect(view).toMatchObject({ requestedBySelf: true, createdBy: null })
+
+      await resetPasswordWithLink(db, { token: link!.token, passwordHash: 'ny-hash' })
+      const [u] = await db.select().from(user).where(eq(user.id, ids.Ubekreftet!))
+      expect(u!.emailVerified).toBe(true)
+    })
+
+    it('lenker fra en admin er ikke bedt om selv, og står med admin som den som laget dem', async () => {
+      const link = await createPasswordResetLink(db, admin, {
+        personId: member!.personId!,
+        reason: 'Glemt passord',
+      })
+      expect(link).toMatchObject({ requestedBySelf: false, createdByName: 'Admin' })
+      const ttl = link.expiresAt.getTime() - Date.now()
+      expect(ttl).toBeGreaterThan(6 * 24 * 60 * minutes(1))
+    })
+  })
+
   describe('operatøren', () => {
     it('kan invitere den første hovedadmin, og det logges uten utfører', async () => {
       const link = await createInvitationAsOperator(db, {
@@ -586,6 +744,8 @@ describe.skipIf(!url)('invitasjoner og lenker for nytt passord', () => {
         details: { role: 'owner', reason: 'Styreleder 2026' },
       })
       expect(await describeInvitation(db, link.token, 'invite')).toMatchObject({ invitedBy: null })
+      // E-posten sier da «Styret i ESAF».
+      expect(link).toMatchObject({ createdByName: null, requestedBySelf: false })
       const { userId } = await acceptInvitation(db, {
         token: link.token,
         passwordHash: 'h',

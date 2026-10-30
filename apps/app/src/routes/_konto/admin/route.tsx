@@ -27,6 +27,7 @@ const tabs = [
   { to: '/admin/invitasjoner', label: 'Invitasjoner', permission: 'members.review' },
   { to: '/admin/gjennomgang', label: 'Gjennomgang', permission: 'profiles.edit' },
   { to: '/admin/medlemmer', label: 'Medlemmer', permission: 'members.manage' },
+  { to: '/admin/styret', label: 'Styret', permission: 'members.manage' },
   { to: '/admin/kullrepresentanter', label: 'Kullrepresentanter', permission: 'members.manage' },
   { to: '/admin/profiler', label: 'Profiler', permission: 'profiles.edit' },
   { to: '/admin/arrangementer', label: 'Arrangementer', permission: 'profiles.edit' },

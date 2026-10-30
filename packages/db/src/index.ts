@@ -4,6 +4,9 @@ export { loadRootEnv } from './env.ts'
 export * as schema from './schema.ts'
 export type {
   AccessRequestStatus,
+  AssetKind,
+  AssetPurpose,
+  BoardRole,
   CohortRelation,
   CompanyArticleSource,
   CompanyEventType,

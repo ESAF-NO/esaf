@@ -124,6 +124,7 @@ describe.skipIf(!url)('redigering, Markdown og festede innlegg', () => {
         title: 'Hvem kan B2B-salg?',
         body: 'Trenger råd om **prising**.',
         url: null,
+        attachments: [],
       })
       await updatePost(db, ola, id, changes)
       const edited = await getPost(db, kari, id)

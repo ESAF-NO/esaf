@@ -2,6 +2,16 @@ import { schema, type Db, type PostChannel } from '@esaf/db'
 import { and, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import {
+  attachAssets,
+  deleteAssetsOf,
+  groupAssets,
+  loadAssets,
+  MAX_ATTACHMENTS,
+  purgeAssets,
+  type AssetView,
+  type PurgeTarget,
+} from './assets.ts'
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience } from './experience.ts'
 import { markdownToPlainText } from './markdown.ts'
@@ -9,6 +19,7 @@ import { personIdsInCohort } from './members.ts'
 import { mentionsToPlainText, resolveMentions } from './mentions.ts'
 import { notifyComment, notifyMentions } from './notifications.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
+import type { ObjectStorage } from './storage.ts'
 
 const { auditEvent, cohort, comment, person, personCohort, post, postVote } = schema
 
@@ -24,6 +35,15 @@ const httpUrl = z
     message: 'Lenken må starte med https://',
   })
 
+/**
+ * Vedleggene, i rekkefølgen de skal vises: filer lastet opp med `uploadAsset`.
+ * Uten feltet beholdes vedleggene som de er.
+ */
+const attachmentIds = z
+  .array(z.uuid('Ugyldig vedlegg.'))
+  .max(MAX_ATTACHMENTS, `Maks ${MAX_ATTACHMENTS} vedlegg.`)
+  .optional()
+
 /** Tittelen er ren tekst. Teksten er Markdown, se `markdown.ts`. */
 export const postInput = z.object({
   channel: z.enum(postChannels),
@@ -34,12 +54,19 @@ export const postInput = z.object({
     .max(200, 'Maks 200 tegn i tittelen.'),
   body: z.string().trim().max(10_000, 'Innlegget er for langt.'),
   url: httpUrl,
+  attachmentIds,
 })
 export type PostInput = z.input<typeof postInput>
 
-export const commentInput = z.object({
-  body: z.string().trim().min(1, 'Skriv noe først.').max(5_000, 'Kommentaren er for lang.'),
-})
+/** En kommentar kan være bare vedlegg, for eksempel et bilde. */
+export const commentInput = z
+  .object({
+    body: z.string().trim().max(5_000, 'Kommentaren er for lang.'),
+    attachmentIds,
+  })
+  .refine((c) => c.body.length > 0 || (c.attachmentIds?.length ?? 0) > 0, {
+    message: 'Skriv noe først.',
+  })
 
 export type Author = {
   personId: string
@@ -66,6 +93,8 @@ export type PostSummary = {
   isOwn: boolean
   /** Festet av en moderator. Står øverst i «Hjem» og i kanalen sin. */
   pinned: boolean
+  /** Hvor mange bilder og dokumenter som er lagt ved, og det første bildet (400 px). */
+  attachments: { images: number; documents: number; thumbnail: string | null }
 }
 
 export type CommentView = {
@@ -77,9 +106,11 @@ export type CommentView = {
   author: Author
   canEdit: boolean
   canDelete: boolean
+  /** Bilder og dokumenter, i rekkefølgen forfatteren valgte. */
+  attachments: AssetView[]
 }
 
-export type PostView = PostSummary & {
+export type PostView = Omit<PostSummary, 'attachments'> & {
   /** Markdown. */
   body: string
   editedAt: Date | null
@@ -88,11 +119,16 @@ export type PostView = PostSummary & {
   canDelete: boolean
   /** Kan feste og løsne innlegget. */
   canPin: boolean
+  /** Bilder og dokumenter, i rekkefølgen forfatteren valgte. */
+  attachments: AssetView[]
   commentList: CommentView[]
 }
 
 /** Det forfatteren trenger for å redigere et innlegg. */
-export type EditablePost = Pick<PostView, 'id' | 'channel' | 'title' | 'body' | 'url'>
+export type EditablePost = Pick<
+  PostView,
+  'id' | 'channel' | 'title' | 'body' | 'url' | 'attachments'
+>
 
 async function loadAuthors(db: Db, personIds: string[]): Promise<Map<string, Author>> {
   if (!personIds.length) return new Map()
@@ -204,10 +240,15 @@ export async function listPosts(
     .limit(Math.min(options.limit ?? 30, 100))
     .offset(options.offset ?? 0)
 
-  const authors = await loadAuthors(
-    db,
-    rows.map((r) => r.authorPersonId),
-  )
+  const [authors, attachments] = await Promise.all([
+    loadAuthors(
+      db,
+      rows.map((r) => r.authorPersonId),
+    ),
+    rows.length
+      ? loadAssets(db, viewer, { postIds: rows.map((r) => r.id) }).then(groupAssets)
+      : new Map<string, AssetView[]>(),
+  ])
   return rows.map((r) => ({
     id: r.id,
     channel: r.channel,
@@ -221,7 +262,17 @@ export async function listPosts(
     viewerVoted: r.viewerVoted,
     isOwn: r.authorPersonId === viewer.personId,
     pinned: r.pinnedAt !== null,
+    attachments: attachmentSummary(attachments.get(r.id) ?? []),
   }))
+}
+
+function attachmentSummary(list: AssetView[]): PostSummary['attachments'] {
+  const images = list.filter((a) => a.image)
+  return {
+    images: images.length,
+    documents: list.length - images.length,
+    thumbnail: images[0]?.image?.small ?? null,
+  }
 }
 
 export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<PostView> {
@@ -256,6 +307,14 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
   ])
   const moderator = can(viewer, 'content.moderate')
   const isOwn = row.authorPersonId === viewer.personId
+  const attachments = groupAssets(
+    await loadAssets(
+      db,
+      viewer,
+      { postIds: [row.id], commentIds: comments.map((c) => c.id) },
+      () => moderator,
+    ),
+  )
 
   return {
     id: row.id,
@@ -275,6 +334,7 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
     canEdit: isOwn,
     canDelete: isOwn || moderator,
     canPin: moderator,
+    attachments: attachments.get(row.id) ?? [],
     commentList: comments.map((c) => {
       const own = c.authorPersonId === viewer.personId
       return {
@@ -285,6 +345,7 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
         author: authors.get(c.authorPersonId)!,
         canEdit: own,
         canDelete: own || moderator,
+        attachments: attachments.get(c.id) ?? [],
       }
     }),
   }
@@ -319,7 +380,8 @@ export async function getEditablePost(
   if (!row) throw new NotFoundError('Fant ikke innlegget.')
   assertAuthor(viewer, row.authorPersonId)
   const { authorPersonId: _author, ...editable } = row
-  return editable
+  const attachments = await loadAssets(db, viewer, { postIds: [row.id] })
+  return { ...editable, attachments: groupAssets(attachments).get(row.id) ?? [] }
 }
 
 function parse<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
@@ -330,13 +392,16 @@ function parse<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
 
 export async function createPost(db: Db, viewer: Viewer, input: PostInput): Promise<string> {
   assertMember(viewer)
-  const data = parse(postInput, input)
+  const { attachmentIds, ...data } = parse(postInput, input)
   return db.transaction(async (tx) => {
     const { text: body, personIds } = await resolveMentions(tx, data.body)
     const [created] = await tx
       .insert(post)
       .values({ ...data, body, authorPersonId: viewer.personId })
       .returning({ id: post.id })
+    if (attachmentIds?.length) {
+      await attachAssets(tx, viewer, { postId: created!.id }, attachmentIds)
+    }
     await notifyMentions(tx, {
       postId: created!.id,
       actorPersonId: viewer.personId,
@@ -347,14 +412,17 @@ export async function createPost(db: Db, viewer: Viewer, input: PostInput): Prom
 }
 
 /**
- * Forfatteren endrer kanal, tittel, tekst eller lenke. «Redigert» settes bare når
- * noe faktisk er endret, så et lagre-klikk uten endringer ikke merker innlegget.
+ * Forfatteren endrer kanal, tittel, tekst, lenke eller vedlegg. «Redigert» settes
+ * bare når noe faktisk er endret, så et lagre-klikk uten endringer ikke merker
+ * innlegget. Med `storage` fjernes filene til vedlegg som er tatt bort, med en
+ * gang; ellers gjør oppryddingen det (`cleanupAssets`).
  */
 export async function updatePost(
   db: Db,
   viewer: Viewer,
   postId: string,
   input: PostInput,
+  storage?: ObjectStorage,
 ): Promise<void> {
   assertMember(viewer)
   const [row] = await db
@@ -369,23 +437,38 @@ export async function updatePost(
     .where(and(eq(post.id, postId), isNull(post.deletedAt)))
   if (!row) throw new NotFoundError('Fant ikke innlegget.')
   assertAuthor(viewer, row.authorPersonId)
-  const parsed = parse(postInput, input)
-  await db.transaction(async (tx) => {
+  const { attachmentIds, ...parsed } = parse(postInput, input)
+  const removed = await db.transaction(async (tx) => {
     // Omtaler skrives om som ved nytt innlegg; bare nylig nevnte får varsel.
     const { text: body, personIds } = await resolveMentions(tx, parsed.body)
     const data = { ...parsed, body }
     const fields = Object.keys(data) as (keyof typeof data)[]
-    if (fields.every((key) => data[key] === row[key])) return
+    const attached =
+      attachmentIds === undefined
+        ? { changed: false, removed: [] }
+        : await attachAssets(tx, viewer, { postId }, attachmentIds)
+    if (!attached.changed && fields.every((key) => data[key] === row[key])) return []
     await tx
       .update(post)
       .set({ ...data, editedAt: new Date() })
       .where(and(eq(post.id, postId), isNull(post.deletedAt)))
     await notifyMentions(tx, { postId, actorPersonId: viewer.personId, mentioned: personIds })
+    return attached.removed
   })
+  if (storage) await purgeAssets(db, storage, removed)
 }
 
-/** Forfatteren eller en admin kan slette. Innlegget skjules, kommentarene beholdes i databasen. */
-export async function deletePost(db: Db, viewer: Viewer, postId: string): Promise<void> {
+/**
+ * Forfatteren eller en moderator kan slette. Innlegget skjules, kommentarene
+ * beholdes i databasen. Vedleggene i innlegget og kommentarene slettes; med
+ * `storage` fjernes filene med en gang, ellers av oppryddingen.
+ */
+export async function deletePost(
+  db: Db,
+  viewer: Viewer,
+  postId: string,
+  storage?: ObjectStorage,
+): Promise<void> {
   assertMember(viewer)
   const [row] = await db
     .select()
@@ -394,18 +477,28 @@ export async function deletePost(db: Db, viewer: Viewer, postId: string): Promis
   if (!row) throw new NotFoundError('Fant ikke innlegget.')
   const own = row.authorPersonId === viewer.personId
   if (!own && !can(viewer, 'content.moderate')) throw new AccessDeniedError('forbidden')
-  await db.transaction(async (tx) => {
+  const removed = await db.transaction(async (tx) => {
     await tx.update(post).set({ deletedAt: new Date() }).where(eq(post.id, postId))
+    const comments = await tx
+      .select({ id: comment.id })
+      .from(comment)
+      .where(eq(comment.postId, postId))
+    const files = await deleteAssetsOf(tx, {
+      postIds: [postId],
+      commentIds: comments.map((c) => c.id),
+    })
     // Når noen fjerner andres innhold, skal det kunne etterprøves.
     if (!own) {
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'content.remove_post',
         subjectPersonId: row.authorPersonId,
-        details: { postId, title: row.title },
+        details: { postId, title: row.title, attachments: files.length },
       })
     }
+    return files
   })
+  if (storage) await purgeAssets(db, storage, removed)
 }
 
 export async function addComment(
@@ -415,7 +508,7 @@ export async function addComment(
   input: z.input<typeof commentInput>,
 ): Promise<string> {
   assertMember(viewer)
-  const data = parse(commentInput, input)
+  const { attachmentIds, ...data } = parse(commentInput, input)
   return db.transaction(async (tx) => {
     const [target] = await tx
       .select({ id: post.id })
@@ -427,6 +520,9 @@ export async function addComment(
       .insert(comment)
       .values({ postId, authorPersonId: viewer.personId, body })
       .returning({ id: comment.id })
+    if (attachmentIds?.length) {
+      await attachAssets(tx, viewer, { commentId: created!.id }, attachmentIds)
+    }
     await notifyComment(tx, {
       postId,
       commentId: created!.id,
@@ -437,7 +533,13 @@ export async function addComment(
   })
 }
 
-export async function deleteComment(db: Db, viewer: Viewer, commentId: string): Promise<void> {
+/** Som `deletePost`, for én kommentar og vedleggene i den. */
+export async function deleteComment(
+  db: Db,
+  viewer: Viewer,
+  commentId: string,
+  storage?: ObjectStorage,
+): Promise<void> {
   assertMember(viewer)
   const [row] = await db
     .select()
@@ -446,25 +548,34 @@ export async function deleteComment(db: Db, viewer: Viewer, commentId: string): 
   if (!row) throw new NotFoundError('Fant ikke kommentaren.')
   const own = row.authorPersonId === viewer.personId
   if (!own && !can(viewer, 'content.moderate')) throw new AccessDeniedError('forbidden')
-  await db.transaction(async (tx) => {
+  const removed = await db.transaction(async (tx) => {
     await tx.update(comment).set({ deletedAt: new Date() }).where(eq(comment.id, commentId))
+    const files = await deleteAssetsOf(tx, { commentIds: [commentId] })
     if (!own) {
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'content.remove_comment',
         subjectPersonId: row.authorPersonId,
-        details: { postId: row.postId, commentId, excerpt: row.body.slice(0, 120) },
+        details: {
+          postId: row.postId,
+          commentId,
+          excerpt: row.body.slice(0, 120),
+          attachments: files.length,
+        },
       })
     }
+    return files
   })
+  if (storage) await purgeAssets(db, storage, removed)
 }
 
-/** Forfatteren endrer teksten i kommentaren sin. */
+/** Forfatteren endrer teksten eller vedleggene i kommentaren sin. */
 export async function updateComment(
   db: Db,
   viewer: Viewer,
   commentId: string,
   input: z.input<typeof commentInput>,
+  storage?: ObjectStorage,
 ): Promise<void> {
   assertMember(viewer)
   const [row] = await db
@@ -474,10 +585,14 @@ export async function updateComment(
     .where(and(eq(comment.id, commentId), isNull(comment.deletedAt), isNull(post.deletedAt)))
   if (!row) throw new NotFoundError('Fant ikke kommentaren.')
   assertAuthor(viewer, row.authorPersonId)
-  const data = parse(commentInput, input)
-  await db.transaction(async (tx) => {
+  const { attachmentIds, ...data } = parse(commentInput, input)
+  const removed: PurgeTarget[] = await db.transaction(async (tx) => {
     const { text: body, personIds } = await resolveMentions(tx, data.body)
-    if (body === row.body) return
+    const attached =
+      attachmentIds === undefined
+        ? { changed: false, removed: [] }
+        : await attachAssets(tx, viewer, { commentId }, attachmentIds)
+    if (body === row.body && !attached.changed) return []
     await tx
       .update(comment)
       .set({ body, editedAt: new Date() })
@@ -489,7 +604,9 @@ export async function updateComment(
       actorPersonId: viewer.personId,
       mentioned: personIds,
     })
+    return attached.removed
   })
+  if (storage) await purgeAssets(db, storage, removed)
 }
 
 /**

@@ -33,6 +33,7 @@ function EditPost() {
           body: post.body,
           url: post.url ?? '',
         }}
+        initialAttachments={post.attachments}
         submitLabel="Lagre"
         savingLabel="Lagrer …"
         onSubmit={async (values) => {

@@ -307,15 +307,20 @@ export type AuditEntry = {
 }
 
 /**
- * Revisjonsloggen, nyeste først. Bla bakover med `before`. Kan avgrenses til én
- * person (som utfører eller den det gjelder), handlinger som begynner med
- * `actionPrefix` (f.eks. `company.`), og det som er gjort med MCP-nøkler.
+ * Revisjonsloggen, nyeste først. Bla bakover med `beforeId` (id-en til den siste
+ * hendelsen på forrige side), eller med et tidspunkt (`before`). Hendelser fra
+ * samme transaksjon har samme tidspunkt (en import kan skrive hundrevis), så
+ * `beforeId` går på tidspunkt og id sammen og hopper aldri over noen. Kan
+ * avgrenses til én person (som utfører eller den det gjelder), handlinger som
+ * begynner med `actionPrefix` (f.eks. `company.`), og det som er gjort med
+ * MCP-nøkler.
  */
 export async function listAuditEvents(
   db: Db,
   viewer: Viewer,
   options: {
     before?: Date
+    beforeId?: string
     limit?: number
     personId?: string
     actionPrefix?: string
@@ -350,6 +355,9 @@ export async function listAuditEvents(
     .where(
       and(
         options.before ? lt(auditEvent.createdAt, options.before) : undefined,
+        options.beforeId
+          ? sql`(${auditEvent.createdAt}, ${auditEvent.id}) < (select cursor.created_at, cursor.id from audit_event as cursor where cursor.id = ${options.beforeId}::uuid)`
+          : undefined,
         options.personId
           ? or(
               eq(auditEvent.actorPersonId, options.personId),
@@ -362,7 +370,7 @@ export async function listAuditEvents(
         options.viaMcp ? isNotNull(auditEvent.apiTokenId) : undefined,
       ),
     )
-    .orderBy(desc(auditEvent.createdAt))
+    .orderBy(desc(auditEvent.createdAt), desc(auditEvent.id))
     .limit(Math.min(options.limit ?? 50, 200))
   const who = (id: string | null, fullName: string | null, status: MembershipStatus | null) =>
     id && fullName ? { personId: id, fullName, active: status === 'active' } : null

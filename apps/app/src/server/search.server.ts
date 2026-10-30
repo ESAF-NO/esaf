@@ -1,5 +1,11 @@
 import { fileURLToPath } from 'node:url'
-import { createLocalEmbedder, reindexPeople, type Embedder } from '@esaf/core'
+import {
+  availableMemory,
+  chooseSearchModel,
+  createLocalEmbedder,
+  reindexPeople,
+  type Embedder,
+} from '@esaf/core'
 import { db } from './db.server.ts'
 import { env } from './env.server.ts'
 
@@ -20,11 +26,15 @@ const globalForSearch = globalThis as unknown as {
   esafSearchTimer?: ReturnType<typeof setInterval>
 }
 
-export const embedder = (globalForSearch.esafEmbedder ??= createLocalEmbedder({
-  cacheDir,
-  model: env.SEARCH_MODEL,
-  allowDownload: !production,
-}))
+export const embedder = (globalForSearch.esafEmbedder ??= (() => {
+  // Uten SEARCH_MODEL velges modellen etter minnet serveren har (se `chooseSearchModel`).
+  const memory = availableMemory()
+  const model = chooseSearchModel(env.SEARCH_MODEL, memory)
+  console.info(
+    `[esaf/search] Personsøket bruker ${model} (${(memory / 1024 ** 3).toFixed(1)} GB minne${env.SEARCH_MODEL ? ', satt med SEARCH_MODEL' : ''}).`,
+  )
+  return createLocalEmbedder({ cacheDir, model, allowDownload: !production })
+})())
 
 let running = false
 let warned = false

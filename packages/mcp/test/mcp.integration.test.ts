@@ -362,6 +362,30 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       expect(
         await callError(client, 'update_person', { personId: admin!.personId, phone: '41234567' }),
       ).toMatch(/bare personen selv/)
+
+      // Alt eller ingenting: et annet telefonnummer enn det som står, avvises, og
+      // bioen i samme kall lagres heller ikke.
+      expect(
+        await callError(client, 'update_person', {
+          personId,
+          bio: 'Noe helt annet.',
+          phone: '99887766',
+        }),
+      ).toBeTruthy()
+      const after = await call<{ bio: string; contact: { phone: string } }>(client, 'get_person', {
+        personId,
+      })
+      expect(after.bio).toBe('Gründer og daglig leder i Analytisk.')
+      expect(after.contact.phone).toBe('+47 412 34 567')
+
+      // ES-selskapet byttes på navnet, selv om profilen har en id fra før.
+      await call(client, 'update_person', { personId, esCompany: 'Gammelt AS' })
+      const renamed = await call<{ person: { esCompany: { name: string } } }>(
+        client,
+        'update_person',
+        { personId, esCompany: 'Nytt AS' },
+      )
+      expect(renamed.person.esCompany.name).toBe('Nytt AS')
       await client.close()
     })
 

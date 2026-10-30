@@ -433,21 +433,29 @@ export function registerPeopleTools(server: McpServer, ctx: ToolContext) {
       const next: ProfileInput = {
         ...inputFrom(current),
         ...fields,
-        ...(changes.esCompany === null ? { esCompanyId: null } : {}),
+        // Et nytt ES-selskap uten id finnes på navnet; den gamle id-en ville ellers vunnet.
+        ...(changes.esCompany !== undefined && changes.esCompanyId === undefined
+          ? { esCompanyId: null }
+          : {}),
         ...(experience ? { experience: experience.map(toExperience) } : {}),
       }
-      await updateProfile(ctx.db, ctx.viewer, personId, next)
-      const filled =
-        contactEmail || phone
-          ? await fillUnclaimedContact(ctx.db, ctx.viewer, personId, { contactEmail, phone })
-          : null
-      if (sources?.length) {
-        await addFieldSources(ctx.db, ctx.viewer, {
-          entityType: 'person',
-          entityId: personId,
-          sources,
-        })
-      }
+      // Alt eller ingenting: avviser `fillUnclaimedContact` en kontaktinfo som
+      // står der fra før, eller en kilde er ugyldig, lagres heller ikke resten.
+      const filled = await ctx.db.transaction(async (tx) => {
+        await updateProfile(tx, ctx.viewer, personId, next)
+        const filled =
+          contactEmail || phone
+            ? await fillUnclaimedContact(tx, ctx.viewer, personId, { contactEmail, phone })
+            : null
+        if (sources?.length) {
+          await addFieldSources(tx, ctx.viewer, {
+            entityType: 'person',
+            entityId: personId,
+            sources,
+          })
+        }
+        return filled
+      })
       return {
         updated: true,
         ...(filled ? { contactFilled: filled.filled } : {}),

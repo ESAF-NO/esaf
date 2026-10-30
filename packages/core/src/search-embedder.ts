@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { totalmem } from 'node:os'
 import type { Embedder } from './people-search.ts'
 
 /**
@@ -10,14 +12,48 @@ import type { Embedder } from './people-search.ts'
  * på norske søk mot engelske bioer. Den er stor (ca. 560 MB på disk, ca. 1,5 GB
  * minne når den er lastet), så den lastes først når noen søker eller en profil
  * er endret, og slippes igjen etter `idleMs` uten bruk. Et søk tar da rundt 10 ms
- * (pluss under ett sekund første gang etter en pause). På en liten server kan
- * `SEARCH_MODEL=Xenova/multilingual-e5-small` brukes i stedet (120 MB); søket
- * sammenligner treff innenfor hvert søk, så det trenger ingen ny innstilling.
+ * (pluss under ett sekund første gang etter en pause). På en server med lite
+ * minne brukes `SEARCH_MODEL_SMALL` (multilingual-e5-small, 120 MB) i stedet
+ * (se `chooseSearchModel`); søket sammenligner treff innenfor hvert søk, så det
+ * trenger ingen ny innstilling.
  *
  * Modellen lastes ned første gang til `cacheDir`; i produksjon gjøres det når
- * bildet bygges (`pnpm search:download-model`), så serveren aldri trenger nett.
+ * bildet bygges (`pnpm search:download-model`, begge modellene), så serveren
+ * aldri trenger nett.
  */
 export const SEARCH_MODEL = 'Xenova/bge-m3'
+export const SEARCH_MODEL_SMALL = 'Xenova/multilingual-e5-small'
+
+/** Under så mye minne velges den lille modellen, med mindre `SEARCH_MODEL` er satt. */
+export const SEARCH_MODEL_MIN_MEMORY = 3 * 1024 ** 3
+
+/**
+ * Minnet appen har: det maskinen har, eller grensen for containeren hvis den
+ * er lavere (cgroup v2 og v1).
+ */
+export function availableMemory() {
+  let limit = totalmem()
+  for (const file of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) {
+    try {
+      const value = Number(readFileSync(file, 'utf8').trim())
+      if (Number.isFinite(value) && value > 0) limit = Math.min(limit, value)
+    } catch {
+      // Ikke i en container, eller en annen cgroup-versjon.
+    }
+  }
+  return limit
+}
+
+/**
+ * Modellen som skal brukes: `SEARCH_MODEL` hvis den er satt, ellers BGE-M3, og
+ * den lille modellen når serveren har mindre enn `SEARCH_MODEL_MIN_MEMORY`. BGE-M3
+ * bruker rundt 1,5 GB når den er lastet, og ved siden av appen og Postgres kunne
+ * den ellers tatt alt minnet på en liten server.
+ */
+export function chooseSearchModel(configured: string | undefined, memory: number) {
+  if (configured) return configured
+  return memory < SEARCH_MODEL_MIN_MEMORY ? SEARCH_MODEL_SMALL : SEARCH_MODEL
+}
 
 /** Hvordan hver modell skal brukes: pooling og prefikser den er trent med. */
 const PROFILES: Record<string, { pooling: 'cls' | 'mean'; query: string; passage: string }> = {

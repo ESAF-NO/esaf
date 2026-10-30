@@ -253,11 +253,13 @@ export function registerAdminTools(server: McpServer, ctx: ToolContext) {
     title: 'Audit log',
     description:
       'Who did what, newest first. Filter by person (actor or subject), action prefix (e.g. "company.", "profile.create") ' +
-      'or viaMcp=true for changes made with MCP keys. Page back with before=<createdAt of the last entry>.',
+      'or viaMcp=true for changes made with MCP keys. Page back with beforeId=<id of the last entry>; ' +
+      'before=<datetime> starts from a point in time.',
     input: z.object({
       personId: z.uuid().optional(),
       actionPrefix: z.string().max(60).optional(),
       viaMcp: z.boolean().optional(),
+      beforeId: z.uuid().optional().describe('Id of the last entry on the previous page.'),
       before: z.iso.datetime().optional(),
       limit: z.number().int().min(1).max(200).default(50),
     }),

@@ -16,7 +16,12 @@ COPY . .
 RUN pnpm install --offline --frozen-lockfile --filter "@esaf/app..." --filter "@esaf/core..."
 RUN pnpm --filter @esaf/app build
 # Embedding-modellen til personsøket legges i bildet, så serveren aldri laster ned noe.
-RUN pnpm search:download-model
+# Nedlastingen (560 MB) caches på byggeserveren mellom deployer (BuildKit), så
+# den bare skjer første gang eller når modellen byttes.
+RUN --mount=type=cache,id=esaf-search-models,target=/cache/models \
+  SEARCH_MODEL_DIR=/cache/models pnpm search:download-model \
+  && mkdir -p /repo/.data \
+  && cp -R /cache/models /repo/.data/models
 
 FROM node:24-slim
 ENV NODE_ENV=production PORT=3000 SEARCH_MODEL_DIR=/repo/.data/models

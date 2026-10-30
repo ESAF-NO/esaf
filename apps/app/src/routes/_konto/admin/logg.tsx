@@ -49,11 +49,9 @@ function AuditLog() {
     setLoading(true)
     setError(null)
     try {
-      // Tidspunktene har millisekunder her og mikrosekunder i databasen. Med ett
-      // millisekund ekstra kommer også hendelser fra samme millisekund som den
-      // siste med, og de som allerede vises, filtreres bort.
-      const before = new Date(new Date(last.createdAt).getTime() + 1).toISOString()
-      const page = await fetchPage({ data: { before } })
+      // Blar fra den siste hendelsen (tidspunkt og id), så hendelser med samme
+      // tidspunkt, som en import skriver mange av, aldri hoppes over.
+      const page = await fetchPage({ data: { beforeId: last.id } })
       const seen = new Set(entries.map((e) => e.id))
       const fresh = page.filter((e) => !seen.has(e.id))
       const finished = page.length < auditPageSize || fresh.length === 0

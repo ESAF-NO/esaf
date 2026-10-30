@@ -4,6 +4,7 @@ import { schema, type CompanyStatus, type Db } from '@esaf/db'
 import { and, arrayOverlaps, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import { assetViews, loadAssets, type AssetView } from './assets.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import {
   loadCompanyArticles,
@@ -31,11 +32,19 @@ import {
   type CompanySourceField,
   type FieldSource,
 } from './sources.ts'
-import { optionalText, tagList, yearInput } from './validation.ts'
+import {
+  companyName,
+  isCompanyName,
+  optionalCompanyName,
+  optionalText,
+  tagList,
+  yearInput,
+} from './validation.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import type { ObjectStorage } from './storage.ts'
 
 const {
+  asset,
   auditEvent,
   cohort,
   company,
@@ -71,26 +80,11 @@ export function companySlug(name: string) {
 
 export const companyStatuses = schema.companyStatus.enumValues
 
+// Ligger i validation.ts, så profilene kan bruke dem uten å laste selskapene
+// (det ga en importsirkel via vedleggene).
+export { companyName, isCompanyName, optionalCompanyName }
+
 const collapseSpaces = (v: string) => v.replace(/\s+/g, ' ')
-const hasLetterOrDigit = (v: string) => /[\p{L}\p{N}]/u.test(v)
-
-/** Om teksten kan være et selskapsnavn: den har bokstaver eller tall. */
-export const isCompanyName = (name: string | null | undefined): name is string =>
-  typeof name === 'string' && hasLetterOrDigit(name)
-
-/** Et selskapsnavn slik noen skriver det: trimmet og uten doble mellomrom. */
-export const companyName = z
-  .string()
-  .trim()
-  .min(1, 'Skriv inn selskapet.')
-  .max(120, 'Maks 120 tegn.')
-  .transform(collapseSpaces)
-  .refine(hasLetterOrDigit, 'Selskapsnavnet må ha bokstaver eller tall.')
-
-/** Som `companyName`, men tomt felt betyr «ingen». */
-export const optionalCompanyName = optionalText(120)
-  .transform((v) => (v === null ? null : collapseSpaces(v)))
-  .refine((v) => v === null || hasLetterOrDigit(v), 'Selskapsnavnet må ha bokstaver eller tall.')
 
 /**
  * Gjør om det folk skriver («syrlig.no», «http://www.syrlig.no/») til en full
@@ -209,6 +203,11 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   linkRequests: LinkRequestView[]
   /** Den innloggede har lagt til andre her, og venter på at de bekrefter. */
   requestedLinks: LinkRequestView[]
+  /**
+   * «Dokumenter»: pitch deck, pressemateriale og lignende. Alle medlemmer kan
+   * laste ned; de som kan redigere selskapet, laster opp og fjerner.
+   */
+  documents: AssetView[]
 }
 
 /** Slugen er byttet ut (nytt navn, eller slått sammen med et annet selskap). */
@@ -521,6 +520,10 @@ export async function getCompany(
     listMyLinkRequests(db, viewer, { companyId: row.id }),
     loadRequestedLinks(db, viewer, row.id),
   ])
+  const moderator = can(viewer, 'content.moderate')
+  const documents = assetViews(
+    await loadAssets(db, viewer, { companyId: row.id }, () => canEdit || moderator),
+  )
   return {
     ...row,
     logo: logoUrls(logoKey),
@@ -537,6 +540,7 @@ export async function getCompany(
     suggestions,
     linkRequests,
     requestedLinks,
+    documents,
   }
 }
 
@@ -944,6 +948,8 @@ export async function mergeCompanies(
       .set({ companyId: target.id })
       .where(eq(companyEvent.companyId, source.id))
     await tx.update(quote).set({ companyId: target.id }).where(eq(quote.companyId, source.id))
+    // Dokumentene også.
+    await tx.update(asset).set({ companyId: target.id }).where(eq(asset.companyId, source.id))
     // Sakene i media følger med, utenom dem selskapet det slås sammen med, allerede har.
     const articles = await moveCompanyArticles(tx, source.id, target.id)
     // Forslag, tilknytninger og varsler om duplikatet gjelder nå selskapet det slås sammen med.

@@ -1,6 +1,7 @@
 import { schema, type CompanyStatus, type Db } from '@esaf/db'
 import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import { assertCan, type Viewer } from './access.ts'
+import { deleteAssetsOf, purgeAssets } from './assets.ts'
 import { companyInput, companySlug, lockCompany, pgCode, type CompanyInput } from './companies.ts'
 import { DomainError } from './errors.ts'
 import { deleteLogoFiles, logoUrls, type CompanyLogoUrls } from './logos.ts'
@@ -192,7 +193,7 @@ const reasonInput = optionalText(500)
  * Sletter et selskap. Er noen knyttet til det (erfaring eller ES-selskap), må
  * `unlink` være satt, og da fjernes koblingene fra profilene; ellers avvises det.
  * Historikk, kilder, forslag og forespørsler slettes, sitater mister selskapet,
- * og logoen slettes fra lagringen. Logges med det som ble fjernet.
+ * og logoen og dokumentene slettes fra lagringen. Logges med det som ble fjernet.
  */
 export async function deleteCompany(
   db: Db,
@@ -203,7 +204,7 @@ export async function deleteCompany(
   assertCan(viewer, 'profiles.edit')
   const reason = reasonInput.safeParse(input.reason ?? '')
   if (!reason.success) throw new DomainError('Begrunnelsen kan ha maks 500 tegn.')
-  const logoKey = await db.transaction(async (tx) => {
+  const { logoKey, files } = await db.transaction(async (tx) => {
     const current = await lockCompany(tx, input.companyId)
     // Én spørring om gangen: transaksjonen har bare én tilkobling.
     const jobs = await tx
@@ -243,6 +244,7 @@ export async function deleteCompany(
       await recordFieldEdits(tx, 'person', personId, ['esCompany'], 'forget')
     }
     await deleteFieldSources(tx, 'company', [current.id])
+    const files = await deleteAssetsOf(tx, { companyId: current.id })
     await tx.delete(company).where(eq(company.id, current.id))
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
@@ -258,10 +260,12 @@ export async function deleteCompany(
         quotes,
         suggestions,
         links,
+        documents: files.length,
         people: [...new Set([...jobs, ...team].map((p) => p.personId))],
       },
     })
-    return current.logoKey
+    return { logoKey: current.logoKey, files }
   })
   if (logoKey) await deleteLogoFiles(storage, logoKey)
+  await purgeAssets(db, storage, files)
 }

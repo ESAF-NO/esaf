@@ -28,7 +28,11 @@ import {
 } from '#/components/ui.tsx'
 import { fetchAccounts, resetPasskeys, updateAccess, updateRole } from '#/lib/admin.functions.ts'
 import { kull, lastActive, plural } from '#/lib/format.ts'
-import { createPasswordLink, type ShareableLink } from '#/lib/invitations.functions.ts'
+import {
+  createPasswordLink,
+  fetchAuthOptions,
+  type ShareableLink,
+} from '#/lib/invitations.functions.ts'
 import { fold } from '#/lib/member-search.ts'
 import {
   needsStrongAuth,
@@ -48,7 +52,10 @@ export const Route = createFileRoute('/_konto/admin/medlemmer')({
     rolle: z.enum(roleNames).optional().catch(undefined),
     status: z.enum(['aktiv', 'deaktivert']).optional().catch(undefined),
   }),
-  loader: () => fetchAccounts(),
+  loader: async () => {
+    const [accounts, { emailEnabled }] = await Promise.all([fetchAccounts(), fetchAuthOptions()])
+    return { accounts, emailEnabled }
+  },
   head: () => ({ meta: [{ title: 'Medlemmer – Admin – ESAF' }] }),
   component: Members,
   errorComponent: ({ error }) => (
@@ -77,7 +84,7 @@ function errorMessage(error: unknown) {
 }
 
 function Members() {
-  const accounts = Route.useLoaderData()
+  const { accounts, emailEnabled } = Route.useLoaderData()
   const search = Route.useSearch()
   const { viewer } = Route.useRouteContext()
   const navigate = useNavigate({ from: Route.fullPath })
@@ -259,6 +266,7 @@ function Members() {
       {pending?.kind === 'password' && (
         <PasswordLinkDialog
           account={pending.account}
+          emailEnabled={emailEnabled}
           onClose={() => setPending(null)}
           onDone={done}
         />
@@ -634,15 +642,18 @@ function PasskeysDialog({
 }
 
 /**
- * Lenke for nytt passord, for den som har glemt det. Lenken vises én gang i
- * dialogen, og admin sender den selv.
+ * Lenke for nytt passord, for den som har glemt det. Med e-post sendes den til
+ * adressen på kontoen; ellers sender admin den selv. Lenken vises én gang i
+ * dialogen uansett, som reserve.
  */
 function PasswordLinkDialog({
   account: a,
+  emailEnabled,
   onClose,
   onDone,
 }: {
   account: AccountView
+  emailEnabled: boolean
   onClose: () => void
   onDone: (message: string) => void
 }) {
@@ -671,19 +682,15 @@ function PasswordLinkDialog({
   }
 
   if (link) {
+    const message = link.emailed
+      ? `Lenken er sendt på e-post til ${a.fullName}.`
+      : `Lenken til ${a.fullName} er laget. Den vises ikke igjen.`
     return (
-      <Dialog
-        title={`Lenke for nytt passord til ${a.fullName}`}
-        onClose={() => onDone(`Lenken til ${a.fullName} er laget. Den vises ikke igjen.`)}
-      >
+      <Dialog title={`Lenke for nytt passord til ${a.fullName}`} onClose={() => onDone(message)}>
         <div className="space-y-4">
           <ShareLink link={link} kind="password_reset" />
           <DialogActions>
-            <Button
-              onClick={() => onDone(`Lenken til ${a.fullName} er laget. Den vises ikke igjen.`)}
-            >
-              Ferdig
-            </Button>
+            <Button onClick={() => onDone(message)}>Ferdig</Button>
           </DialogActions>
         </div>
       </Dialog>
@@ -696,8 +703,17 @@ function PasswordLinkDialog({
       description={
         <>
           <p>
-            Gjør dette bare når {name} har bedt om det, og send lenken direkte til {name}. Med
-            lenken velger {name} et nytt passord, og blir logget ut på alle enheter. Tofaktor og
+            {emailEnabled ? (
+              <>
+                Gjør dette bare når {name} har bedt om det. Lenken sendes på e-post til {a.email},
+                og vises også her, så du kan sende den selv om e-posten ikke kommer fram.
+              </>
+            ) : (
+              <>
+                Gjør dette bare når {name} har bedt om det, og send lenken direkte til {name}.
+              </>
+            )}{' '}
+            Med lenken velger {name} et nytt passord, og blir logget ut på alle enheter. Tofaktor og
             passkeys beholdes.
           </p>
           <p>Lenken virker én gang i sju dager. En eldre lenke til {name} slutter å virke.</p>
@@ -716,7 +732,13 @@ function PasswordLinkDialog({
             Avbryt
           </Button>
           <Button type="submit" disabled={busy}>
-            {busy ? 'Lager lenke …' : 'Lag lenke'}
+            {busy
+              ? emailEnabled
+                ? 'Sender …'
+                : 'Lager lenke …'
+              : emailEnabled
+                ? 'Send lenke'
+                : 'Lag lenke'}
           </Button>
         </DialogActions>
       </form>

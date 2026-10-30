@@ -1,0 +1,1 @@
+ALTER TABLE "invitation" ADD COLUMN "requested_by_self" boolean DEFAULT false NOT NULL;

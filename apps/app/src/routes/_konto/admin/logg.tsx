@@ -198,7 +198,9 @@ function LogEntry({ entry: e }: { entry: Entry }) {
 /** Hvem som gjorde det: personen, eller et ikon for operatøren på kommandolinjen. */
 function ActorMark({ entry: e }: { entry: Entry }) {
   if (e.actor) return <Avatar name={e.actor.fullName} size="sm" muted={!e.actor.active} />
-  const Icon = e.action === 'access.request' ? UserRound : Terminal
+  // Uten utfører er det operatøren, eller en som spurte selv før de hadde en person.
+  const Icon =
+    e.action === 'access.request' || e.action === 'password_link.request' ? UserRound : Terminal
   return (
     <span
       aria-hidden
@@ -392,6 +394,16 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
   'password_link.create': ({ actor, subject }) => (
     <>
       {actor} laget en lenke for nytt passord til {subject}.
+    </>
+  ),
+  'password_link.request': ({ entry, details }) => (
+    <>
+      {entry.subject ? (
+        <Who person={entry.subject} />
+      ) : (
+        (text(details.email) ?? 'En konto uten profil')
+      )}{' '}
+      ba om en lenke for nytt passord på e-post («Glemt passord?»).
     </>
   ),
   'password_link.revoke': ({ actor, subject }) => (

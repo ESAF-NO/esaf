@@ -6,12 +6,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc",
-    "test": "vitest run"
+    "typecheck": "tsc && tsc -p views",
+    "test": "vitest run",
+    "build:views": "tsx scripts/build-views.ts",
+    "preview:universe": "tsx scripts/preview-universe.ts"
   },
   "dependencies": {
     "@esaf/core": "workspace:*",
     "@esaf/db": "workspace:*",
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
     "@modelcontextprotocol/server": "^2.4.0",
     "zod": "^4.6.7"
   },
@@ -19,7 +22,9 @@
     "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^24",
     "drizzle-orm": "^0.45.4",
+    "esbuild": "^0.28.2",
     "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"
   }

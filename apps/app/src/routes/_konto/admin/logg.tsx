@@ -634,6 +634,11 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       </>
     )
   },
+  'profile.search_topics': ({ actor, subject, details }) => (
+    <>
+      {actor} satte søkeordene til {subject}: {list(details.topics)}.
+    </>
+  ),
   'mcp_token.create': ({ actor, details }) => (
     <>
       {actor} laget MCP-nøkkelen «{text(details.name) ?? 'uten navn'}»

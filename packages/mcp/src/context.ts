@@ -1,4 +1,11 @@
-import { AccessDeniedError, DomainError, type ObjectStorage, type Viewer } from '@esaf/core'
+import {
+  AccessDeniedError,
+  DomainError,
+  type Embedder,
+  type ObjectStorage,
+  type SearchAi,
+  type Viewer,
+} from '@esaf/core'
 import type { Db } from '@esaf/db'
 import type { CallToolResult, McpServer, ToolAnnotations } from '@modelcontextprotocol/server'
 import { z } from 'zod'
@@ -11,6 +18,10 @@ export type ToolContext = {
   storage: ObjectStorage
   viewer: NonNullable<Viewer>
   fetchImage: ImageFetcher
+  /** Embedding-modellen for personsøket. Uten den er søket et rent ordsøk. */
+  embedder: Embedder | null
+  /** Claude i personsøket (tolkning av søk). Uten den søkes det uten tolkning. */
+  ai: SearchAi | null
   /** Adressen til appen, for lenker i svarene, f.eks. `https://app.esaf.no`. */
   appUrl: string
 }

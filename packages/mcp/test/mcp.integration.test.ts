@@ -59,6 +59,17 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       storage,
       appUrl: APP_URL,
       clientAddress: (request) => request.headers.get('x-test-address') ?? '203.0.113.7',
+      // Forutsigbar «modell»: rakett, romfart og space er samme begrep.
+      embedder: {
+        model: 'test-model',
+        async embed(texts) {
+          return texts.map((t) => {
+            const space = (t.toLowerCase().match(/space|romfart|rakett|satellitt/g) ?? []).length
+            const len = Math.hypot(0.3, space)
+            return new Float32Array([0.3 / len, space / len])
+          })
+        },
+      },
       // Ingen nettverk i testene: bildene lages her.
       fetchImage: async (imageUrl) => {
         fetched.push(imageUrl)
@@ -488,6 +499,93 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       expect(
         await callError(client, 'create_invitation', { email: 'ny2@example.test', role: 'admin' }),
       ).toMatch(/hovedadmin/)
+      await client.close()
+    })
+  })
+
+  describe('finne folk og ES-universet', () => {
+    it('søker på hva folk kan, og søkeord gjør dem lettere å finne', async () => {
+      const client = await connect(await tokenFor(admin))
+      const created = await call<{ rows: { personId: string }[] }>(client, 'create_profiles', {
+        dryRun: false,
+        profiles: [
+          {
+            fullName: 'Kari Rakett',
+            cohorts: [{ graduationYear: 2014 }],
+            bio: 'Kari bygger rakettmotorer i Trondheim.',
+          },
+          {
+            fullName: 'Ola Annen',
+            cohorts: [{ graduationYear: 2015 }],
+            bio: 'Ola selger kaffe og elsker sykling.',
+          },
+        ],
+      })
+      const [kari, ola] = created.rows.map((r) => r.personId)
+      const before = await call<{ hits: { personId: string }[] }>(client, 'find_people', {
+        query: 'romfart',
+      })
+      expect(before.hits).toEqual([])
+
+      const todo = await call<{ items: { personId: string; text: string[] }[] }>(
+        client,
+        'list_people_for_tagging',
+        {},
+      )
+      expect(todo.items.find((i) => i.personId === ola)!.text[0]).toContain('kaffe')
+
+      const tagged = await call<{ updated: number; indexed: number }>(client, 'set_search_topics', {
+        people: [
+          { personId: kari, topics: ['romfart', 'space', 'rakettmotorer'] },
+          { personId: ola, topics: ['kaffe', 'coffee'] },
+        ],
+      })
+      expect(tagged.updated).toBe(2)
+      expect(tagged.indexed).toBeGreaterThanOrEqual(2)
+      const after = await call<{
+        semantic: boolean
+        hits: { personId: string; reason: string; link: string }[]
+      }>(client, 'find_people', { query: 'space' })
+      expect(after.semantic).toBe(true)
+      expect(after.hits.map((h) => h.personId)).toEqual([kari])
+      expect(after.hits[0]!.link).toBe(`${APP_URL}/medlemmer/${kari}`)
+      // Uten Claude på serveren: ingen tolkning, og Spør ESAF sier fra.
+      expect(after).toMatchObject({ interpreted: null })
+      expect(await callError(client, 'ask_people', { question: 'hvem kan romfart?' })).toContain(
+        'ikke slått på',
+      )
+      await client.close()
+    })
+
+    it('ES-universet er en MCP App med data i structuredContent', async () => {
+      const client = await connect(await tokenFor(admin))
+      const { tools } = await client.listTools()
+      const tool = tools.find((t) => t.name === 'show_universe')!
+      expect(tool._meta).toMatchObject({ ui: { resourceUri: 'ui://esaf/universe.html' } })
+      const resource = await client.readResource({ uri: 'ui://esaf/universe.html' })
+      const content = resource.contents[0] as { mimeType: string; text: string }
+      expect(content.mimeType).toBe('text/html;profile=mcp-app')
+      expect(content.text).toContain('ES-universet')
+      expect(content.text).not.toMatch(/<script[^>]+src=/)
+
+      await call(client, 'create_profiles', {
+        dryRun: false,
+        profiles: [
+          { fullName: 'Kari Gründer', cohorts: [{ graduationYear: 2014 }], esCompany: 'Syrlig' },
+        ],
+      })
+      const result = await client.callTool({ name: 'show_universe', arguments: {} })
+      expect((result.content as { text: string }[])[0]!.text).toMatch(/^ES-universet: \d+ personer/)
+      const data = result.structuredContent as {
+        appUrl: string
+        people: { name: string }[]
+        companies: { name: string }[]
+        links: { role: string }[]
+      }
+      expect(data.appUrl).toBe(APP_URL)
+      expect(data.people.map((p) => p.name)).toContain('Kari Gründer')
+      expect(data.companies.map((c) => c.name)).toEqual(['Syrlig'])
+      expect(data.links).toEqual([expect.objectContaining({ role: 'es' })])
       await client.close()
     })
   })

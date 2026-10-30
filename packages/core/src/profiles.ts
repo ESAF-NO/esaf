@@ -8,12 +8,7 @@ import {
   representativeBadges,
   type RepresentativeBadge,
 } from './cohort-reps.ts'
-import {
-  companyName,
-  deleteOrphanCompanies,
-  optionalCompanyName,
-  resolveCompanies,
-} from './companies.ts'
+import { deleteOrphanCompanies, resolveCompanies } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience, type Experience } from './experience.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
@@ -26,7 +21,7 @@ import {
   type FieldSource,
   type ProfileSourceField,
 } from './sources.ts'
-import { optionalText, tagList, yearInput } from './validation.ts'
+import { companyName, optionalCompanyName, optionalText, tagList, yearInput } from './validation.ts'
 import { loadPersonEvents, type PersonEventGroup } from './events.ts'
 
 const { auditEvent, cohort, company, experience, membership, person, personCohort } = schema

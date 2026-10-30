@@ -32,7 +32,14 @@ import {
   type CompanySourceField,
   type FieldSource,
 } from './sources.ts'
-import { optionalText, tagList, yearInput } from './validation.ts'
+import {
+  companyName,
+  isCompanyName,
+  optionalCompanyName,
+  optionalText,
+  tagList,
+  yearInput,
+} from './validation.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import type { ObjectStorage } from './storage.ts'
 
@@ -73,26 +80,11 @@ export function companySlug(name: string) {
 
 export const companyStatuses = schema.companyStatus.enumValues
 
+// Ligger i validation.ts, så profilene kan bruke dem uten å laste selskapene
+// (det ga en importsirkel via vedleggene).
+export { companyName, isCompanyName, optionalCompanyName }
+
 const collapseSpaces = (v: string) => v.replace(/\s+/g, ' ')
-const hasLetterOrDigit = (v: string) => /[\p{L}\p{N}]/u.test(v)
-
-/** Om teksten kan være et selskapsnavn: den har bokstaver eller tall. */
-export const isCompanyName = (name: string | null | undefined): name is string =>
-  typeof name === 'string' && hasLetterOrDigit(name)
-
-/** Et selskapsnavn slik noen skriver det: trimmet og uten doble mellomrom. */
-export const companyName = z
-  .string()
-  .trim()
-  .min(1, 'Skriv inn selskapet.')
-  .max(120, 'Maks 120 tegn.')
-  .transform(collapseSpaces)
-  .refine(hasLetterOrDigit, 'Selskapsnavnet må ha bokstaver eller tall.')
-
-/** Som `companyName`, men tomt felt betyr «ingen». */
-export const optionalCompanyName = optionalText(120)
-  .transform((v) => (v === null ? null : collapseSpaces(v)))
-  .refine((v) => v === null || hasLetterOrDigit(v), 'Selskapsnavnet må ha bokstaver eller tall.')
 
 /**
  * Gjør om det folk skriver («syrlig.no», «http://www.syrlig.no/») til en full

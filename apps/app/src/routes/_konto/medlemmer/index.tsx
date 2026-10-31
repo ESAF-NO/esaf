@@ -4,7 +4,8 @@ import { Search, SearchX, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { comparePeople, PersonCard } from '#/components/PersonCard.tsx'
-import { Button, cx, EmptyState, Input, PageHeader, Select, Verified } from '#/components/ui.tsx'
+import { SearchInput } from '#/components/SearchInput.tsx'
+import { Button, cx, EmptyState, PageHeader, Select, Verified } from '#/components/ui.tsx'
 import { filterMembers } from '#/lib/member-search.ts'
 import { findPeopleByTopic, getMembers } from '#/lib/members.functions.ts'
 
@@ -118,10 +119,9 @@ function People() {
             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400"
             aria-hidden
           />
-          <Input
-            type="search"
-            value={search.q ?? ''}
-            onChange={(e) => setSearch({ q: e.target.value || undefined })}
+          <SearchInput
+            query={search.q ?? ''}
+            onSearch={(value) => setSearch({ q: value || undefined })}
             placeholder="Navn, eller hva de kan: «space», «oppdrett», «fintech», «maskinlæring»"
             aria-label="Søk etter personer"
             className="pl-9"

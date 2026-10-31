@@ -69,6 +69,19 @@ export const optionalSourceUrl = optionalText(500).transform((v, ctx) => {
   return url
 })
 
+/** Navnet uten store bokstaver, aksenter og tegn, til å finne samme person skrevet ulikt. */
+export function normalizePersonName(name: string) {
+  return name
+    .toLocaleLowerCase('nb')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/ø/g, 'o')
+    .replace(/æ/g, 'ae')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/[\s-]+/g, ' ')
+    .trim()
+}
+
 /** Domenet i en lenke uten «www.», til å vise som navnet på kilden. */
 export function hostLabel(url: string | null): string | null {
   if (!url) return null

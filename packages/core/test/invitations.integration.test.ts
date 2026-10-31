@@ -297,6 +297,7 @@ describe.skipIf(!url)('invitasjoner og lenker for nytt passord', () => {
       const profileId = await profile('Kari Nordmann', 'kari@example.test')
       expect(await describeInviteTarget(db, admin, ' KARI@example.test ')).toEqual({
         profiles: [{ personId: profileId, fullName: 'Kari Nordmann', years: [2019] }],
+        suggestions: [],
         account: null,
       })
       expect((await describeInviteTarget(db, admin, 'medlem@example.test')).account).toMatchObject({
@@ -304,6 +305,31 @@ describe.skipIf(!url)('invitasjoner og lenker for nytt passord', () => {
         status: 'active',
       })
       expect(await outcome(describeInviteTarget(db, member, 'kari@example.test'))).toBe('forbidden')
+    })
+
+    it('foreslår profiler etter navnet i adressen og selskapet som eier domenet', async () => {
+      const kari = await profile('Kari Nordmann')
+      const jonas = await profile('Jonas Berg Holme')
+      await profile('Jonas Hansen') // Jobber et annet sted.
+      const [fjordtek] = await db
+        .insert(schema.company)
+        .values({ name: 'Fjordtek', slug: 'fjordtek', website: 'https://www.fjordtek.no/' })
+        .returning({ id: schema.company.id })
+      await db.insert(schema.experience).values({ personId: jonas, companyId: fjordtek!.id })
+      const suggested = async (email: string) =>
+        (await describeInviteTarget(db, admin, email)).suggestions.map((p) => [
+          p.personId,
+          p.reason,
+        ])
+
+      expect(await suggested('kari.nordmann@gmail.com')).toEqual([[kari, 'name']])
+      expect(await suggested('karinordmann@gmail.com')).toEqual([[kari, 'name']])
+      expect(await suggested('knordmann@firma.test')).toEqual([[kari, 'name']])
+      expect(await suggested('jonas@fjordtek.no')).toEqual([[jonas, 'company']])
+      expect(await suggested('jonas@gmail.com')).toEqual([])
+      expect(await suggested('kari@example.test')).toEqual([])
+      const [first] = (await describeInviteTarget(db, admin, 'kari.nordmann@gmail.com')).suggestions
+      expect(first).toMatchObject({ fullName: 'Kari Nordmann', years: [2019] })
     })
 
     it('profiler som er tatt i bruk, kan ikke inviteres til', async () => {

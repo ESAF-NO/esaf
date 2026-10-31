@@ -153,7 +153,7 @@ describe('sterk innlogging', () => {
   })
 
   it('en MCP-nøkkel er sterk, men gir ikke mer enn rollen', () => {
-    const token = { apiToken: { id: 'nøkkel', readOnly: false } }
+    const token = { mcp: { apiTokenId: 'nøkkel', readOnly: false } }
     expect(strongAuth({ ...password, ...token })).toBe(true)
     const admin: Viewer = { ...active('admin')!, ...token }
     expect(reason(() => assertCan(admin, 'profiles.edit'))).toBe('allowed')

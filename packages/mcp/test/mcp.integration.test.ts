@@ -3,13 +3,19 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  authenticateOAuthAccessToken,
   createApiToken,
   createDiskStorage,
   createProfile,
   decideMembership,
+  disconnectMcpClient,
   DomainError,
   grantRoleAsOperator,
+  hashOAuthToken,
+  listAuditEvents,
+  listMcpConnections,
   loadViewer,
+  pruneOAuth,
   type ObjectStorage,
   type Viewer,
 } from '@esaf/core'
@@ -27,6 +33,7 @@ if (!url && process.env.CI) throw new Error('TEST_DATABASE_URL må være satt i 
 
 const APP_URL = 'http://localhost:3000'
 const ENDPOINT = `${APP_URL}/api/mcp`
+const METADATA = `${APP_URL}/.well-known/oauth-protected-resource/api/mcp`
 
 const png = (size = 400) =>
   sharp({
@@ -59,6 +66,8 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       db,
       storage,
       appUrl: APP_URL,
+      resource: ENDPOINT,
+      resourceMetadataUrl: METADATA,
       clientAddress: (request) => request.headers.get('x-test-address') ?? '203.0.113.7',
       // Forutsigbar «modell»: rakett, romfart og space er samme begrep.
       embedder: {
@@ -99,7 +108,7 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
   beforeEach(async () => {
     fetched.length = 0
     await db.execute(
-      sql`truncate ${schema.apiToken}, ${schema.fieldSource}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user}, ${schema.company}, ${schema.quote}, ${schema.invitation}, ${schema.event}, ${schema.eventParticipation} cascade`,
+      sql`truncate ${schema.apiToken}, ${schema.oauthClient}, ${schema.fieldSource}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user}, ${schema.company}, ${schema.quote}, ${schema.invitation}, ${schema.event}, ${schema.eventParticipation} cascade`,
     )
     for (const [name, role] of [
       ['Eier', 'owner'],
@@ -119,6 +128,48 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
 
   const tokenFor = async (viewer: Viewer, readOnly = false) =>
     (await createApiToken(db, viewer, { name: 'Claude Code', days: 30, readOnly })).token
+
+  /**
+   * En OAuth-tilkobling slik Better Auth lagrer den etter innlogging og
+   * godkjenning: klienten, godkjenningen og en tilgangsnøkkel (bare hashen).
+   */
+  async function oauthTokenFor(
+    viewer: Viewer,
+    options: { scopes?: string[]; resources?: string[]; expiresAt?: Date; clientId?: string } = {},
+  ) {
+    const clientId = options.clientId ?? `klient-${randomUUID()}`
+    const scopes = options.scopes ?? ['mcp:read', 'mcp:write', 'offline_access']
+    await db
+      .insert(schema.oauthClient)
+      .values({
+        id: randomUUID(),
+        clientId,
+        name: 'Claude',
+        redirectUris: ['https://claude.ai/api/mcp/auth_callback'],
+        createdAt: new Date(),
+      })
+      .onConflictDoNothing()
+    await db.insert(schema.oauthConsent).values({
+      id: randomUUID(),
+      clientId,
+      userId: viewer!.userId,
+      scopes,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    const raw = randomUUID().replaceAll('-', '')
+    await db.insert(schema.oauthAccessToken).values({
+      id: randomUUID(),
+      token: hashOAuthToken(raw),
+      clientId,
+      userId: viewer!.userId,
+      scopes,
+      resources: options.resources ?? [ENDPOINT],
+      createdAt: new Date(),
+      expiresAt: options.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),
+    })
+    return { token: `esaf_at_${raw}`, clientId }
+  }
 
   /** En ekte MCP-klient mot håndtereren, uten nettverk. */
   async function connect(token: string) {
@@ -178,6 +229,118 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       const { changeRole } = await import('@esaf/core')
       await changeRole(db, owner, { personId: admin!.personId!, role: 'member' })
       expect((await post({ authorization: `Bearer ${token}` })).status).toBe(401)
+    })
+
+    it('401 peker på beskrivelsen av ressursen, så klienten kan logge inn selv', async () => {
+      const missing = await post({})
+      const challenge = missing.headers.get('www-authenticate')!
+      expect(challenge).toContain(`resource_metadata="${METADATA}"`)
+      expect(challenge).toContain('scope="mcp:read mcp:write offline_access"')
+      expect(challenge).not.toContain('error=')
+      const invalid = await post({ authorization: `Bearer esaf_at_${'x'.repeat(32)}` })
+      expect(invalid.status).toBe(401)
+      expect(invalid.headers.get('www-authenticate')).toContain('error="invalid_token"')
+    })
+
+    it('en OAuth-tilkobling virker som kontoen, og merkes med klienten i loggen', async () => {
+      const { token, clientId } = await oauthTokenFor(admin)
+      const client = await connect(token)
+      const overview = await call<{ actingAs: { role: string; readOnly: boolean } }>(
+        client,
+        'overview',
+      )
+      expect(overview.actingAs).toMatchObject({ role: 'admin', readOnly: false })
+      await call(client, 'create_company', { name: 'Oauth AS' })
+      await client.close()
+      const rows = await db
+        .select({ action: schema.auditEvent.action, client: schema.auditEvent.oauthClientId })
+        .from(schema.auditEvent)
+        .where(isNotNull(schema.auditEvent.oauthClientId))
+      expect(rows.length).toBeGreaterThan(0)
+      expect(rows.every((r) => r.client === clientId)).toBe(true)
+      const viaMcp = await listAuditEvents(db, owner, { viaMcp: true })
+      expect(viaMcp[0]!.viaMcp).toEqual({ kind: 'oauth', name: 'Claude' })
+    })
+
+    it('OAuth med bare mcp:read ser bare verktøy som leser', async () => {
+      const { token } = await oauthTokenFor(owner, { scopes: ['mcp:read', 'offline_access'] })
+      const client = await connect(token)
+      const tools = (await client.listTools()).tools
+      expect(tools.every((t) => t.annotations?.readOnlyHint)).toBe(true)
+      await client.close()
+    })
+
+    it('avviser utløpte nøkler, nøkler for en annen ressurs og uten MCP-rettighet', async () => {
+      const expired = await oauthTokenFor(admin, { expiresAt: new Date(Date.now() - 1000) })
+      expect((await post({ authorization: `Bearer ${expired.token}` })).status).toBe(401)
+      const other = await oauthTokenFor(admin, { resources: ['https://example.com/api'] })
+      expect((await post({ authorization: `Bearer ${other.token}` })).status).toBe(401)
+      const noScope = await oauthTokenFor(admin, { scopes: ['offline_access'] })
+      expect((await post({ authorization: `Bearer ${noScope.token}` })).status).toBe(401)
+      const disabled = await oauthTokenFor(admin)
+      await db
+        .update(schema.oauthClient)
+        .set({ disabled: true })
+        .where(eq(schema.oauthClient.clientId, disabled.clientId))
+      expect((await post({ authorization: `Bearer ${disabled.token}` })).status).toBe(401)
+    })
+
+    it('frakobling og tapt adminrolle fjerner tilkoblingen med en gang', async () => {
+      const first = await oauthTokenFor(admin)
+      expect((await post({ authorization: `Bearer ${first.token}` })).status).toBe(200)
+      expect((await listMcpConnections(db, admin)).map((c) => c.clientId)).toEqual([first.clientId])
+      await disconnectMcpClient(db, admin, first.clientId)
+      expect((await post({ authorization: `Bearer ${first.token}` })).status).toBe(401)
+      expect(await listMcpConnections(db, admin)).toEqual([])
+      const [logged] = await listAuditEvents(db, owner, { actionPrefix: 'mcp_oauth.' })
+      expect(logged).toMatchObject({ action: 'mcp_oauth.disconnect', details: { name: 'Claude' } })
+
+      const second = await oauthTokenFor(admin)
+      const { changeRole } = await import('@esaf/core')
+      await changeRole(db, owner, { personId: admin!.personId!, role: 'member' })
+      expect((await post({ authorization: `Bearer ${second.token}` })).status).toBe(401)
+      expect(await db.$count(schema.oauthConsent)).toBe(0)
+      const [change] = await listAuditEvents(db, owner, { actionPrefix: 'role.' })
+      expect(change!.details).toMatchObject({ revokedConnections: 1 })
+    })
+
+    it('en OAuth-tilkobling kan ikke se eller lage nøkler og tilkoblinger', async () => {
+      const { token } = await oauthTokenFor(admin)
+      const viewer = await authenticateOAuthAccessToken(db, token, ENDPOINT)
+      expect(viewer?.mcp).toMatchObject({ readOnly: false })
+      await expect(listMcpConnections(db, viewer)).rejects.toThrow()
+      await expect(
+        createApiToken(db, viewer, { name: 'x', days: 1, readOnly: false }),
+      ).rejects.toThrow()
+    })
+
+    it('rydder bort utløpte nøkler og klienter som aldri ble godkjent', async () => {
+      const now = new Date()
+      const day = 24 * 60 * 60 * 1000
+      await db.insert(schema.oauthClient).values({
+        id: randomUUID(),
+        clientId: 'gammel',
+        redirectUris: ['http://localhost:1234/callback'],
+        createdAt: new Date(now.getTime() - 2 * day),
+      })
+      await db.insert(schema.oauthClient).values({
+        id: randomUUID(),
+        clientId: 'ny',
+        redirectUris: ['http://localhost:1234/callback'],
+        createdAt: now,
+      })
+      const kept = await oauthTokenFor(admin, { expiresAt: new Date(now.getTime() - 1000) })
+      await db
+        .update(schema.oauthClient)
+        .set({ createdAt: new Date(now.getTime() - 2 * day) })
+        .where(eq(schema.oauthClient.clientId, kept.clientId))
+      const result = await pruneOAuth(db, now)
+      expect(result).toMatchObject({ accessTokens: 1, clients: 1 })
+      const left = (await db.select({ id: schema.oauthClient.clientId }).from(schema.oauthClient))
+        .map((c) => c.id)
+        .sort()
+      // Den godkjente klienten blir, selv om nøkkelen er borte.
+      expect(left).toEqual([kept.clientId, 'ny'].sort())
     })
 
     it('stopper mange avviste forsøk fra samme adresse', async () => {

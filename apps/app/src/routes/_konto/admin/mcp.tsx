@@ -1,24 +1,33 @@
 import { MCP_RECIPES, MCP_TOOL_COUNT, MCP_TOOL_GROUPS } from '@esaf/mcp/catalog'
 import { createFileRoute, notFound, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { Bot, KeyRound, ShieldCheck, Sparkles, Terminal } from 'lucide-react'
+import { Bot, KeyRound, Plug, ShieldCheck, Sparkles, Terminal } from 'lucide-react'
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import { CopyButton } from '#/components/ShareLink.tsx'
 import { Button, Card, cx, ErrorText, Field, Input, Select, Switch } from '#/components/ui.tsx'
 import { fetchApiTokens, newApiToken, removeApiToken } from '#/lib/api-tokens.functions.ts'
 import { longDay, timeAgo } from '#/lib/format.ts'
+import { fetchMcpConnections, removeMcpConnection } from '#/lib/mcp-oauth.functions.ts'
 
 /**
- * Admin-MCP-en: hva den er, nøklene, oppsett for hver klient og hva den kan.
- * Nøkkelen vises én gang. Reglene står i `api-tokens.ts` i @esaf/core og i
- * @esaf/mcp; oversikten over verktøyene i `@esaf/mcp/catalog`.
+ * Admin-MCP-en: hva den er, oppsett for hver klient, hva den kan, klientene som
+ * er koblet til, og MCP-nøkler for skript og klienter uten innlogging. Klientene
+ * kobler til ved å logge inn i nettleseren (OAuth, se `mcp-oauth.ts` i
+ * @esaf/core); en nøkkel vises én gang (`api-tokens.ts`). Oversikten over
+ * verktøyene står i `@esaf/mcp/catalog`.
  */
 export const Route = createFileRoute('/_konto/admin/mcp')({
   beforeLoad: ({ context: { viewer } }) => {
     if (!viewer.permissions.includes('mcp.access')) throw notFound()
   },
-  loader: () => fetchApiTokens(),
+  loader: async () => {
+    const [{ endpoint, tokens }, connections] = await Promise.all([
+      fetchApiTokens(),
+      fetchMcpConnections(),
+    ])
+    return { endpoint, tokens, connections }
+  },
   head: () => ({ meta: [{ title: 'MCP – Admin – ESAF' }] }),
   component: Mcp,
   errorComponent: ({ error }) => (
@@ -27,6 +36,7 @@ export const Route = createFileRoute('/_konto/admin/mcp')({
 })
 
 type ApiToken = Awaited<ReturnType<typeof fetchApiTokens>>['tokens'][number]
+type Connection = Awaited<ReturnType<typeof fetchMcpConnections>>[number]
 
 const examples = [
   'Legg inn ES 2026 fra dette regnearket, med bilder.',
@@ -38,9 +48,7 @@ const examples = [
 ]
 
 function Mcp() {
-  const { endpoint, tokens } = Route.useLoaderData()
-  // Nøkkelen som nettopp ble laget. Den finnes bare her, til siden lastes på nytt.
-  const [created, setCreated] = useState<{ token: string; name: string } | null>(null)
+  const { endpoint, tokens, connections } = Route.useLoaderData()
 
   return (
     <div className="space-y-6">
@@ -55,11 +63,11 @@ function Mcp() {
                 Gjør adminarbeid ved å skrive hva du vil ha gjort
               </h2>
               <p className="mt-1 text-sm leading-relaxed text-stone-600">
-                Koble Claude Code, Codex eller Claude Desktop til ESAF med en MCP-nøkkel. Da kan
-                klienten gjøre alt du kan gjøre her under Admin: legge inn et nytt kull, rette og
-                berike profiler og selskaper med informasjon fra nettet, rydde i Gjennomgang, og
+                Koble Claude, ChatGPT eller Codex til ESAF ved å logge inn med ESAF-kontoen din. Da
+                kan klienten gjøre alt du kan gjøre her under Admin: legge inn et nytt kull, rette
+                og berike profiler og selskaper med informasjon fra nettet, rydde i Gjennomgang, og
                 finne folk på hva de kan. Den gjør aldri mer enn du har lov til, og alt står i
-                loggen merket med navnet på nøkkelen.
+                loggen merket med navnet på klienten.
               </p>
             </div>
             <ul className="flex flex-wrap gap-2">
@@ -76,21 +84,34 @@ function Mcp() {
         </div>
       </Card>
 
-      <Step n={1} title="Lag en nøkkel" icon={KeyRound}>
-        {created ? (
-          <NewToken {...created} onDone={() => setCreated(null)} />
-        ) : (
-          <Keys tokens={tokens} onCreated={setCreated} />
-        )}
+      <Step n={1} title="Koble til klienten" icon={Terminal}>
+        <Setup list={clients(endpoint)} />
       </Step>
 
-      <Step n={2} title="Koble til klienten" icon={Terminal}>
-        <Setup endpoint={endpoint} token={created?.token ?? null} />
-      </Step>
-
-      <Step n={3} title="Spør" icon={Sparkles}>
+      <Step n={2} title="Spør" icon={Sparkles}>
         <Catalog />
       </Step>
+
+      <Card className="p-5 sm:p-6">
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-stone-950">
+          <Plug className="size-4 text-stone-500" aria-hidden /> Tilkoblet
+        </h2>
+        <Connections connections={connections} />
+      </Card>
+
+      <Card className="p-5 sm:p-6">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-stone-950">
+            <KeyRound className="size-4 text-stone-500" aria-hidden /> MCP-nøkler
+            <span className="font-normal text-stone-500">
+              for skript og klienter som ikke kan logge inn
+            </span>
+          </summary>
+          <div className="mt-4 space-y-4">
+            <KeySection endpoint={endpoint} tokens={tokens} />
+          </div>
+        </details>
+      </Card>
 
       <Card className="p-5 sm:p-6">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
@@ -98,8 +119,9 @@ function Mcp() {
         </h2>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-stone-600">
           <li>
-            Nøkkelen gir aldri mer enn kontoen din har nå. Mister du adminrollen, eller fjerner
-            passkey og tofaktor, slutter den å virke.
+            Bare admins som er logget inn med passkey eller tofaktor, kan koble til en klient. Den
+            får aldri mer enn kontoen din har nå: mister du adminrollen, eller fjerner passkey og
+            tofaktor, slutter den å virke.
           </li>
           <li>
             Endringer i mange profiler på én gang vises alltid som en plan først; ingenting lagres
@@ -114,8 +136,8 @@ function Mcp() {
             personen bekrefter det. Aldri sensitive opplysninger.
           </li>
           <li>
-            Klienten sender det den leser fra ESAF til sin egen modell (Claude hos Anthropic, Codex
-            hos OpenAI). Bruk en konto som ikke lagrer samtalene til trening.
+            Klienten sender det den leser fra ESAF til sin egen modell (Claude hos Anthropic,
+            ChatGPT og Codex hos OpenAI). Bruk en konto som ikke lagrer samtalene til trening.
           </li>
         </ul>
       </Card>
@@ -149,8 +171,123 @@ function Step({
 }
 
 // ---------------------------------------------------------------------------
+// Tilkoblede klienter
+// ---------------------------------------------------------------------------
+
+function Connections({ connections }: { connections: Connection[] }) {
+  const router = useRouter()
+  const [removing, setRemoving] = useState<Connection | null>(null)
+  if (!connections.length) {
+    return (
+      <p className="text-sm text-stone-600">
+        Ingen klienter er koblet til ennå. Når du logger inn fra en klient og godkjenner den, står
+        den her.
+      </p>
+    )
+  }
+  return (
+    <>
+      <ul className="divide-y divide-stone-100 rounded-xl ring-1 ring-stone-200 ring-inset">
+        {connections.map((c) => (
+          <li key={c.clientId} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
+            <Plug className="size-4 shrink-0 text-stone-400" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-stone-900">
+                {c.name ?? 'MCP-klient uten navn'}
+                {c.readOnly && <span className="ml-2 font-normal text-stone-500">bare lesing</span>}
+              </p>
+              <p className="text-xs text-stone-500">
+                Koblet til {longDay(c.connectedAt)} ·{' '}
+                {c.lastActiveAt ? `aktiv ${timeAgo(c.lastActiveAt)}` : 'ikke brukt ennå'}
+                {c.redirectHosts.length > 0 && <> · {c.redirectHosts.join(', ')}</>}
+              </p>
+            </div>
+            <Button variant="danger" size="sm" onClick={() => setRemoving(c)}>
+              Koble fra
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {removing && (
+        <Disconnect
+          connection={removing}
+          onClose={() => setRemoving(null)}
+          onDone={async () => {
+            setRemoving(null)
+            await router.invalidate()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function Disconnect({
+  connection,
+  onClose,
+  onDone,
+}: {
+  connection: Connection
+  onClose: () => void
+  onDone: () => void
+}) {
+  const remove = useServerFn(removeMcpConnection)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function disconnect() {
+    setBusy(true)
+    setError(null)
+    try {
+      await remove({ data: { clientId: connection.clientId } })
+      onDone()
+    } catch (e) {
+      setBusy(false)
+      setError(e instanceof Error ? e.message : 'Kunne ikke koble fra klienten.')
+    }
+  }
+  return (
+    <Dialog
+      title={`Koble fra «${connection.name ?? 'MCP-klient uten navn'}»?`}
+      description="Klienten mister tilgangen med en gang. Vil du bruke den igjen, logger du inn og godkjenner den på nytt."
+      onClose={onClose}
+      busy={busy}
+    >
+      {error && <ErrorText>{error}</ErrorText>}
+      <DialogActions>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
+          Avbryt
+        </Button>
+        <Button variant="destructive" onClick={disconnect} disabled={busy} data-autofocus>
+          {busy ? 'Kobler fra …' : 'Koble fra'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Nøkler
 // ---------------------------------------------------------------------------
+
+/** Nøklene og oppsettet med nøkkel. Den som nettopp ble laget, fylles inn i oppsettet. */
+function KeySection({ endpoint, tokens }: { endpoint: string; tokens: ApiToken[] }) {
+  // Nøkkelen som nettopp ble laget. Den finnes bare her, til siden lastes på nytt.
+  const [created, setCreated] = useState<{ token: string; name: string } | null>(null)
+  return (
+    <>
+      <p className="text-sm text-stone-600">
+        Bruk innlogging over når du kan. En nøkkel er for det som ikke kan logge inn i en nettleser,
+        som skript og servere, og må holdes like hemmelig som et passord.
+      </p>
+      {created ? (
+        <NewToken {...created} onDone={() => setCreated(null)} />
+      ) : (
+        <Keys tokens={tokens} onCreated={setCreated} />
+      )}
+      <Setup list={keyClients(endpoint, created?.token ?? KEY_PLACEHOLDER)} keyMissing={!created} />
+    </>
+  )
+}
 
 const lifetimes = [
   { days: 30, label: '30 dager' },
@@ -199,7 +336,7 @@ function Keys({
   return (
     <>
       <p className="text-sm text-stone-600">
-        Én nøkkel per maskin eller klient, så du kan trekke tilbake én uten å miste de andre. Med
+        Én nøkkel per maskin eller skript, så du kan trekke tilbake én uten å miste de andre. Med
         «Bare lesing» kan klienten slå opp og søke, men ikke endre noe.
       </p>
       {active.length > 0 && (
@@ -318,8 +455,8 @@ function NewToken({ token, name, onDone }: { token: string; name: string; onDone
   return (
     <div className="space-y-3 rounded-xl bg-amber-50/60 p-4 ring-1 ring-amber-200 ring-inset">
       <p className="text-sm text-stone-700">
-        Nøkkelen «{name}» er laget. Kopier den nå, eller bruk kommandoene under, som allerede har
-        den: du får ikke se den igjen. Den er like hemmelig som et passord.
+        Nøkkelen «{name}» er laget. Kopier den nå, eller bruk oppsettet under, som allerede har den:
+        du får ikke se den igjen. Den er like hemmelig som et passord.
       </p>
       <code className="block rounded-lg bg-white p-3 font-mono text-sm break-all text-stone-900 ring-1 ring-stone-200 ring-inset">
         {token}
@@ -391,7 +528,9 @@ type Client = {
   check: ReactNode
 }
 
-function clients(endpoint: string, key: string): Client[] {
+/** Oppsett med innlogging (OAuth): adressen, så logger klienten inn selv. */
+function clients(endpoint: string): Client[] {
+  const approve = 'Logg inn med ESAF-kontoen din i nettleseren som åpnes, og godkjenn klienten.'
   return [
     {
       id: 'claude-code',
@@ -400,12 +539,108 @@ function clients(endpoint: string, key: string): Client[] {
       steps: [
         {
           text: 'Legg til serveren:',
+          code: `claude mcp add --transport http --scope user esaf ${endpoint}`,
+        },
+        {
+          text: (
+            <>
+              Skriv <Mono>/mcp</Mono> i Claude Code, velg «esaf» og «Authenticate». {approve}
+            </>
+          ),
+        },
+      ],
+      check: (
+        <>
+          «esaf» skal stå som tilkoblet under <Mono>/mcp</Mono>. Innloggingen fornyes av seg selv;
+          du logger inn på nytt etter 30 dager uten bruk.
+        </>
+      ),
+    },
+    {
+      id: 'claude',
+      label: 'Claude',
+      intro:
+        'I Claude på nettet, Claude Desktop og mobilappen. En connector du legger til, finnes i alle tre.',
+      steps: [
+        {
+          text: (
+            <>
+              Gå til Innstillinger → Connectors og velg «Add custom connector». Gi den navnet ESAF
+              og lim inn adressen:
+            </>
+          ),
+          code: endpoint,
+        },
+        { text: <>Trykk «Connect». {approve}</> },
+      ],
+      check: (
+        <>
+          ESAF skal stå under verktøyene i en ny samtale. Her vises ES-universet som et interaktivt
+          kart. På Team- og Enterprise-planer må en eier av Claude-organisasjonen legge til
+          connectoren først.
+        </>
+      ),
+    },
+    {
+      id: 'chatgpt',
+      label: 'ChatGPT',
+      intro:
+        'Krever et betalt abonnement med utviklermodus (Developer mode) slått på under Innstillinger → Apps.',
+      steps: [
+        {
+          text: (
+            <>
+              Under Innstillinger → Apps, lag en ny app med navnet ESAF, adressen under og
+              autentisering «OAuth»:
+            </>
+          ),
+          code: endpoint,
+        },
+        { text: approve },
+      ],
+      check: 'Velg ESAF under verktøyene i en ny samtale.',
+    },
+    {
+      id: 'codex',
+      label: 'Codex',
+      intro: 'Kjør i terminalen.',
+      steps: [
+        { text: 'Legg til serveren:', code: `codex mcp add esaf --url ${endpoint}` },
+        { text: <>Logg inn. {approve}</>, code: 'codex mcp login esaf' },
+      ],
+      check: (
+        <>
+          Sjekk med <Mono>codex mcp list</Mono>, eller <Mono>/mcp</Mono> i Codex.
+        </>
+      ),
+    },
+    {
+      id: 'other',
+      label: 'Andre',
+      intro:
+        'Klienter som støtter MCP over HTTP med innlogging (OAuth). De finner innloggingen selv ut fra adressen.',
+      steps: [{ text: 'Adresse (Streamable HTTP):', code: endpoint }],
+      check: 'Kan klienten ikke logge inn, bruk en MCP-nøkkel (under).',
+    },
+  ]
+}
+
+/** Oppsett med en MCP-nøkkel, for det som ikke kan logge inn. */
+function keyClients(endpoint: string, key: string): Client[] {
+  return [
+    {
+      id: 'claude-code',
+      label: 'Claude Code',
+      intro: 'Kjør i terminalen.',
+      steps: [
+        {
+          text: 'Legg til serveren med nøkkelen:',
           code: `claude mcp add --transport http --scope user esaf ${endpoint} --header "Authorization: Bearer ${key}"`,
         },
       ],
       check: (
         <>
-          Sjekk med <Mono>/mcp</Mono> i Claude Code: «esaf» skal stå som tilkoblet.
+          Sjekk med <Mono>/mcp</Mono> i Claude Code.
         </>
       ),
     },
@@ -430,68 +665,25 @@ function clients(endpoint: string, key: string): Client[] {
       ],
       check: (
         <>
-          Sjekk med <Mono>codex mcp list</Mono>, eller <Mono>/mcp</Mono> i Codex.
-        </>
-      ),
-    },
-    {
-      id: 'claude-desktop',
-      label: 'Claude Desktop',
-      intro: (
-        <>
-          Claude Desktop kobler til med <Mono>mcp-remote</Mono>, som krever Node.js. «Legg til
-          connector» i innstillingene virker ikke: den krever innlogging med OAuth, som ESAF ikke
-          har.
-        </>
-      ),
-      steps: [
-        {
-          text: (
-            <>
-              Åpne Innstillinger → Developer → Edit Config (filen{' '}
-              <Mono>claude_desktop_config.json</Mono>) og legg inn dette. Har filen andre servere
-              fra før, legg «esaf» inn under <Mono>mcpServers</Mono> ved siden av dem.
-            </>
-          ),
-          code: JSON.stringify(
-            {
-              mcpServers: {
-                esaf: {
-                  command: 'npx',
-                  args: ['-y', 'mcp-remote', endpoint, '--header', 'Authorization:${ESAF_AUTH}'],
-                  env: { ESAF_AUTH: `Bearer ${key}` },
-                },
-              },
-            },
-            null,
-            2,
-          ),
-        },
-        { text: 'Avslutt Claude Desktop helt og åpne den igjen.' },
-      ],
-      check: (
-        <>
-          «esaf» skal stå under verktøyene i en ny samtale. Her vises ES-universet som et
-          interaktivt kart.
+          Sjekk med <Mono>codex mcp list</Mono>.
         </>
       ),
     },
     {
       id: 'other',
-      label: 'Andre',
-      intro: 'Klienter som kan koble til en MCP-server over HTTP med et eget hode.',
+      label: 'Skript og andre',
+      intro: 'Send nøkkelen i et hode med hver forespørsel.',
       steps: [
         { text: 'Adresse (Streamable HTTP):', code: endpoint },
         { text: 'Hode:', code: `Authorization: Bearer ${key}` },
       ],
-      check: 'Claude.ai i nettleseren og ChatGPT krever OAuth og kan ikke kobles til ennå.',
+      check: 'Nøkkelen gir det samme som en innlogget klient, så ikke legg den i kode som deles.',
     },
   ]
 }
 
-function Setup({ endpoint, token }: { endpoint: string; token: string | null }) {
+function Setup({ list, keyMissing = false }: { list: Client[]; keyMissing?: boolean }) {
   const id = useId()
-  const list = clients(endpoint, token ?? KEY_PLACEHOLDER)
   const [selected, setSelected] = useState(list[0]!.id)
   const client = list.find((c) => c.id === selected) ?? list[0]!
   return (
@@ -524,7 +716,7 @@ function Setup({ endpoint, token }: { endpoint: string; token: string | null }) 
         className="space-y-4"
       >
         <p className="text-sm text-stone-600">{client.intro}</p>
-        {!token && client.steps.some((s) => s.code?.includes(KEY_PLACEHOLDER)) && (
+        {keyMissing && client.steps.some((s) => s.code?.includes(KEY_PLACEHOLDER)) && (
           <p className="text-xs text-stone-500">
             Bytt ut <Mono>{KEY_PLACEHOLDER}</Mono> med nøkkelen. Lager du en ny nøkkel over, fylles
             den inn her.

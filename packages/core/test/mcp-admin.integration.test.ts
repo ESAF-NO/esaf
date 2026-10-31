@@ -33,7 +33,7 @@ import {
   revokeApiToken,
   setMemberAccess,
   setQuoteLinks,
-  withApiTokenAudit,
+  withMcpAudit,
   type ObjectStorage,
   type Viewer,
 } from '../src/index.ts'
@@ -137,7 +137,7 @@ describe.skipIf(!url)('MCP: nøkler og adminverktøy i @esaf/core', () => {
       const viewer = await authenticateApiToken(db, raw)
       expect(viewer).toMatchObject({
         personId: admin!.personId,
-        apiToken: { id: view.id, readOnly: true },
+        mcp: { apiTokenId: view.id, readOnly: true },
       })
       expect(await denial(token(viewer))).toBe('forbidden')
       expect(await denial(revokeApiToken(db, viewer, view.id))).toBe('forbidden')
@@ -215,7 +215,7 @@ describe.skipIf(!url)('MCP: nøkler og adminverktøy i @esaf/core', () => {
     it('alt som skrives med nøkkelen, merkes i revisjonsloggen', async () => {
       const { token: raw, view } = await token(admin)
       const viewer = await authenticateApiToken(db, raw)
-      const tagged = withApiTokenAudit(db, view.id)
+      const tagged = withMcpAudit(db, { apiTokenId: view.id, readOnly: false })
       const { personId } = await createProfile(tagged, viewer, {
         fullName: 'Via Nøkkel',
         cohorts: [],
@@ -237,7 +237,7 @@ describe.skipIf(!url)('MCP: nøkler og adminverktøy i @esaf/core', () => {
 
       const viaMcp = await listAuditEvents(db, admin, { viaMcp: true })
       expect(viaMcp.map((e) => [e.action, e.viaMcp])).toEqual([
-        ['profile.create', { tokenName: 'Claude' }],
+        ['profile.create', { kind: 'key', name: 'Claude' }],
       ])
       // Settingen gjelder bare transaksjonen, ikke neste forespørsel på samme tilkobling.
       const [{ setting }] = (

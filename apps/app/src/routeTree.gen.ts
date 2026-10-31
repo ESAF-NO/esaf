@@ -14,6 +14,7 @@ import { Route as KontoRouteImport } from './routes/_konto'
 import { Route as GlemtPassordRouteImport } from './routes/glemt-passord'
 import { Route as LoggInnRouteImport } from './routes/logg-inn'
 import { Route as RegistrerRouteImport } from './routes/registrer'
+import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as KontoAdminRouteRouteImport } from './routes/_konto/admin/route'
 import { Route as KontoKomIGangRouteImport } from './routes/_konto/kom-i-gang'
 import { Route as KontoKontoRouteImport } from './routes/_konto/konto'
@@ -24,6 +25,7 @@ import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as InvitasjonTokenRouteImport } from './routes/invitasjon/$token'
+import { Route as McpGodkjennRouteImport } from './routes/mcp/godkjenn'
 import { Route as NyttPassordTokenRouteImport } from './routes/nytt-passord/$token'
 import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
 import { Route as KontoAdminArrangementerRouteImport } from './routes/_konto/admin/arrangementer'
@@ -51,6 +53,8 @@ import { Route as ApiBilderKeyRouteImport } from './routes/api/bilder/$key'
 import { Route as ApiImportDeltakelseRouteImport } from './routes/api/import/deltakelse'
 import { Route as ApiImportKullrepresentanterRouteImport } from './routes/api/import/kullrepresentanter'
 import { Route as ApiLogoerKeyRouteImport } from './routes/api/logoer/$key'
+import { Route as ApiMcpOauthGodkjennRouteImport } from './routes/api/mcp-oauth/godkjenn'
+import { Route as ApiMcpOauthLoggInnRouteImport } from './routes/api/mcp-oauth/logg-inn'
 import { Route as ApiVedleggIndexRouteImport } from './routes/api/vedlegg/index'
 import { Route as ApiVedleggNameRouteImport } from './routes/api/vedlegg/$name'
 import { Route as KontoAdminArrangementerImportRouteImport } from './routes/_konto/admin/arrangementer_.import'
@@ -88,6 +92,11 @@ const LoggInnRoute = LoggInnRouteImport.update({
 const RegistrerRoute = RegistrerRouteImport.update({
   id: '/registrer',
   path: '/registrer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DotwellKnownSplatRoute = DotwellKnownSplatRouteImport.update({
+  id: '/.well-known/$',
+  path: '/.well-known/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KontoAdminRouteRoute = KontoAdminRouteRouteImport.update({
@@ -138,6 +147,11 @@ const ApiMcpRoute = ApiMcpRouteImport.update({
 const InvitasjonTokenRoute = InvitasjonTokenRouteImport.update({
   id: '/invitasjon/$token',
   path: '/invitasjon/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpGodkjennRoute = McpGodkjennRouteImport.update({
+  id: '/mcp/godkjenn',
+  path: '/mcp/godkjenn',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NyttPassordTokenRoute = NyttPassordTokenRouteImport.update({
@@ -278,6 +292,16 @@ const ApiLogoerKeyRoute = ApiLogoerKeyRouteImport.update({
   path: '/api/logoer/$key',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMcpOauthGodkjennRoute = ApiMcpOauthGodkjennRouteImport.update({
+  id: '/api/mcp-oauth/godkjenn',
+  path: '/api/mcp-oauth/godkjenn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMcpOauthLoggInnRoute = ApiMcpOauthLoggInnRouteImport.update({
+  id: '/api/mcp-oauth/logg-inn',
+  path: '/api/mcp-oauth/logg-inn',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiVedleggIndexRoute = ApiVedleggIndexRouteImport.update({
   id: '/api/vedlegg/',
   path: '/api/vedlegg/',
@@ -365,6 +389,7 @@ export interface FileRoutesByFullPath {
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
   '/admin': typeof KontoAdminRouteRouteWithChildren
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/styret': typeof KontoStyretRoute
@@ -374,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/api/mcp': typeof ApiMcpRoute
   '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/mcp/godkjenn': typeof McpGodkjennRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
@@ -394,6 +420,8 @@ export interface FileRoutesByFullPath {
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
   '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
+  '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin/': typeof KontoAdminIndexRoute
   '/arrangementer/': typeof KontoArrangementerIndexRoute
@@ -421,6 +449,7 @@ export interface FileRoutesByTo {
   '/glemt-passord': typeof GlemtPassordRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/styret': typeof KontoStyretRoute
@@ -430,6 +459,7 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/api/mcp': typeof ApiMcpRoute
   '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/mcp/godkjenn': typeof McpGodkjennRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
@@ -450,6 +480,8 @@ export interface FileRoutesByTo {
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
   '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
+  '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin': typeof KontoAdminIndexRoute
   '/arrangementer': typeof KontoArrangementerIndexRoute
@@ -480,6 +512,7 @@ export interface FileRoutesById {
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
   '/_konto/admin': typeof KontoAdminRouteRouteWithChildren
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/_konto/kom-i-gang': typeof KontoKomIGangRoute
   '/_konto/konto': typeof KontoKontoRoute
   '/_konto/styret': typeof KontoStyretRoute
@@ -489,6 +522,7 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/api/mcp': typeof ApiMcpRoute
   '/invitasjon/$token': typeof InvitasjonTokenRoute
+  '/mcp/godkjenn': typeof McpGodkjennRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/_konto/admin/arrangementer': typeof KontoAdminArrangementerRoute
   '/_konto/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
@@ -509,6 +543,8 @@ export interface FileRoutesById {
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
   '/api/import/kullrepresentanter': typeof ApiImportKullrepresentanterRoute
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
+  '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
+  '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/_konto/admin/': typeof KontoAdminIndexRoute
   '/_konto/arrangementer/': typeof KontoArrangementerIndexRoute
@@ -539,6 +575,7 @@ export interface FileRouteTypes {
     | '/logg-inn'
     | '/registrer'
     | '/admin'
+    | '/.well-known/$'
     | '/kom-i-gang'
     | '/konto'
     | '/styret'
@@ -548,6 +585,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/mcp'
     | '/invitasjon/$token'
+    | '/mcp/godkjenn'
     | '/nytt-passord/$token'
     | '/admin/arrangementer'
     | '/admin/gjennomgang'
@@ -568,6 +606,8 @@ export interface FileRouteTypes {
     | '/api/import/deltakelse'
     | '/api/import/kullrepresentanter'
     | '/api/logoer/$key'
+    | '/api/mcp-oauth/godkjenn'
+    | '/api/mcp-oauth/logg-inn'
     | '/api/vedlegg/$name'
     | '/admin/'
     | '/arrangementer/'
@@ -595,6 +635,7 @@ export interface FileRouteTypes {
     | '/glemt-passord'
     | '/logg-inn'
     | '/registrer'
+    | '/.well-known/$'
     | '/kom-i-gang'
     | '/konto'
     | '/styret'
@@ -604,6 +645,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/mcp'
     | '/invitasjon/$token'
+    | '/mcp/godkjenn'
     | '/nytt-passord/$token'
     | '/admin/arrangementer'
     | '/admin/gjennomgang'
@@ -624,6 +666,8 @@ export interface FileRouteTypes {
     | '/api/import/deltakelse'
     | '/api/import/kullrepresentanter'
     | '/api/logoer/$key'
+    | '/api/mcp-oauth/godkjenn'
+    | '/api/mcp-oauth/logg-inn'
     | '/api/vedlegg/$name'
     | '/admin'
     | '/arrangementer'
@@ -653,6 +697,7 @@ export interface FileRouteTypes {
     | '/logg-inn'
     | '/registrer'
     | '/_konto/admin'
+    | '/.well-known/$'
     | '/_konto/kom-i-gang'
     | '/_konto/konto'
     | '/_konto/styret'
@@ -662,6 +707,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/mcp'
     | '/invitasjon/$token'
+    | '/mcp/godkjenn'
     | '/nytt-passord/$token'
     | '/_konto/admin/arrangementer'
     | '/_konto/admin/gjennomgang'
@@ -682,6 +728,8 @@ export interface FileRouteTypes {
     | '/api/import/deltakelse'
     | '/api/import/kullrepresentanter'
     | '/api/logoer/$key'
+    | '/api/mcp-oauth/godkjenn'
+    | '/api/mcp-oauth/logg-inn'
     | '/api/vedlegg/$name'
     | '/_konto/admin/'
     | '/_konto/arrangementer/'
@@ -711,15 +759,19 @@ export interface RootRouteChildren {
   GlemtPassordRoute: typeof GlemtPassordRoute
   LoggInnRoute: typeof LoggInnRoute
   RegistrerRoute: typeof RegistrerRoute
+  DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiMcpRoute: typeof ApiMcpRoute
   InvitasjonTokenRoute: typeof InvitasjonTokenRoute
+  McpGodkjennRoute: typeof McpGodkjennRoute
   NyttPassordTokenRoute: typeof NyttPassordTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBilderKeyRoute: typeof ApiBilderKeyRoute
   ApiImportDeltakelseRoute: typeof ApiImportDeltakelseRoute
   ApiImportKullrepresentanterRoute: typeof ApiImportKullrepresentanterRoute
   ApiLogoerKeyRoute: typeof ApiLogoerKeyRoute
+  ApiMcpOauthGodkjennRoute: typeof ApiMcpOauthGodkjennRoute
+  ApiMcpOauthLoggInnRoute: typeof ApiMcpOauthLoggInnRoute
   ApiVedleggNameRoute: typeof ApiVedleggNameRoute
   ApiVedleggIndexRoute: typeof ApiVedleggIndexRoute
   ApiMedlemmerPersonIdBildeRoute: typeof ApiMedlemmerPersonIdBildeRoute
@@ -761,6 +813,13 @@ declare module '@tanstack/react-router' {
       path: '/registrer'
       fullPath: '/registrer'
       preLoaderRoute: typeof RegistrerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/$': {
+      id: '/.well-known/$'
+      path: '/.well-known/$'
+      fullPath: '/.well-known/$'
+      preLoaderRoute: typeof DotwellKnownSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_konto/admin': {
@@ -831,6 +890,13 @@ declare module '@tanstack/react-router' {
       path: '/invitasjon/$token'
       fullPath: '/invitasjon/$token'
       preLoaderRoute: typeof InvitasjonTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/godkjenn': {
+      id: '/mcp/godkjenn'
+      path: '/mcp/godkjenn'
+      fullPath: '/mcp/godkjenn'
+      preLoaderRoute: typeof McpGodkjennRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/nytt-passord/$token': {
@@ -1020,6 +1086,20 @@ declare module '@tanstack/react-router' {
       path: '/api/logoer/$key'
       fullPath: '/api/logoer/$key'
       preLoaderRoute: typeof ApiLogoerKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mcp-oauth/godkjenn': {
+      id: '/api/mcp-oauth/godkjenn'
+      path: '/api/mcp-oauth/godkjenn'
+      fullPath: '/api/mcp-oauth/godkjenn'
+      preLoaderRoute: typeof ApiMcpOauthGodkjennRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mcp-oauth/logg-inn': {
+      id: '/api/mcp-oauth/logg-inn'
+      path: '/api/mcp-oauth/logg-inn'
+      fullPath: '/api/mcp-oauth/logg-inn'
+      preLoaderRoute: typeof ApiMcpOauthLoggInnRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/vedlegg/': {
@@ -1225,15 +1305,19 @@ const rootRouteChildren: RootRouteChildren = {
   GlemtPassordRoute: GlemtPassordRoute,
   LoggInnRoute: LoggInnRoute,
   RegistrerRoute: RegistrerRoute,
+  DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiMcpRoute: ApiMcpRoute,
   InvitasjonTokenRoute: InvitasjonTokenRoute,
+  McpGodkjennRoute: McpGodkjennRoute,
   NyttPassordTokenRoute: NyttPassordTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBilderKeyRoute: ApiBilderKeyRoute,
   ApiImportDeltakelseRoute: ApiImportDeltakelseRoute,
   ApiImportKullrepresentanterRoute: ApiImportKullrepresentanterRoute,
   ApiLogoerKeyRoute: ApiLogoerKeyRoute,
+  ApiMcpOauthGodkjennRoute: ApiMcpOauthGodkjennRoute,
+  ApiMcpOauthLoggInnRoute: ApiMcpOauthLoggInnRoute,
   ApiVedleggNameRoute: ApiVedleggNameRoute,
   ApiVedleggIndexRoute: ApiVedleggIndexRoute,
   ApiMedlemmerPersonIdBildeRoute: ApiMedlemmerPersonIdBildeRoute,

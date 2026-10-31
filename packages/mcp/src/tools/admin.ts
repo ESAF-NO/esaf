@@ -50,7 +50,7 @@ export function registerAdminTools(server: McpServer, ctx: ToolContext) {
           personId: viewer.personId,
           fullName: card?.fullName ?? null,
           role: viewer.membership?.role ?? null,
-          readOnlyKey: viewer.apiToken?.readOnly ?? false,
+          readOnly: viewer.mcp?.readOnly ?? false,
         },
         appUrl: ctx.appUrl,
         people: {
@@ -253,7 +253,7 @@ export function registerAdminTools(server: McpServer, ctx: ToolContext) {
     title: 'Audit log',
     description:
       'Who did what, newest first. Filter by person (actor or subject), action prefix (e.g. "company.", "profile.create") ' +
-      'or viaMcp=true for changes made with MCP keys. Page back with beforeId=<id of the last entry>; ' +
+      'or viaMcp=true for changes made from MCP clients (keys or OAuth connections). Page back with beforeId=<id of the last entry>; ' +
       'before=<datetime> starts from a point in time.',
     input: z.object({
       personId: z.uuid().optional(),
@@ -278,7 +278,7 @@ export function registerAdminTools(server: McpServer, ctx: ToolContext) {
         actorPersonId: e.actor?.personId ?? null,
         subject: e.subject?.fullName ?? null,
         subjectPersonId: e.subject?.personId ?? null,
-        viaMcp: e.viaMcp?.tokenName ?? null,
+        viaMcp: e.viaMcp?.name ?? null,
         details: e.details,
       })),
   })

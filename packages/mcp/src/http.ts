@@ -1,7 +1,11 @@
 import {
+  API_TOKEN_PREFIX,
   authenticateApiToken,
+  authenticateOAuthAccessToken,
   can,
   hashApiToken,
+  MCP_OAUTH_SCOPES,
+  OAUTH_ACCESS_TOKEN_PREFIX,
   type Embedder,
   type ObjectStorage,
   type Viewer,
@@ -12,12 +16,17 @@ import type { ImageFetcher } from './images.ts'
 import { createAdminMcpServer } from './server.ts'
 
 /**
- * MCP over HTTP (Streamable HTTP, uten økter), med MCP-nøkler fra «Konto og
- * sikkerhet» som `Authorization: Bearer esaf_…`. Reglene:
+ * MCP over HTTP (Streamable HTTP, uten økter). Klienten viser hvem den er med
+ * `Authorization: Bearer …`: en OAuth-tilgangsnøkkel (`esaf_at_…`, fra
+ * innlogging i nettleseren) eller en MCP-nøkkel fra adminsiden «MCP»
+ * (`esaf_…`). Reglene:
  *
- * - Nøkkelen slås opp ved hver forespørsel (`authenticateApiToken`), og kontoen
- *   må være aktiv admin med `mcp.access` akkurat nå. Ukjente, utløpte og
- *   tilbaketrukne nøkler får 401; kontoer uten rettigheten får 403.
+ * - Nøkkelen slås opp ved hver forespørsel (`authenticateOAuthAccessToken`,
+ *   `authenticateApiToken`), og kontoen må være aktiv admin med `mcp.access`
+ *   akkurat nå. Ukjente, utløpte og tilbaketrukne nøkler får 401; kontoer uten
+ *   rettigheten får 403.
+ * - 401-svar peker på beskrivelsen av ressursen (RFC 9728,
+ *   `resource_metadata`), så klienten kan starte innloggingen selv.
  * - Forespørsler med `Origin` fra et annet nettsted avvises, så en nettside ikke
  *   kan bruke en nøkkel nettleseren tilfeldigvis har. Ekte MCP-klienter sender
  *   ikke `Origin`. Ingen CORS-hoder settes.
@@ -31,6 +40,10 @@ export type AdminMcpHttpOptions = {
   storage: ObjectStorage
   /** `BETTER_AUTH_URL`: appens adresse, for lenker og opprinnelsessjekken. */
   appUrl: string
+  /** Adressen til MCP-serveren, som OAuth-nøklene må være utstedt for. */
+  resource: string
+  /** Adressen til beskrivelsen av ressursen (RFC 9728), som 401-svar peker på. */
+  resourceMetadataUrl: string
   fetchImage?: ImageFetcher
   embedder?: Embedder | null
   /** IP-adressen bak forespørselen, til grensen for avviste forsøk. */
@@ -75,9 +88,18 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 const rpcError = (status: number, message: string, headers: Record<string, string> = {}) =>
   json(status, { jsonrpc: '2.0', id: null, error: { code: -32001, message } }, headers)
 
-const unauthorized = (message: string) =>
+/**
+ * 401 med utfordringen klienten trenger for å logge inn (RFC 6750 og RFC 9728).
+ * Uten nøkkel er det ingen `error` (RFC 6750 §3.1). Teksten i hodet må være ASCII.
+ */
+const unauthorized = (message: string, resourceMetadataUrl: string, invalid: boolean) =>
   rpcError(401, message, {
-    'www-authenticate': `Bearer realm="ESAF", error="invalid_token", error_description="${message}"`,
+    'www-authenticate': [
+      'Bearer realm="ESAF"',
+      `resource_metadata="${resourceMetadataUrl}"`,
+      `scope="${MCP_OAUTH_SCOPES.join(' ')}"`,
+      ...(invalid ? ['error="invalid_token"'] : []),
+    ].join(', '),
   })
 
 /** Lager håndtereren for `/api/mcp`. Én per prosess. */
@@ -117,17 +139,32 @@ export function createAdminMcpHttpHandler(options: AdminMcpHttpOptions) {
 
     if (!token) {
       return reject(
-        unauthorized('Mangler MCP-nøkkel. Lag en på MCP-siden under Admin i ESAF-appen.'),
+        unauthorized(
+          'Logg inn med ESAF-kontoen din for å bruke adminverktøyene.',
+          options.resourceMetadataUrl,
+          false,
+        ),
       )
     }
-    const viewer = await authenticateApiToken(options.db, token)
+    const oauth = token.startsWith(OAUTH_ACCESS_TOKEN_PREFIX)
+    const viewer = oauth
+      ? await authenticateOAuthAccessToken(options.db, token, options.resource)
+      : token.startsWith(API_TOKEN_PREFIX)
+        ? await authenticateApiToken(options.db, token)
+        : null
     if (!viewer) {
-      return reject(unauthorized('MCP-nøkkelen er ugyldig, utløpt eller trukket tilbake.'))
+      return reject(
+        unauthorized(
+          oauth
+            ? 'Innloggingen er utløpt eller koblet fra. Logg inn på nytt.'
+            : 'MCP-nøkkelen er ugyldig, utløpt eller trukket tilbake.',
+          options.resourceMetadataUrl,
+          true,
+        ),
+      )
     }
     if (!can(viewer, 'mcp.access')) {
-      return reject(
-        rpcError(403, 'Kontoen bak nøkkelen har ikke lenger tilgang til adminverktøyene.'),
-      )
+      return reject(rpcError(403, 'Kontoen har ikke lenger tilgang til adminverktøyene.'))
     }
     if (!perToken.take(hashApiToken(token))) {
       return rpcError(429, 'For mange forespørsler med denne nøkkelen. Vent et minutt.', {
@@ -135,11 +172,12 @@ export function createAdminMcpHttpHandler(options: AdminMcpHttpOptions) {
       })
     }
 
+    const access = viewer.mcp!
     const response = await handler.fetch(request, {
       authInfo: {
-        token: viewer.apiToken!.id,
-        clientId: viewer.apiToken!.id,
-        scopes: viewer.apiToken!.readOnly ? ['read'] : ['read', 'write'],
+        token: access.apiTokenId ?? access.oauthClientId,
+        clientId: access.apiTokenId ?? access.oauthClientId,
+        scopes: access.readOnly ? ['mcp:read'] : ['mcp:read', 'mcp:write'],
         extra: { viewer },
       },
     })

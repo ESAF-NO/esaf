@@ -62,8 +62,8 @@ export function toolError(error: unknown): CallToolResult {
   if (error instanceof AccessDeniedError) {
     return errorResult(
       {
-        unauthenticated: 'MCP-nøkkelen gjelder ikke lenger. Lag en ny på MCP-siden under Admin.',
-        not_member: 'Kontoen bak MCP-nøkkelen er ikke aktivt medlem.',
+        unauthenticated: 'Tilkoblingen gjelder ikke lenger. Logg inn på nytt fra klienten.',
+        not_member: 'Kontoen bak tilkoblingen er ikke aktivt medlem.',
         forbidden: 'Rollen din gir ikke tilgang til dette.',
         strong_auth_required: 'Kontoen må ha passkey eller tofaktor for å bruke adminverktøyene.',
       }[error.reason],
@@ -83,7 +83,7 @@ export function defineTool<S extends z.ZodObject>(
   ctx: ToolContext,
   def: ToolDefinition<S>,
 ) {
-  if (def.effect !== 'read' && ctx.viewer.apiToken?.readOnly) return
+  if (def.effect !== 'read' && ctx.viewer.mcp?.readOnly) return
   const annotations: ToolAnnotations = {
     title: def.title,
     readOnlyHint: def.effect === 'read',

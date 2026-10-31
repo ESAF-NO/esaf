@@ -1,4 +1,4 @@
-import { withApiTokenAudit, type Embedder, type ObjectStorage, type Viewer } from '@esaf/core'
+import { withMcpAudit, type Embedder, type ObjectStorage, type Viewer } from '@esaf/core'
 import type { Db } from '@esaf/db'
 import { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
@@ -24,8 +24,9 @@ ESAF admin MCP: manage the member app of ESAF (Entreprenørskolens Alumniforenin
 association of NTNU's School of Entrepreneurship (Entreprenørskolen, "ES"). ESAF is run by alumni and is not part
 of NTNU or the school. The app is at the appUrl returned by \`overview\`.
 
-You act as the admin who created the MCP key, with exactly their current role and permissions. Every change is
-checked by the same rules as the web app and written to the audit log, tagged with the key. Start with \`overview\`.
+You act as the admin who connected this client (by signing in, or with an MCP key), with exactly their current role
+and permissions. Every change is checked by the same rules as the web app and written to the audit log, tagged with
+this client. Start with \`overview\`.
 
 Data model:
 - person: someone ESAF knows about. Without an account it is an unclaimed *profile* (from the cohort list, or created
@@ -76,7 +77,10 @@ Researching and enriching people and companies (use your own web search/fetch to
 export type AdminMcpOptions = {
   db: Db
   storage: ObjectStorage
-  /** Den som står bak nøkkelen, fra `authenticateApiToken`. Må være aktivt medlem med `mcp.access`. */
+  /**
+   * Den som koblet til klienten, fra `authenticateOAuthAccessToken` eller
+   * `authenticateApiToken`. Må være aktivt medlem med `mcp.access`.
+   */
   viewer: NonNullable<Viewer>
   /** Adressen til appen, for lenker, f.eks. `https://app.esaf.no`. */
   appUrl: string
@@ -90,7 +94,7 @@ export type AdminMcpOptions = {
 export function createAdminMcpServer(options: AdminMcpOptions): McpServer {
   const { viewer } = options
   const ctx: ToolContext = {
-    db: viewer.apiToken ? withApiTokenAudit(options.db, viewer.apiToken.id) : options.db,
+    db: viewer.mcp ? withMcpAudit(options.db, viewer.mcp) : options.db,
     storage: options.storage,
     viewer,
     fetchImage: options.fetchImage ?? fetchPublicImage,
@@ -100,8 +104,8 @@ export function createAdminMcpServer(options: AdminMcpOptions): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, title: 'ESAF admin', version: SERVER_VERSION },
     {
-      instructions: viewer.apiToken?.readOnly
-        ? `${instructions}\n\nThis key is read-only: only tools that read are available.`
+      instructions: viewer.mcp?.readOnly
+        ? `${instructions}\n\nThis connection is read-only: only tools that read are available.`
         : instructions,
     },
   )

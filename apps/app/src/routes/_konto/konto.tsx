@@ -798,11 +798,11 @@ function McpPointer() {
     <Section
       id="mcp"
       title="MCP-tilgang"
-      description="Koble Claude Code, Codex eller Claude Desktop til adminverktøyene."
+      description="Koble Claude, ChatGPT eller Codex til adminverktøyene."
     >
       <p className="text-sm text-stone-600">
-        Nøklene, oppsettet for hver klient og hva du kan be om, står under Admin. Siden krever
-        passkey eller tofaktor.
+        Oppsettet for hver klient, klientene du har koblet til og hva du kan be om, står under
+        Admin. Siden krever passkey eller tofaktor.
       </p>
       <Link to="/admin/mcp" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
         <Bot className="size-4" aria-hidden />

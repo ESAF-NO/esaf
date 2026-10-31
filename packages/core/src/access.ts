@@ -17,12 +17,20 @@ export type Viewer = {
   personId: string | null
   membership: { status: MembershipStatus; role: MemberRole } | null
   /**
-   * Forespørselen kom med en MCP-nøkkel, ikke en innloggingsøkt. Nøkkelen ble
-   * laget i en sterk økt og virker bare så lenge kontoen har passkey eller
-   * tofaktor (se `authenticateApiToken`). `readOnly`: bare verktøy som leser.
+   * Forespørselen kom fra en MCP-klient, ikke en innloggingsøkt: med en
+   * MCP-nøkkel (`apiTokenId`) eller koblet til med OAuth (`oauthClientId`).
+   * Begge ble gitt i en sterk økt og virker bare så lenge kontoen har passkey
+   * eller tofaktor (se `authenticateApiToken` og `authenticateOAuthAccessToken`).
+   * `readOnly`: bare verktøy som leser.
    */
-  apiToken?: { id: string; readOnly: boolean }
+  mcp?: McpAccess
 } | null
+
+/** Hvordan en MCP-klient er koblet til: med nøkkel eller med OAuth. */
+export type McpAccess = { readOnly: boolean } & (
+  | { apiTokenId: string; oauthClientId?: undefined }
+  | { oauthClientId: string; apiTokenId?: undefined }
+)
 
 export type AccessLevel = 'anonymous' | 'pending' | 'member'
 
@@ -87,15 +95,13 @@ export type SignInFactors = Pick<
 /**
  * Sterk innlogging: økten er startet med passkey, eller kontoen har tofaktor
  * (da krever innlogging med passord alltid koden også). En konto med bare
- * passkey som logger inn med passord, får en vanlig økt. En MCP-nøkkel er
- * sterk: den kan bare lages i en sterk økt, og virker bare mens kontoen har
- * passkey eller tofaktor.
+ * passkey som logger inn med passord, får en vanlig økt. En MCP-klient er
+ * sterk: nøkkelen eller godkjenningen kan bare gis i en sterk økt, og virker
+ * bare mens kontoen har passkey eller tofaktor.
  */
 export const strongAuth = (
-  f: Pick<SignInFactors, 'twoFactorEnabled' | 'passkeySession'> & {
-    apiToken?: NonNullable<Viewer>['apiToken']
-  },
-) => f.twoFactorEnabled || f.passkeySession || f.apiToken !== undefined
+  f: Pick<SignInFactors, 'twoFactorEnabled' | 'passkeySession'> & { mcp?: McpAccess },
+) => f.twoFactorEnabled || f.passkeySession || f.mcp !== undefined
 
 /**
  * Om økten kan legge til eller fjerne passkeys og slå på tofaktor. Den første

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { schema, type Db } from '@esaf/db'
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { assertCan, assertMember, type Viewer } from './access.ts'
+import { assertCan, assertMember, type McpAccess, type Viewer } from './access.ts'
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { loadViewer, type Tx } from './members.ts'
 
@@ -25,7 +25,7 @@ const { apiToken, auditEvent, user } = schema
  *   passkeyene fjernet av en admin.
  * - `readOnly`: MCP-serveren viser bare verktøy som leser.
  * - Alt som gjøres med en nøkkel, merkes i revisjonsloggen (`audit_event.api_token_id`,
- *   se `withApiTokenAudit`). Oppretting og tilbaketrekking logges som
+ *   se `withMcpAudit`). Oppretting og tilbaketrekking logges som
  *   `mcp_token.create` og `mcp_token.revoke`.
  */
 
@@ -88,9 +88,9 @@ function toView(row: typeof apiToken.$inferSelect): ApiTokenView {
   }
 }
 
-/** Nøkler håndteres bare fra appen, i en ekte økt. */
-function assertSession(viewer: Viewer) {
-  if (viewer?.apiToken) throw new AccessDeniedError('forbidden')
+/** Nøkler og tilkoblinger håndteres bare fra appen, i en ekte økt. */
+export function assertSession(viewer: Viewer) {
+  if (viewer?.mcp) throw new AccessDeniedError('forbidden')
 }
 
 /**
@@ -230,21 +230,24 @@ export async function authenticateApiToken(db: Db, token: string): Promise<Viewe
   if (!row.lastUsedAt || now.getTime() - row.lastUsedAt.getTime() > LAST_USED_RESOLUTION_MS) {
     await db.update(apiToken).set({ lastUsedAt: now }).where(eq(apiToken.id, row.id))
   }
-  return { ...viewer, apiToken: { id: row.id, readOnly: row.readOnly } }
+  return { ...viewer, mcp: { apiTokenId: row.id, readOnly: row.readOnly } }
 }
 
 /**
- * Databasen for en forespørsel med nøkkel: hver transaksjon setter
- * `esaf.api_token_id`, så alt den skriver til revisjonsloggen, merkes med
- * nøkkelen (standardverdien til `audit_event.api_token_id`). Settingen gjelder
+ * Databasen for en forespørsel fra en MCP-klient: hver transaksjon setter
+ * `esaf.api_token_id` eller `esaf.oauth_client_id`, så alt den skriver til
+ * revisjonsloggen, merkes med nøkkelen eller klienten (standardverdiene til
+ * `audit_event.api_token_id` og `audit_event.oauth_client_id`). Settingen gjelder
  * bare transaksjonen (`set_config(…, true)`), så den lekker ikke til andre
  * forespørsler som får samme tilkobling fra poolen. Alle hendelser i loggen
  * skrives i en transaksjon.
  */
-export function withApiTokenAudit(db: Db, tokenId: string): Db {
+export function withMcpAudit(db: Db, access: McpAccess): Db {
   const transaction: Db['transaction'] = (run, config) =>
     db.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('esaf.api_token_id', ${tokenId}, true)`)
+      await tx.execute(
+        sql`select set_config('esaf.api_token_id', ${access.apiTokenId ?? ''}, true), set_config('esaf.oauth_client_id', ${access.oauthClientId ?? ''}, true)`,
+      )
       return run(tx)
     }, config)
   return new Proxy(db, {

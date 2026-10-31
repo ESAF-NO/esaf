@@ -168,31 +168,49 @@ function InviteForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  /** Ser etter profiler med adressen i kullisten, og om den allerede har en konto. */
-  async function lookUp(value: string) {
+  /**
+   * Ser etter profiler med adressen i kullisten, og om den allerede har en konto.
+   * Gir valget som gjelder for adressen (`undefined`: admin må velge), eller
+   * `false` hvis oppslaget feilet.
+   */
+  async function lookUp(value: string): Promise<string | null | undefined | false> {
     const address = value.trim().toLowerCase()
-    if (address === checkedEmail || !address.includes('@')) return
+    if (address === checkedEmail || !address.includes('@')) return selected
     setCheckedEmail(address)
     try {
       const result = await describe({ data: { email: address } })
-      setTarget(result)
+      // En profil admin har valgt selv, beholdes; «Ingen profil» gjaldt den forrige adressen.
+      const kept = picked && typeof selected === 'string' ? selected : null
+      const choice =
+        result.profiles.length === 1 && !kept
+          ? result.profiles[0]!.personId
+          : kept
+            ? kept
+            : result.suggestions.length
+              ? undefined
+              : null
+      const previous = new Set(
+        [...(target?.profiles ?? []), ...(target?.suggestions ?? [])].map((p) => p.personId),
+      )
       const found: Profile[] = [...result.profiles, ...result.suggestions]
-      if (found.length) {
-        setOptions((current) => [
-          ...found,
-          ...current.filter((o) => !found.some((p) => p.personId === o.personId)),
-        ])
-      }
-      if (!picked) {
-        // Én profil med samme adresse er nesten alltid riktig, men admin bekrefter ved å sende.
-        // Et forslag ut fra navnet eller domenet må admin ta stilling til selv, så
-        // ingen får en ny profil ved siden av den som finnes.
-        if (result.profiles.length === 1) setSelected(result.profiles[0]!.personId)
-        else if (result.suggestions.length) setSelected(undefined)
-        else setSelected(null)
-      }
+      setTarget(result)
+      // Forslagene for den forrige adressen fjernes; profiler admin har søkt fram, blir.
+      setOptions((current) => [
+        ...found,
+        ...current
+          .filter(
+            (o) =>
+              !found.some((p) => p.personId === o.personId) &&
+              (!previous.has(o.personId) || o.personId === kept),
+          )
+          .map(({ reason: _, ...o }) => o),
+      ])
+      setPicked(kept !== null)
+      setSelected(choice)
+      return choice
     } catch (e) {
       setError(errorMessage(e))
+      return false
     }
   }
 
@@ -222,14 +240,17 @@ function InviteForm({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (selected === undefined) {
+    // Enter i adressefeltet sender før feltet mister fokus, så oppslaget gjøres her også.
+    const choice = await lookUp(email)
+    if (choice === false) return
+    if (choice === undefined) {
       setError('Er personen en av profilene som er foreslått? Velg den, eller «Ingen profil».')
       return
     }
     setBusy(true)
     setError(null)
     try {
-      const link = await create({ data: { email, role, personId: selected } })
+      const link = await create({ data: { email, role, personId: choice } })
       await router.invalidate()
       onCreated(link)
     } catch (e) {

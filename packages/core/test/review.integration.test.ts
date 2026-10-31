@@ -26,6 +26,7 @@ import {
   markSourcesReviewed,
   mergeCompanies,
   mergePeople,
+  previewPeopleMerge,
   removePersonEmail,
   requestCompanyLink,
   reviewCounts,
@@ -169,6 +170,10 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       ],
       ['setPersonCohorts', (v) => setPersonCohorts(db, v, kari!.personId!, [])],
       ['getPersonAdmin', (v) => getPersonAdmin(db, v, kari!.personId!)],
+      [
+        'previewPeopleMerge',
+        (v) => previewPeopleMerge(db, v, { sourceId: kari!.personId!, targetId: ola!.personId! }),
+      ],
       [
         'mergePeople',
         (v) => mergePeople(db, storage, v, { sourceId: kari!.personId!, targetId: ola!.personId! }),
@@ -670,10 +675,48 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
         endYear: null,
       })
 
+      const preview = await previewPeopleMerge(db, admin, {
+        sourceId: kari!.personId!,
+        targetId: profile,
+      })
+      expect(preview.target.personId).toBe(kari!.personId)
+      expect(preview.source.personId).toBe(profile)
+      expect(preview.fields.find((f) => f.field === 'city')).toMatchObject({
+        value: 'Trondheim',
+        sourceValue: 'Oslo',
+        conflict: true,
+        origin: 'kept',
+      })
+      expect(preview.fields.find((f) => f.field === 'bio')).toMatchObject({
+        value: 'Fra kullisten',
+        origin: 'filled',
+        conflict: false,
+      })
+      expect(preview.experience).toHaveLength(2)
+      expect(preview.experience.filter((e) => e.added).map((e) => e.company)).toEqual(['Syrlig'])
+      expect(preview.duplicateExperience).toBe(1)
+      expect(preview.cohorts).toEqual([
+        { year: 2016, relation: 'student', added: false, discardedRelation: null },
+        { year: 2020, relation: 'mentor', added: true, discardedRelation: null },
+      ])
+      expect(preview.emails.filter((e) => e.added).map((e) => e.email)).toEqual([
+        'kari.nordmann@example.test',
+      ])
+      expect(preview.transfers.find((t) => t.label === 'Sitater')?.count).toBe(1)
+      expect(JSON.stringify(preview)).not.toContain('+47 400 00 000')
+      // Forhåndsvisningen skriver ingenting og logger ingenting, og samme data gir samme token.
+      expect(await audit('person.merge')).toHaveLength(0)
+      expect((await getPersonAdmin(db, admin, profile)).personId).toBe(profile)
+      expect(
+        (await previewPeopleMerge(db, admin, { sourceId: kari!.personId!, targetId: profile }))
+          .token,
+      ).toBe(preview.token)
+
       // Profilen velges som den som beholdes, men kontoen vinner.
       const result = await mergePeople(db, storage, admin, {
         sourceId: kari!.personId!,
         targetId: profile,
+        previewToken: preview.token,
       })
       expect(result.personId).toBe(kari!.personId)
       const [gone] = await db.select().from(schema.person).where(eq(schema.person.id, profile))
@@ -720,7 +763,121 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       expect(created!.subjectPersonId).toBe(kari!.personId)
     })
 
+    it('admin kan velge duplikatets verdi der begge har ulike, og kildene følger verdien', async () => {
+      const keep = await createProfile(db, admin, {
+        fullName: 'Jonas Holm',
+        cohorts: [{ graduationYear: 2019, relation: 'student' }],
+        emails: [],
+        status: 'active',
+      })
+      const drop = await createProfile(db, admin, {
+        fullName: 'Jonas Berg Holme',
+        cohorts: [{ graduationYear: 2019, relation: 'student' }],
+        emails: [],
+        status: 'active',
+      })
+      await db
+        .update(schema.person)
+        .set({ city: 'Bergen', bio: 'Kort' })
+        .where(eq(schema.person.id, keep.personId))
+      await db
+        .update(schema.person)
+        .set({ city: 'Trondheim', bio: 'Lang og god bio fra kullisten' })
+        .where(eq(schema.person.id, drop.personId))
+      const source = (entityId: string, field: string, sourceLabel: string) => ({
+        entityType: 'person' as const,
+        entityId,
+        field,
+        sourceLabel,
+        confidence: 'high' as const,
+      })
+      await db
+        .insert(schema.fieldSource)
+        .values([
+          source(keep.personId, 'bio', 'gammel kilde'),
+          source(drop.personId, 'bio', 'kullisten'),
+          source(drop.personId, 'city', 'kullisten'),
+        ])
+      const input = { sourceId: drop.personId, targetId: keep.personId }
+      const preview = await previewPeopleMerge(db, admin, input)
+      expect(preview.fields.find((f) => f.field === 'bio')).toMatchObject({
+        conflict: true,
+        targetValue: 'Kort',
+        sourceValue: 'Lang og god bio fra kullisten',
+      })
+      expect(preview.fields.find((f) => f.field === 'fullName')).toMatchObject({ conflict: true })
+
+      // Felt uten ulike verdier kan ikke velges; valget ignoreres.
+      await mergePeople(db, storage, admin, {
+        ...input,
+        previewToken: preview.token,
+        useSource: ['bio', 'fullName', 'linkedinUrl'],
+      })
+      const merged = await getProfile(db, admin, keep.personId)
+      expect(merged).toMatchObject({
+        fullName: 'Jonas Berg Holme',
+        bio: 'Lang og god bio fra kullisten',
+        city: 'Bergen',
+        linkedinUrl: null,
+      })
+      const sources = await db
+        .select({ field: schema.fieldSource.field, label: schema.fieldSource.sourceLabel })
+        .from(schema.fieldSource)
+        .where(eq(schema.fieldSource.entityId, keep.personId))
+      // Bioen har duplikatets kilde, ikke den gamle; byen beholdt sin verdi, så duplikatets kilde følger ikke med.
+      expect(sources).toEqual([{ field: 'bio', label: 'kullisten' }])
+      const [event] = await audit('person.merge')
+      expect(event!.details).toMatchObject({
+        chosenFromDuplicate: ['fullName', 'bio'],
+        previousName: 'Jonas Holm',
+      })
+    })
+
+    it('avviser en utdatert forhåndsvisning uten å endre profilene', async () => {
+      const a = await createProfile(db, admin, {
+        fullName: 'Anne',
+        cohorts: [{ graduationYear: 2020, relation: 'student' }],
+        emails: [],
+        status: 'pending',
+      })
+      const b = await createProfile(db, admin, {
+        fullName: 'Anne A',
+        cohorts: [{ graduationYear: 2020, relation: 'mentor' }],
+        emails: [],
+        status: 'active',
+      })
+      const input = { sourceId: b.personId, targetId: a.personId }
+      const preview = await previewPeopleMerge(db, admin, input)
+      expect(preview.status).toBe('active')
+      expect(preview.cohorts).toEqual([
+        { year: 2020, relation: 'student', added: false, discardedRelation: 'mentor' },
+      ])
+      await db
+        .update(schema.person)
+        .set({ bio: 'Ny tekst' })
+        .where(eq(schema.person.id, b.personId))
+      await expect(
+        mergePeople(db, storage, admin, { ...input, previewToken: preview.token }),
+      ).rejects.toThrow(/endret siden/)
+      expect(await audit('person.merge')).toHaveLength(0)
+      expect((await getPersonAdmin(db, admin, b.personId)).personId).toBe(b.personId)
+      const fresh = await previewPeopleMerge(db, admin, input)
+      expect(fresh.token).not.toBe(preview.token)
+      await mergePeople(db, storage, admin, { ...input, previewToken: fresh.token })
+      expect((await getProfile(db, admin, a.personId)).bio).toBe('Ny tekst')
+    })
+
     it('slår aldri sammen to kontoer', async () => {
+      await expect(
+        previewPeopleMerge(db, admin, { sourceId: kari!.personId!, targetId: ola!.personId! }),
+      ).rejects.toThrow(/Begge har egen konto/)
+      await expect(
+        previewPeopleMerge(db, admin, { sourceId: kari!.personId!, targetId: kari!.personId! }),
+      ).rejects.toThrow(/annen person/)
+      await expect(
+        previewPeopleMerge(db, admin, { sourceId: randomUUID(), targetId: kari!.personId! }),
+      ).rejects.toThrow(/Fant ikke/)
+
       await expect(
         mergePeople(db, storage, admin, { sourceId: kari!.personId!, targetId: ola!.personId! }),
       ).rejects.toThrow(/Begge har egen konto/)
@@ -769,7 +926,21 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
         .update(schema.person)
         .set({ phone: '+47 400 00 002', phoneVisible: false })
         .where(eq(schema.person.id, b.personId))
-      await mergePeople(db, storage, admin, { sourceId: b.personId, targetId: a.personId })
+      const preview = await previewPeopleMerge(db, admin, {
+        sourceId: b.personId,
+        targetId: a.personId,
+      })
+      expect(preview.contact).toEqual([
+        { field: 'contactEmail', present: true, visible: true, changed: false },
+        { field: 'phone', present: true, visible: false, changed: true },
+      ])
+      expect(JSON.stringify(preview)).not.toContain('berit@example.test')
+      expect(JSON.stringify(preview)).not.toContain('+47 400')
+      await mergePeople(db, storage, admin, {
+        sourceId: b.personId,
+        targetId: a.personId,
+        previewToken: preview.token,
+      })
       const [row] = await db.select().from(schema.person).where(eq(schema.person.id, a.personId))
       expect(row).toMatchObject({
         phone: '+47 400 00 001',

@@ -11,6 +11,7 @@ import {
   loadFieldSources,
   loadPersonEvents,
   loadQuotes,
+  mergeChoiceFields,
   mergePeople,
   planProfileBatch,
   PROFILE_BATCH_MAX,
@@ -600,11 +601,19 @@ export function registerPeopleTools(server: McpServer, ctx: ToolContext) {
     title: 'Merge duplicate people',
     description:
       'Merge a duplicate (sourceId) into another person (targetId). Everything moves over: experience, cohorts, ' +
-      'e-mails, quotes, sources, posts, events, representative terms; empty fields are filled from the duplicate. ' +
+      'e-mails, quotes, sources, posts, events, representative terms; empty fields are filled from the duplicate, ' +
+      "and filled fields keep the kept profile's value unless listed in useSource. Check both with get_person first. " +
       'If one has an account, that one is kept. Two accounts are never merged. Cannot be undone.',
     input: z.object({
       sourceId: id('The duplicate, which disappears'),
       targetId: id('The person to keep'),
+      useSource: z
+        .array(z.enum(mergeChoiceFields))
+        .optional()
+        .describe(
+          "Fields where the duplicate's value should win when both have different values " +
+            '(e.g. a better bio or the correct name). Ignored for fields that are empty or equal.',
+        ),
     }),
     effect: 'destructive',
     run: async (args, ctx) => {

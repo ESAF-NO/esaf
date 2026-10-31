@@ -52,7 +52,8 @@ const {
  *   ut av køen uten å late som eieren har bekreftet; «Fjern» tømmer feltet.
  * - **Mulige duplikater** av selskaper (samme navn uten selskapsform, nesten lik
  *   slug, samme nettside) og personer (samme navn og kull innenfor ett år,
- *   samme e-post eller LinkedIn). Par en admin har avvist, foreslås ikke igjen.
+ *   nesten likt etternavn, samme fornavn i samme selskap, samme e-post eller
+ *   LinkedIn). Par en admin har avvist, foreslås ikke igjen.
  * - **Forslag** fra medlemmer, og **tilknytninger** til profiler ingen har tatt i
  *   bruk (personer med konto svarer selv).
  *
@@ -150,7 +151,8 @@ export type DuplicatePerson = {
   experience: number
 }
 
-export type PersonDuplicateReason = 'name' | 'firstLast' | 'email' | 'linkedin'
+export type PersonDuplicateReason =
+  'name' | 'firstLast' | 'similarName' | 'company' | 'email' | 'linkedin'
 
 export type ReviewPersonPair = {
   first: DuplicatePerson
@@ -624,6 +626,7 @@ function pairsBy<T extends { id: string }>(
   items: T[],
   key: (item: T) => string | null,
   add: (a: T, b: T) => void,
+  largest = 8,
 ) {
   const groups = new Map<string, T[]>()
   for (const item of items) {
@@ -633,7 +636,7 @@ function pairsBy<T extends { id: string }>(
   }
   for (const group of groups.values()) {
     // En nøkkel mange deler (f.eks. et vanlig navn), er ikke et tegn på duplikat.
-    if (group.length > 8) continue
+    if (group.length > largest) continue
     for (let i = 0; i < group.length; i++) {
       for (let j = i + 1; j < group.length; j++) add(group[i]!, group[j]!)
     }
@@ -715,7 +718,7 @@ function linkedinKey(url: string | null) {
 }
 
 async function personPairs(db: Db): Promise<ReviewPersonPair[]> {
-  const [rows, years, emails, jobs, dismissed] = await Promise.all([
+  const [rows, years, emails, jobs, workplaces, dismissed] = await Promise.all([
     db
       .select({
         id: person.id,
@@ -724,6 +727,7 @@ async function personPairs(db: Db): Promise<ReviewPersonPair[]> {
         userId: person.userId,
         linkedinUrl: person.linkedinUrl,
         contactEmail: person.contactEmail,
+        esCompanyId: person.esCompanyId,
         status: membership.status,
       })
       .from(person)
@@ -737,6 +741,9 @@ async function personPairs(db: Db): Promise<ReviewPersonPair[]> {
       .select({ personId: experience.personId, n: count() })
       .from(experience)
       .groupBy(experience.personId),
+    db
+      .selectDistinct({ personId: experience.personId, companyId: experience.companyId })
+      .from(experience),
     dismissedPairs(db, 'person_duplicate'),
   ])
   const yearsOf = new Map<string, number[]>()
@@ -746,14 +753,23 @@ async function personPairs(db: Db): Promise<ReviewPersonPair[]> {
     emailsOf.set(e.personId, (emailsOf.get(e.personId) ?? new Set()).add(emailKey(e.email)))
   }
   const jobsOf = new Map(jobs.map((j) => [j.personId, j.n]))
+  const companiesOf = new Map<string, Set<string>>()
+  for (const w of workplaces) {
+    companiesOf.set(w.personId, (companiesOf.get(w.personId) ?? new Set()).add(w.companyId))
+  }
   const people = rows.map((r) => {
     const name = normalizePersonName(r.fullName)
     const parts = name.split(' ')
     const own = emailsOf.get(r.id) ?? new Set<string>()
     if (r.contactEmail) own.add(emailKey(r.contactEmail))
+    const companies = companiesOf.get(r.id) ?? new Set<string>()
+    if (r.esCompanyId) companies.add(r.esCompanyId)
     return {
       ...r,
       name,
+      first: parts[0]!,
+      last: parts.length > 1 ? parts.at(-1)! : null,
+      companies,
       firstLast: parts.length > 2 ? `${parts[0]} ${parts.at(-1)}` : name,
       emails: own,
       linkedin: linkedinKey(r.linkedinUrl),
@@ -780,7 +796,7 @@ async function personPairs(db: Db): Promise<ReviewPersonPair[]> {
   const add = (reason: PersonDuplicateReason) => (a: P, b: P) => {
     const key = pairKey(a.id, b.id)
     if (dismissed.has(key)) return
-    if ((reason === 'name' || reason === 'firstLast') && !closeCohorts(a, b)) return
+    if (reason !== 'email' && reason !== 'linkedin' && !closeCohorts(a, b)) return
     // To navn med fornavn og etternavn felles må begge ha kull som passer.
     if (reason === 'firstLast' && (!a.years.length || !b.years.length)) return
     const [first, second] = a.id < b.id ? [a, b] : [b, a]
@@ -805,12 +821,34 @@ async function personPairs(db: Db): Promise<ReviewPersonPair[]> {
     (p) => p.email,
     (a, b) => a.id !== b.id && add('email')(a, b),
   )
+  // «Jonas Holm» og «Jonas Berg Holme»: samme fornavn og et etternavn
+  // med én skrivefeil.
+  pairsBy(
+    people,
+    (p) => (p.first.length >= 2 && p.last ? p.first : null),
+    (a, b) =>
+      a.last !== b.last &&
+      a.last!.length >= 4 &&
+      b.last!.length >= 4 &&
+      editDistance(a.last!, b.last!, 1) <= 1 &&
+      add('similarName')(a, b),
+    Infinity,
+  )
+  // Samme fornavn i samme selskap, for eksempel en konto laget uten å koble den til
+  // profilen fra kullisten.
+  pairsBy(
+    people.flatMap((p) => [...p.companies].map((companyId) => ({ ...p, companyId }))),
+    (p) => (p.first.length >= 2 ? `${p.first}:${p.companyId}` : null),
+    (a, b) => a.id !== b.id && add('company')(a, b),
+  )
   pairsBy(people, (p) => p.linkedin, add('linkedin'))
   const weight: Record<PersonDuplicateReason, number> = {
     email: 3,
     linkedin: 3,
     name: 2,
+    company: 2,
     firstLast: 1,
+    similarName: 1,
   }
   const score = (p: ReviewPersonPair) => p.reasons.reduce((sum, r) => sum + weight[r], 0)
   return [...found.values()].sort(

@@ -1,18 +1,21 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { schema, type Db, type InvitationKind, type MemberRole } from '@esaf/db'
-import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { assertCan, roleAtLeast, roles, type Viewer } from './access.ts'
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { ensurePersonForVerifiedUser, linkAccountInTx, normalizeEmail, type Tx } from './members.ts'
 import { notifyMemberApproved } from './notifications.ts'
+import { hostLabel, normalizePersonName } from './validation.ts'
 
 const {
   accessRequest,
   account,
   auditEvent,
   cohort,
+  company,
+  experience,
   invitation,
   membership,
   passkey,
@@ -584,6 +587,17 @@ export async function revokeInvitation(
 export type InviteTarget = {
   /** Profiler uten konto som har adressen i kullisten. */
   profiles: { personId: string; fullName: string; years: number[] }[]
+  /**
+   * Profiler uten konto som kan være personen, når ingen har adressen: navnet
+   * står i adressen, eller personen har samme fornavn og jobber i selskapet som
+   * eier domenet. Admin velger selv.
+   */
+  suggestions: {
+    personId: string
+    fullName: string
+    years: number[]
+    reason: 'name' | 'company'
+  }[]
   /** Kontoen med adressen, hvis den finnes. */
   account: {
     verified: boolean
@@ -600,7 +614,7 @@ export async function describeInviteTarget(
 ): Promise<InviteTarget> {
   assertCan(viewer, 'members.review')
   const email = normalizeEmail(rawEmail)
-  if (!z.email().safeParse(email).success) return { profiles: [], account: null }
+  if (!z.email().safeParse(email).success) return { profiles: [], suggestions: [], account: null }
   const [profiles, [existing]] = await Promise.all([
     db
       .select({ personId: person.id, fullName: person.fullName })
@@ -618,26 +632,23 @@ export async function describeInviteTarget(
       .leftJoin(membership, eq(membership.personId, person.id))
       .where(eq(user.email, email)),
   ])
-  const years = profiles.length
+  const suggestions = profiles.length ? [] : await suggestProfiles(db, email)
+  const ids = [...profiles, ...suggestions].map((p) => p.personId)
+  const years = ids.length
     ? await db
         .select({ personId: personCohort.personId, year: cohort.graduationYear })
         .from(personCohort)
         .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
-        .where(
-          inArray(
-            personCohort.personId,
-            profiles.map((p) => p.personId),
-          ),
-        )
+        .where(inArray(personCohort.personId, ids))
     : []
+  const yearsOf = (personId: string) =>
+    years
+      .filter((y) => y.personId === personId)
+      .map((y) => y.year)
+      .sort()
   return {
-    profiles: profiles.map((p) => ({
-      ...p,
-      years: years
-        .filter((y) => y.personId === p.personId)
-        .map((y) => y.year)
-        .sort(),
-    })),
+    profiles: profiles.map((p) => ({ ...p, years: yearsOf(p.personId) })),
+    suggestions: suggestions.map((p) => ({ ...p, years: yearsOf(p.personId) })),
     account: existing
       ? {
           verified: existing.verified,
@@ -646,6 +657,94 @@ export async function describeInviteTarget(
         }
       : null,
   }
+}
+
+/** Domener mange bruker privat, eller hele studiet deler: de sier ikke hvor personen jobber. */
+const sharedDomains = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'hotmail.com',
+  'hotmail.no',
+  'outlook.com',
+  'live.com',
+  'live.no',
+  'msn.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'yahoo.com',
+  'yahoo.no',
+  'online.no',
+  'proton.me',
+  'protonmail.com',
+  'ntnu.no',
+  'stud.ntnu.no',
+])
+
+/**
+ * Profiler uten konto som kan høre til adressen. «ola.nordmann@», «olanordmann@»
+ * og «onordmann@» peker på Ola Nordmann; «ola@fjordtek.no» peker på en Ola som
+ * jobber i selskapet med nettsiden fjordtek.no.
+ */
+async function suggestProfiles(db: Db, email: string) {
+  const [local = '', domain = ''] = email.split('@')
+  const words = normalizePersonName(local.replace(/[._+\d]+/g, ' '))
+    .split(' ')
+    .filter((w) => w.length >= 2)
+  if (!words.length) return []
+
+  const unclaimed = await db
+    .select({ personId: person.id, fullName: person.fullName, esCompanyId: person.esCompanyId })
+    .from(person)
+    .where(isNull(person.userId))
+  const employees = new Set<string>()
+  if (!sharedDomains.has(domain)) {
+    const sites = await db
+      .select({ id: company.id, website: company.website })
+      .from(company)
+      .where(isNotNull(company.website))
+    const companies = sites
+      .filter((c) => {
+        const host = (hostLabel(c.website) ?? hostLabel(`https://${c.website}`))?.toLowerCase()
+        return host && (domain === host || domain.endsWith(`.${host}`))
+      })
+      .map((c) => c.id)
+    if (companies.length) {
+      const jobs = await db
+        .selectDistinct({ personId: experience.personId })
+        .from(experience)
+        .where(inArray(experience.companyId, companies))
+      for (const j of jobs) employees.add(j.personId)
+      for (const p of unclaimed) {
+        if (p.esCompanyId && companies.includes(p.esCompanyId)) employees.add(p.personId)
+      }
+    }
+  }
+
+  const found: { personId: string; fullName: string; reason: 'name' | 'company' }[] = []
+  for (const p of unclaimed) {
+    const parts = normalizePersonName(p.fullName).split(' ')
+    const first = parts[0]!
+    const last = parts.length > 1 ? parts.at(-1)! : null
+    const joined = words.join('')
+    const byName =
+      last !== null &&
+      (words.length >= 2
+        ? words.includes(last) && words.every((w) => parts.includes(w))
+        : last.length >= 4 && (joined === parts.join('') || joined === `${first}${last}`))
+    const shortForm = last !== null && last.length >= 4 && joined === `${first[0]}${last}`
+    if (byName || shortForm) {
+      found.push({ personId: p.personId, fullName: p.fullName, reason: 'name' })
+    } else if (
+      employees.has(p.personId) &&
+      (words[0] === first || (last !== null && words.includes(last)))
+    ) {
+      found.push({ personId: p.personId, fullName: p.fullName, reason: 'company' })
+    }
+  }
+  return found
+    .sort((a, b) => (a.reason === b.reason ? 0 : a.reason === 'name' ? -1 : 1))
+    .slice(0, 5)
 }
 
 // ---------------------------------------------------------------------------

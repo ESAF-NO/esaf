@@ -398,7 +398,7 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       expect((await reviewCounts(db, admin)).companyDuplicates).toBe(1)
     })
 
-    it('finner personer med samme navn og nære kull, samme e-post eller LinkedIn', async () => {
+    it('finner personer med samme eller nesten likt navn, samme selskap, e-post eller LinkedIn', async () => {
       const profile = (fullName: string, years: number[], emails: string[] = []) =>
         createProfile(db, admin, {
           fullName,
@@ -430,6 +430,18 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
         .set({ linkedinUrl: 'https://no.linkedin.com/in/Kari-Nordmann/' })
         .where(eq(schema.person.id, kari!.personId!))
 
+      // En konto laget uten å koble den til profilen, med en skrivefeil i etternavnet.
+      const h = await profile('Jonas Holm', [])
+      const i = await profile('Jonas Berg Holme', [2014])
+      await profile('Jonas Hall', [2014]) // To bokstaver unna.
+      const j = await profile('Mari Berg', [2019])
+      const k = await profile('Mari Solheim', [])
+      const fjordtek = await company('Fjordtek')
+      await db.insert(schema.experience).values([
+        { personId: j, companyId: fjordtek },
+        { personId: k, companyId: fjordtek },
+      ])
+
       const pairs = (await review('personDuplicates')).items
       const reasonsFor = (x: string, y: string) =>
         pairs.find(
@@ -439,7 +451,9 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       expect(reasonsFor(c, d)).toEqual(['firstLast'])
       expect(reasonsFor(e, f)).toEqual(['email'])
       expect(reasonsFor(g, kari!.personId!)).toEqual(['linkedin'])
-      expect(pairs).toHaveLength(4)
+      expect(reasonsFor(h, i)).toEqual(['similarName'])
+      expect(reasonsFor(j, k)).toEqual(['company'])
+      expect(pairs).toHaveLength(6)
 
       expect(
         (await findSimilarPeople(db, admin, { fullName: 'ase odegard', years: [2015] })).map(
@@ -448,7 +462,7 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       ).toEqual([a])
 
       await dismissDuplicate(db, admin, { kind: 'person_duplicate', firstId: a, secondId: b })
-      expect((await reviewCounts(db, admin)).personDuplicates).toBe(3)
+      expect((await reviewCounts(db, admin)).personDuplicates).toBe(5)
     })
   })
 

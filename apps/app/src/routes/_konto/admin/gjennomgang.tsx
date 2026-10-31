@@ -605,6 +605,8 @@ function CompanyPair({ pair }: { pair: ReviewCompanyPair }) {
 const personReasons = {
   name: 'Samme navn, nære kull',
   firstLast: 'Samme fornavn og etternavn',
+  similarName: 'Nesten likt navn, nære kull',
+  company: 'Samme fornavn, samme selskap',
   email: 'Samme e-post',
   linkedin: 'Samme LinkedIn',
 }

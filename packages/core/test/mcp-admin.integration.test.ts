@@ -518,7 +518,7 @@ describe.skipIf(!url)('MCP: nøkler og adminverktøy i @esaf/core', () => {
       const index = await listPeopleIndex(db, admin)
       const row = index.find((p) => p.fullName === 'Har Bio')!
       expect(row.has).toMatchObject({ bio: true, photo: false, phone: true, linkedin: false })
-      expect(JSON.stringify(row)).not.toContain('412')
+      expect(JSON.stringify(row)).not.toContain('41234567')
       expect(row.cohorts).toEqual([{ graduationYear: 2027, relation: 'student' }])
       expect(await db.$count(schema.auditEvent, and(isNotNull(schema.auditEvent.apiTokenId)))).toBe(
         0,

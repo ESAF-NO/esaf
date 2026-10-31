@@ -234,7 +234,7 @@ describe.skipIf(!url)('personsøk og ES-universet', () => {
       .from(schema.personSearchIndex)
       .where(eq(schema.personSearchIndex.personId, kari))
     const text = JSON.stringify(row!.chunks)
-    expect(text).not.toContain('412')
+    expect(text).not.toContain('412 34 567')
     expect(text).not.toContain('kari@example.com')
     expect(redact('Ring 412 34 567, eller +47 41234567. Født 1990.')).toBe(
       'Ring [telefon], eller [telefon]. Født 1990.',

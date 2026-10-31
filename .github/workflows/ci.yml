@@ -193,11 +193,16 @@ jobs:
         env:
           APP_URL: ${{ vars.APP_URL || 'https://app.esaf.no' }}
         run: |
-          for _ in $(seq 1 90); do
-            version=$(curl --silent --max-time 10 "$APP_URL/api/health" | jq -r '.version // empty' 2>/dev/null || true)
+          for i in $(seq 1 90); do
+            code=$(curl --silent --max-time 10 --output health.json --write-out '%{http_code}' "$APP_URL/api/health" || true)
+            version=$(jq -r '.version // empty' health.json 2>/dev/null || true)
             if [ "$version" = "$GITHUB_SHA" ]; then
               echo "Appen svarer med $GITHUB_SHA."
               exit 0
+            fi
+            # Hvert minutt: hva helsesjekken faktisk svarte (f.eks. 403 fra Cloudflare, eller forrige versjon).
+            if [ $((i % 6)) -eq 1 ]; then
+              echo "HTTP $code, versjon «${version:-ingen}»: $(head -c 120 health.json 2>/dev/null | tr -d '\n')"
             fi
             sleep 10
           done

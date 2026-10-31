@@ -45,6 +45,7 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
       'update_company',
       'delete_company',
       'merge_companies',
+      'set_company_former_names',
       'set_company_logo',
       'remove_company_logo',
       'add_company_event',

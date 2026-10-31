@@ -161,6 +161,9 @@ export function CompanyInput({
                       </span>
                       <span className="block truncate text-xs text-stone-500">
                         {[
+                          option.hit.formerNames.length
+                            ? `Tidligere ${option.hit.formerNames.join(', ')}`
+                            : null,
                           option.hit.tagline,
                           option.hit.people ? `${option.hit.people} fra ES` : null,
                         ]

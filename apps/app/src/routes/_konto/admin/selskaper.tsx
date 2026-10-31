@@ -114,7 +114,9 @@ function Companies() {
     const sort = search.sorter ?? 'navn'
     const list = companies.filter(
       (c) =>
-        words.every((w) => fold(`${c.name} ${c.slug} ${c.website ?? ''}`).includes(w)) &&
+        words.every((w) =>
+          fold(`${c.name} ${c.formerNames.join(' ')} ${c.slug} ${c.website ?? ''}`).includes(w),
+        ) &&
         (!status || c.status === status) &&
         (!search.es || (search.es === 'ja') === c.esCompany) &&
         (!search.kull || c.cohortYears.includes(search.kull)) &&

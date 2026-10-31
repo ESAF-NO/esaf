@@ -18,6 +18,7 @@ import {
   planProfileImport,
   resolveCompanies,
   searchCompanies,
+  setCompanyFormerNames,
   updateCompany,
   updateProfile,
   type CompanyDetails,
@@ -357,7 +358,14 @@ describe.skipIf(!url)('selskaper', () => {
       slug: 'syrlig-labs',
     })
     expect(await getCompany(db, kari, 'syrlig')).toEqual({ movedTo: 'syrlig-labs' })
-    expect((await page(kari, 'syrlig-labs')).name).toBe('Syrlig Labs')
+    expect(await page(kari, 'syrlig-labs')).toMatchObject({
+      name: 'Syrlig Labs',
+      formerNames: ['Syrlig'],
+    })
+    // Selskapsform er samme navn, ikke et nytt.
+    await updateCompany(db, ola, id, { ...info, name: 'Syrlig Labs AS' })
+    expect((await page(kari, 'syrlig-labs-as')).formerNames).toEqual(['Syrlig'])
+    await updateCompany(db, ola, id, { ...info, name: 'Syrlig Labs' })
 
     await work(per, [job('syrlig')])
     expect((await getProfile(db, ola, per!.personId!)).experience[0]!.companyId).toBe(id)
@@ -365,9 +373,66 @@ describe.skipIf(!url)('selskaper', () => {
     await expect(updateCompany(db, ola, id, { ...info, name: 'KAHOOT' })).rejects.toThrow(
       'hører allerede til Kahoot!',
     )
-    // Tilbake til det gamle navnet går fint.
+    // Tilbake til det gamle navnet går fint, og det er ikke lenger et tidligere navn.
     await updateCompany(db, ola, id, { ...info, name: 'Syrlig' })
     expect(await getCompany(db, kari, 'syrlig-labs')).toEqual({ movedTo: 'syrlig' })
+    expect((await page(kari, 'syrlig')).formerNames).toEqual(['Syrlig Labs'])
+  })
+
+  it('et duplikat kan slås sammen som et tidligere navn, og tidligere navn kan rettes', async () => {
+    await work(ola, [job('Fjordtek', { founder: true })])
+    await work(kari, [job('Bølgepost')])
+    await work(per, [job('Kahoot!')])
+    const target = (await companyBySlug('fjordtek'))!
+    const source = (await companyBySlug('bolgepost'))!
+
+    await mergeCompanies(db, storage, admin, {
+      sourceId: source.id,
+      targetId: target.id,
+      formerName: true,
+    })
+    expect((await page(kari, 'fjordtek')).formerNames).toEqual(['Bølgepost'])
+    const [merged] = await db
+      .select()
+      .from(schema.auditEvent)
+      .where(eq(schema.auditEvent.action, 'company.merge'))
+    expect(merged!.details).toMatchObject({ formerName: true })
+    // Søket finner selskapet på det gamle navnet, også en del av det.
+    const hits = await searchCompanies(db, kari, 'bølgep')
+    expect(hits.map((h) => [h.slug, h.formerNames])).toEqual([['fjordtek', ['Bølgepost']]])
+
+    // Gründeren retter listen selv; et nytt navn blir et alias.
+    expect(
+      await setCompanyFormerNames(db, ola, target.id, ['Fjordtek Labs', 'Bølgepost', 'bolgepost']),
+    ).toEqual({ formerNames: ['Fjordtek Labs', 'Bølgepost'] })
+    expect(await getCompany(db, kari, 'fjordtek-labs')).toEqual({ movedTo: 'fjordtek' })
+    // Det nåværende navnet er ikke et tidligere navn.
+    expect(await setCompanyFormerNames(db, ola, target.id, ['Fjordtek AS', 'Bølgepost'])).toEqual({
+      formerNames: ['Bølgepost'],
+    })
+    // Et navn et annet selskap har, er et duplikat og må slås sammen.
+    await expect(setCompanyFormerNames(db, admin, target.id, ['Kahoot'])).rejects.toThrow(
+      '«Kahoot» er Kahoot!, et annet selskap',
+    )
+    expect(await denial(setCompanyFormerNames(db, per, target.id, []))).toBe('forbidden')
+    await expect(
+      setCompanyFormerNames(
+        db,
+        ola,
+        target.id,
+        Array.from({ length: 11 }, (_, i) => `Navn ${i}`),
+      ),
+    ).rejects.toThrow('ti tidligere navn')
+    // Admins som ikke er knyttet til selskapet, logges.
+    await setCompanyFormerNames(db, admin, target.id, [])
+    const [edit] = await db
+      .select()
+      .from(schema.auditEvent)
+      .where(eq(schema.auditEvent.action, 'company.admin_edit'))
+    expect(edit!.details).toMatchObject({
+      fields: ['formerNames'],
+      previousFormerNames: ['Bølgepost'],
+    })
   })
 
   it('admin kan slå sammen to skrivemåter, og den gamle finner fram etterpå', async () => {
@@ -416,7 +481,10 @@ describe.skipIf(!url)('selskaper', () => {
       from: { slug: 'kahoot-asa' },
       into: { slug: 'kahoot' },
       esTeam: 1,
+      formerName: false,
     })
+    // En annen skrivemåte er ikke et tidligere navn.
+    expect(merged.formerNames).toEqual([])
   })
 
   it('selskapssiden viser bare aktive medlemmer, med rolle, stilling, år og kull', async () => {

@@ -144,7 +144,10 @@ export function registerAccountTools(server: McpServer, ctx: ToolContext) {
     name: 'describe_invite_target',
     title: 'Check an e-mail before inviting',
     description:
-      'Which unclaimed profiles have this address, and whether an account already exists for it.',
+      'Which unclaimed profiles have this address, and whether an account already exists for it. ' +
+      'When none has it, `suggestions` lists unclaimed profiles that may be the person: the name is in the ' +
+      'address (reason `name`), or same first name at the company that owns the domain (`company`). ' +
+      'Ask which one it is before inviting without a profile, or the person gets a duplicate profile.',
     input: z.object({ email: z.string().max(254) }),
     effect: 'read',
     run: ({ email }, ctx) => describeInviteTarget(ctx.db, ctx.viewer, email),
@@ -175,7 +178,8 @@ export function registerAccountTools(server: McpServer, ctx: ToolContext) {
     description:
       `Create a personal invitation link for an e-mail address, optionally linked to an unclaimed profile (personId). ` +
       `It works once, for that address only, for ${INVITATION_TTL_DAYS} days; a new link to the same address revokes the previous one. ` +
-      'Only owners can invite with a role other than member. Check the address with describe_invite_target first. ' +
+      'Only owners can invite with a role other than member. Check the address with describe_invite_target first, ' +
+      'and pass personId when the person already has a profile; without it they get a new one. ' +
       'Remember the GDPR information duty: tell the person what ESAF has registered and where it came from.',
     input: z.object({
       email: z.string().max(254),

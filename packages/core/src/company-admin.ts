@@ -32,6 +32,8 @@ export type AdminCompany = {
   id: string
   slug: string
   name: string
+  /** Navn selskapet hadde før, nyeste først. */
+  formerNames: string[]
   logo: CompanyLogoUrls | null
   status: CompanyStatus
   tagline: string | null
@@ -72,6 +74,7 @@ export async function listAdminCompanies(db: Db, viewer: Viewer): Promise<AdminC
         id: company.id,
         slug: company.slug,
         name: company.name,
+        formerNames: company.formerNames,
         logoKey: company.logoKey,
         status: company.status,
         tagline: company.tagline,

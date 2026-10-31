@@ -75,6 +75,7 @@ function Companies() {
       const text = fold(
         [
           c.name,
+          ...c.formerNames,
           c.tagline,
           c.location,
           ...c.industries,

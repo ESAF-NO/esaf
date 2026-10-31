@@ -102,7 +102,13 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-stone-900">{c.name}</span>
             <span className="block truncate text-xs text-stone-500">
-              {[c.tagline, c.people ? `${c.people} fra ES` : null].filter(Boolean).join(' · ')}
+              {[
+                c.formerNames.length ? `Tidligere ${c.formerNames.join(', ')}` : null,
+                c.tagline,
+                c.people ? `${c.people} fra ES` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           </span>
         </>

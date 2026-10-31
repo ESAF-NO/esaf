@@ -78,6 +78,27 @@ export function companySlug(name: string) {
   return slug || `selskap-${createHash('md5').update(lower).digest('hex').slice(0, 8)}`
 }
 
+/** Selskapsformer på slutten av et navn: «Syrlig AS» er samme navn som «Syrlig». */
+const legalForm = /-(as|asa|ab|aps|oy|nuf|da|ans|sa|bv|gmbh|inc|ltd|llc|plc)$/
+
+/** Om to navn er det samme navnet, bare skrevet annerledes eller med selskapsform. */
+export function sameCompanyName(a: string, b: string) {
+  return companySlug(a).replace(legalForm, '') === companySlug(b).replace(legalForm, '')
+}
+
+/**
+ * Tidligere navn med `added` først, uten doble og uten navnet selskapet har nå.
+ * Høyst ti.
+ */
+export function formerNamesWith(existing: string[], added: string[], currentName: string) {
+  const kept: string[] = []
+  for (const name of [...added, ...existing]) {
+    if (sameCompanyName(name, currentName) || kept.some((k) => sameCompanyName(k, name))) continue
+    kept.push(name)
+  }
+  return kept.slice(0, 10)
+}
+
 export const companyStatuses = schema.companyStatus.enumValues
 
 // Ligger i validation.ts, så profilene kan bruke dem uten å laste selskapene
@@ -161,6 +182,8 @@ export type Company = {
   status: CompanyStatus
   location: string | null
   industries: string[]
+  /** Navn selskapet hadde før, nyeste først. */
+  formerNames: string[]
   /** Grunnlagt av en ES-alumn eller startet på Entreprenørskolen. */
   startedByAlumni: boolean
   /** Noen har oppgitt det som selskapet sitt på Entreprenørskolen. */
@@ -364,6 +387,7 @@ export async function listCompanies(db: Db, viewer: Viewer): Promise<Company[]> 
         status: company.status,
         location: company.location,
         industries: company.industries,
+        formerNames: company.formerNames,
       })
       .from(company),
     loadLinks(db),
@@ -393,6 +417,7 @@ const editableColumns = {
   slug: company.slug,
   name: company.name,
   aliasSlugs: company.aliasSlugs,
+  formerNames: company.formerNames,
   tagline: company.tagline,
   description: company.description,
   website: company.website,
@@ -556,6 +581,8 @@ export type EditableCompany = z.output<typeof companyInput> & {
   adminEdit: boolean
   /** Kan slå sammen duplikater. */
   canMerge: boolean
+  /** Endres for seg, med `setCompanyFormerNames`. */
+  formerNames: string[]
 }
 
 /** Selskapsinfo for den som skal redigere: gründere, ES-teamet, ansatte nå og admins. */
@@ -659,6 +686,10 @@ export async function writeCompanyValues(
       ...values,
       slug,
       aliasSlugs: [...new Set([...current.aliasSlugs, current.slug])].filter((s) => s !== slug),
+      // Et nytt navn (ikke bare ny skrivemåte) gjør det gamle til et tidligere navn.
+      formerNames: sameCompanyName(name, current.name)
+        ? current.formerNames
+        : formerNamesWith(current.formerNames, [current.name], name),
       editedAt: new Date(),
     })
     .where(eq(company.id, current.id))
@@ -711,6 +742,96 @@ export async function updateCompany(
         })
       }
       return { slug }
+    })
+  } catch (error) {
+    return rethrowSlugConflict(error)
+  }
+}
+
+export const formerNamesInput = z
+  .array(companyName)
+  .max(10, 'Høyst ti tidligere navn.')
+  .transform((names) =>
+    names.filter((n, i) => !names.slice(0, i).some((m) => sameCompanyName(m, n))),
+  )
+
+/**
+ * Setter de tidligere navnene, i rekkefølgen de står (nyeste først). Samme tilgang
+ * som å redigere selskapet. Et nytt tidligere navn blir også et alias, så erfaring
+ * med det gamle navnet havner her og gamle lenker virker. Et navn et annet selskap
+ * har, avvises: da er det to selskaper som bør slås sammen. Admins som ikke er
+ * knyttet til selskapet, logges (`company.admin_edit`).
+ */
+export async function setCompanyFormerNames(
+  db: Db,
+  viewer: Viewer,
+  companyId: string,
+  input: string[],
+): Promise<{ formerNames: string[] }> {
+  assertMember(viewer)
+  const parsed = formerNamesInput.safeParse(input)
+  if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? 'Ugyldige navn.')
+  try {
+    return await db.transaction(async (tx) => {
+      const { adminEdit } = await companyForEdit(tx, viewer, companyId, { lock: true })
+      const current = await lockCompany(tx, companyId)
+      const formerNames = formerNamesWith([], parsed.data, current.name)
+      const added = formerNames.filter(
+        (n) => !current.formerNames.some((m) => sameCompanyName(m, n)),
+      )
+      const slugs = added.map(companySlug).filter((s) => s !== current.slug)
+      if (slugs.length) {
+        const [taken] = await tx
+          .select({ name: company.name, slug: company.slug, aliasSlugs: company.aliasSlugs })
+          .from(company)
+          .where(
+            and(
+              ne(company.id, companyId),
+              or(inArray(company.slug, slugs), arrayOverlaps(company.aliasSlugs, slugs)),
+            ),
+          )
+        if (taken) {
+          const name = added.find((n) => {
+            const s = companySlug(n)
+            return s === taken.slug || taken.aliasSlugs.includes(s)
+          })
+          throw new DomainError(
+            `«${name ?? taken.name}» er ${taken.name}, et annet selskap i appen. ` +
+              (can(viewer, 'profiles.edit')
+                ? 'Slå dem sammen i stedet, og kryss av for at det er et tidligere navn.'
+                : 'Be en admin om å slå dem sammen.'),
+          )
+        }
+      }
+      if (
+        formerNames.length === current.formerNames.length &&
+        formerNames.every((n, i) => n === current.formerNames[i])
+      ) {
+        return { formerNames }
+      }
+      await tx
+        .update(company)
+        .set({
+          formerNames,
+          aliasSlugs: [...new Set([...current.aliasSlugs, ...slugs])],
+          editedAt: new Date(),
+        })
+        .where(eq(company.id, companyId))
+      if (adminEdit) {
+        await tx.insert(auditEvent).values({
+          actorPersonId: viewer.personId,
+          action: 'company.admin_edit',
+          details: {
+            companyId,
+            slug: current.slug,
+            name: current.name,
+            fields: ['formerNames'],
+            formerNames,
+            previousFormerNames: current.formerNames,
+          },
+        })
+      }
+      return { formerNames }
     })
   } catch (error) {
     return rethrowSlugConflict(error)
@@ -845,6 +966,8 @@ export type CompanyHit = {
   people: number
   /** Søket er samme selskap som et eksisterende, bare skrevet annerledes. */
   exact: boolean
+  /** Navn selskapet hadde før. Søket treffer dem også. */
+  formerNames: string[]
 }
 
 /**
@@ -883,6 +1006,7 @@ export async function searchCompanies(
       name: company.name,
       logoKey: company.logoKey,
       tagline: company.tagline,
+      formerNames: company.formerNames,
       people,
       exact,
     })
@@ -892,6 +1016,7 @@ export async function searchCompanies(
         sql`${company.name} ilike ${`%${escaped}%`}`,
         sql`${company.slug} like ${`%${slug}%`}`,
         sql`${slug} = any(${company.aliasSlugs})`,
+        sql`array_to_string(${company.formerNames}, ' ') ilike ${`%${escaped}%`}`,
         sql`${slug} like ${company.slug} || '-%'`,
       ),
     )
@@ -917,7 +1042,12 @@ export async function mergeCompanies(
   db: Db,
   storage: ObjectStorage,
   viewer: Viewer,
-  input: { sourceId: string; targetId: string },
+  input: {
+    sourceId: string
+    targetId: string
+    /** Duplikatets navn er et tidligere navn på selskapet, ikke en annen skrivemåte. */
+    formerName?: boolean
+  },
 ): Promise<{ slug: string }> {
   assertCan(viewer, 'profiles.edit')
   if (input.sourceId === input.targetId) throw new DomainError('Velg et annet selskap.')
@@ -1016,6 +1146,13 @@ export async function mergeCompanies(
         aliasSlugs: [...new Set([...target.aliasSlugs, source.slug, ...source.aliasSlugs])].filter(
           (s) => s !== target.slug,
         ),
+        // Duplikatets tidligere navn følger alltid med; navnet selv bare når det er
+        // et tidligere navn og ikke en annen skrivemåte.
+        formerNames: formerNamesWith(
+          target.formerNames,
+          input.formerName ? [source.name, ...source.formerNames] : source.formerNames,
+          target.name,
+        ),
         editedAt: edited.length ? new Date(Math.max(...edited.map((d) => d.getTime()))) : null,
       })
       .where(eq(company.id, target.id))
@@ -1026,6 +1163,7 @@ export async function mergeCompanies(
       details: {
         from: { companyId: source.id, slug: source.slug, name: source.name },
         into: { companyId: target.id, slug: target.slug, name: target.name },
+        formerName: input.formerName === true,
         experience: moved.length,
         esTeam: team.length,
         articles,

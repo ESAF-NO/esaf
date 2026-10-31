@@ -9,7 +9,9 @@ export const Route = createFileRoute('/api/health')({
         const headers = { 'cache-control': 'no-store' }
         try {
           await pingDatabase(db)
-          return Response.json({ status: 'ok', database: 'ok' }, { headers })
+          // Committen bildet ble bygget fra (`APP_VERSION`), så deployen kan se at den nye versjonen svarer.
+          const version = process.env.APP_VERSION ?? null
+          return Response.json({ status: 'ok', database: 'ok', version }, { headers })
         } catch {
           return Response.json(
             { status: 'degraded', database: 'unreachable' },

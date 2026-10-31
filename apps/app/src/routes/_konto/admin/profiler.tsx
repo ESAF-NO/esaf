@@ -4,6 +4,7 @@ import { Pencil, Plus, Search, SearchX, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { z } from 'zod'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
+import { SearchInput } from '#/components/SearchInput.tsx'
 import {
   Avatar,
   Button,
@@ -113,10 +114,9 @@ function People() {
             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400"
             aria-hidden
           />
-          <Input
-            type="search"
-            value={search.q ?? ''}
-            onChange={(e) => setSearch({ q: e.target.value || undefined })}
+          <SearchInput
+            query={search.q ?? ''}
+            onSearch={(value) => setSearch({ q: value || undefined })}
             placeholder="Søk på navn"
             aria-label="Søk på navn"
             className="pl-9"

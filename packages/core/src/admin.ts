@@ -2,9 +2,9 @@ import { schema, type Db, type MemberRole, type MembershipStatus } from '@esaf/d
 import { and, asc, desc, eq, inArray, isNotNull, like, lt, max, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { assertCan, roleAtLeast, roles, type Viewer } from './access.ts'
-import { revokeApiTokensForUser } from './api-tokens.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
+import { revokeMcpAccessForUser } from './mcp-oauth.ts'
 
 const {
   accessRequest,
@@ -12,6 +12,7 @@ const {
   auditEvent,
   cohort,
   membership,
+  oauthClient,
   passkey,
   person,
   personCohort,
@@ -162,10 +163,10 @@ export async function changeRole(
       .update(membership)
       .set({ role: input.role })
       .where(eq(membership.personId, input.personId))
-    // MCP-nøkler er for admins. Uten rollen virker de ikke uansett, men de skal ikke ligge igjen.
-    const revokedTokens = roleAtLeast(input.role, 'admin')
-      ? 0
-      : await revokeApiTokensForUser(tx, target.userId)
+    // MCP-tilgang er for admins. Uten rollen virker den ikke uansett, men den skal ikke ligge igjen.
+    const revoked = roleAtLeast(input.role, 'admin')
+      ? {}
+      : await revokeMcpAccessForUser(tx, target.userId)
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
       action: 'role.change',
@@ -174,7 +175,7 @@ export async function changeRole(
         from: target.role,
         to: input.role,
         reason: input.reason?.trim() || null,
-        ...(revokedTokens ? { revokedTokens } : {}),
+        ...revoked,
       },
     })
   })
@@ -235,7 +236,7 @@ export async function setMemberAccess(
       // Ut med en gang, ikke først når økten går ut.
       await tx.delete(session).where(eq(session.userId, target.userId))
     }
-    const revokedTokens = input.active ? 0 : await revokeApiTokensForUser(tx, target.userId)
+    const revoked = input.active ? {} : await revokeMcpAccessForUser(tx, target.userId)
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
       action: input.active ? 'membership.reactivate' : 'membership.deactivate',
@@ -243,7 +244,7 @@ export async function setMemberAccess(
       details: {
         reason: reason || null,
         previousRole: target.role,
-        ...(revokedTokens ? { revokedTokens } : {}),
+        ...revoked,
       },
     })
   })
@@ -280,13 +281,13 @@ export async function removePasskeys(
       .returning({ id: passkey.id })
     if (!removed.length) throw new DomainError('Personen har ingen passkeys.')
     await tx.delete(session).where(eq(session.userId, target.userId))
-    // Nøklene ble laget med en av passkeyene; den kan være på avveie.
-    const revokedTokens = await revokeApiTokensForUser(tx, target.userId)
+    // Nøklene og tilkoblingene ble laget med en av passkeyene; den kan være på avveie.
+    const revoked = await revokeMcpAccessForUser(tx, target.userId)
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,
       action: 'security.remove_passkeys',
       subjectPersonId: input.personId,
-      details: { reason, count: removed.length, ...(revokedTokens ? { revokedTokens } : {}) },
+      details: { reason, count: removed.length, ...revoked },
     })
   })
 }
@@ -302,8 +303,11 @@ export type AuditEntry = {
   /** Null betyr lokal operatør (CLI). */
   actor: AuditPerson | null
   subject: AuditPerson | null
-  /** Gjort med en MCP-nøkkel: navnet på nøkkelen. Ellers fra appen eller CLI-en. */
-  viaMcp: { tokenName: string } | null
+  /**
+   * Gjort fra en MCP-klient: med en nøkkel (navnet på nøkkelen) eller koblet til
+   * med OAuth (navnet klienten oppga). Ellers fra appen eller CLI-en.
+   */
+  viaMcp: { kind: 'key' | 'oauth'; name: string } | null
 }
 
 /**
@@ -312,8 +316,8 @@ export type AuditEntry = {
  * samme transaksjon har samme tidspunkt (en import kan skrive hundrevis), så
  * `beforeId` går på tidspunkt og id sammen og hopper aldri over noen. Kan
  * avgrenses til én person (som utfører eller den det gjelder), handlinger som
- * begynner med `actionPrefix` (f.eks. `company.`), og det som er gjort med
- * MCP-nøkler.
+ * begynner med `actionPrefix` (f.eks. `company.`), og det som er gjort fra
+ * MCP-klienter.
  */
 export async function listAuditEvents(
   db: Db,
@@ -345,6 +349,8 @@ export async function listAuditEvents(
       subjectName: subject.fullName,
       subjectStatus: subjectMembership.status,
       tokenName: apiToken.name,
+      oauthClientId: auditEvent.oauthClientId,
+      oauthClientName: oauthClient.name,
     })
     .from(auditEvent)
     .leftJoin(actor, eq(actor.id, auditEvent.actorPersonId))
@@ -352,6 +358,7 @@ export async function listAuditEvents(
     .leftJoin(subject, eq(subject.id, auditEvent.subjectPersonId))
     .leftJoin(subjectMembership, eq(subjectMembership.personId, subject.id))
     .leftJoin(apiToken, eq(apiToken.id, auditEvent.apiTokenId))
+    .leftJoin(oauthClient, eq(oauthClient.clientId, auditEvent.oauthClientId))
     .where(
       and(
         options.before ? lt(auditEvent.createdAt, options.before) : undefined,
@@ -367,7 +374,9 @@ export async function listAuditEvents(
         options.actionPrefix
           ? like(auditEvent.action, `${options.actionPrefix.replace(/[%_\\]/g, '\\$&')}%`)
           : undefined,
-        options.viaMcp ? isNotNull(auditEvent.apiTokenId) : undefined,
+        options.viaMcp
+          ? or(isNotNull(auditEvent.apiTokenId), isNotNull(auditEvent.oauthClientId))
+          : undefined,
       ),
     )
     .orderBy(desc(auditEvent.createdAt), desc(auditEvent.id))
@@ -381,6 +390,11 @@ export async function listAuditEvents(
     details: r.details,
     actor: who(r.actorId, r.actorName, r.actorStatus),
     subject: who(r.subjectId, r.subjectName, r.subjectStatus),
-    viaMcp: r.tokenName !== null ? { tokenName: r.tokenName } : null,
+    viaMcp:
+      r.tokenName !== null
+        ? { kind: 'key' as const, name: r.tokenName }
+        : r.oauthClientId !== null
+          ? { kind: 'oauth' as const, name: r.oauthClientName ?? 'MCP-klient' }
+          : null,
   }))
 }

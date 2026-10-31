@@ -84,7 +84,7 @@ export function registerAccountTools(server: McpServer, ctx: ToolContext) {
     title: 'Deactivate or reactivate member',
     description:
       'Deactivate (active=false) or reactivate a member. Deactivation signs them out everywhere, resets the role to ' +
-      'member, revokes their MCP keys and hides them from the directory. Only owners can change access for admins. Requires a reason.',
+      'member, revokes their MCP keys and connections and hides them from the directory. Only owners can change access for admins. Requires a reason.',
     input: z.object({ personId: id('The member'), active: z.boolean(), reason }),
     effect: 'destructive',
     run: async (args, ctx) => {
@@ -98,7 +98,7 @@ export function registerAccountTools(server: McpServer, ctx: ToolContext) {
     title: 'Remove passkeys',
     description:
       'Remove all passkeys of a member who has lost them, so they can add new ones after signing in with a password. ' +
-      'Signs them out everywhere and revokes their MCP keys. Requires a reason.',
+      'Signs them out everywhere and revokes their MCP keys and connections. Requires a reason.',
     input: z.object({ personId: id('The member'), reason }),
     effect: 'destructive',
     run: async (args, ctx) => {

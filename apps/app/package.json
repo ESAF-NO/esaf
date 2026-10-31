@@ -14,6 +14,7 @@
     "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "^1.7.14",
     "@better-auth/passkey": "^1.7.14",
     "@esaf/core": "workspace:*",
     "@esaf/db": "workspace:*",

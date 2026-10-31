@@ -13,6 +13,7 @@ import {
   Pencil,
   Rocket,
   UserPlus,
+  GitMerge,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { DocumentsCard } from '#/components/Attachments.tsx'
@@ -181,6 +182,17 @@ function CompanyPage() {
                 className={buttonClass({ variant: 'secondary' })}
               >
                 <MessageSquarePlus className="size-4" aria-hidden /> Foreslå endring
+              </Link>
+            )}
+            {c.canMerge && (
+              <Link
+                to="/selskaper/$slug/rediger"
+                params={{ slug: c.slug }}
+                hash="sla-sammen"
+                className={buttonClass({ variant: 'secondary' })}
+                title="Finnes selskapet to ganger, eller har det byttet navn? Slå dem sammen."
+              >
+                <GitMerge className="size-4" aria-hidden /> Slå sammen
               </Link>
             )}
           </div>

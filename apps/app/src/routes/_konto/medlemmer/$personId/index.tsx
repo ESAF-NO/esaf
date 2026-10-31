@@ -16,6 +16,7 @@ import {
   Plus,
   Rocket,
   Tent,
+  GitMerge,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { LinkRequestCard } from '#/components/Contributions.tsx'
@@ -287,6 +288,17 @@ function ProfilePage() {
                   className={buttonClass({ variant: 'secondary' })}
                 >
                   <Pencil className="size-4" aria-hidden /> {p.isOwn ? 'Rediger profil' : 'Rediger'}
+                </Link>
+              )}
+              {p.canMerge && (
+                <Link
+                  to="/medlemmer/$personId/rediger"
+                  params={{ personId: p.personId }}
+                  hash="sla-sammen"
+                  className={buttonClass({ variant: 'secondary' })}
+                  title="Finnes personen to ganger? Slå profilene sammen."
+                >
+                  <GitMerge className="size-4" aria-hidden /> Slå sammen
                 </Link>
               )}
             </div>

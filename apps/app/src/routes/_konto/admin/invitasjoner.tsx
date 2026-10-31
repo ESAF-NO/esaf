@@ -133,7 +133,14 @@ function Invitations() {
   )
 }
 
-type Profile = { personId: string; fullName: string; years: number[] }
+type Profile = {
+  personId: string
+  fullName: string
+  years: number[]
+  reason?: 'name' | 'company'
+}
+
+const suggestionLabel = { name: 'Navnet i adressen', company: 'Jobber der adressen hører til' }
 
 function InviteForm({
   onCreated,
@@ -153,7 +160,9 @@ function InviteForm({
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<MemberRole>('member')
   const [options, setOptions] = useState<Profile[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
+  // `undefined`: admin må velge, fordi adressen kan høre til en profil som finnes.
+  const [selected, setSelected] = useState<string | null | undefined>(null)
+  const [picked, setPicked] = useState(false)
   const [target, setTarget] = useState<Awaited<ReturnType<typeof describe>> | null>(null)
   const [checkedEmail, setCheckedEmail] = useState('')
   const [busy, setBusy] = useState(false)
@@ -167,15 +176,20 @@ function InviteForm({
     try {
       const result = await describe({ data: { email: address } })
       setTarget(result)
-      if (result.profiles.length) {
+      const found: Profile[] = [...result.profiles, ...result.suggestions]
+      if (found.length) {
         setOptions((current) => [
-          ...result.profiles,
-          ...current.filter((o) => !result.profiles.some((p) => p.personId === o.personId)),
+          ...found,
+          ...current.filter((o) => !found.some((p) => p.personId === o.personId)),
         ])
+      }
+      if (!picked) {
         // Én profil med samme adresse er nesten alltid riktig, men admin bekrefter ved å sende.
-        if (result.profiles.length === 1 && selected === null) {
-          setSelected(result.profiles[0]!.personId)
-        }
+        // Et forslag ut fra navnet eller domenet må admin ta stilling til selv, så
+        // ingen får en ny profil ved siden av den som finnes.
+        if (result.profiles.length === 1) setSelected(result.profiles[0]!.personId)
+        else if (result.suggestions.length) setSelected(undefined)
+        else setSelected(null)
       }
     } catch (e) {
       setError(errorMessage(e))
@@ -201,8 +215,17 @@ function InviteForm({
     }
   }
 
+  function pick(personId: string | null) {
+    setPicked(true)
+    setSelected(personId)
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (selected === undefined) {
+      setError('Er personen en av profilene som er foreslått? Velg den, eller «Ingen profil».')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -274,7 +297,9 @@ function InviteForm({
         </p>
         <p className="mt-0.5 text-xs text-stone-500">
           Velg profilen hvis personen står i kullisten, så kobles kontoen til den. Profiler med
-          samme e-postadresse foreslås når du har skrevet adressen.
+          samme e-postadresse, med navnet i adressen eller i selskapet adressen hører til, foreslås
+          når du har skrevet adressen. Uten profil får personen en ny, og den gamle blir et
+          duplikat.
         </p>
         <ul className="mt-2 space-y-1.5" role="radiogroup" aria-labelledby={profilesLabel}>
           {options.map((o) => (
@@ -283,7 +308,7 @@ function InviteForm({
                 type="button"
                 role="radio"
                 aria-checked={selected === o.personId}
-                onClick={() => setSelected(o.personId)}
+                onClick={() => pick(o.personId)}
                 className={cx(
                   'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left ring-1 transition ring-inset',
                   selected === o.personId
@@ -300,6 +325,11 @@ function InviteForm({
                         Samme e-post
                       </span>
                     )}
+                    {!sameEmail.has(o.personId) && o.reason && (
+                      <span className="rounded-full bg-amber-50 px-1.5 py-px text-[11px] font-medium text-amber-800 ring-1 ring-amber-600/20 ring-inset">
+                        {suggestionLabel[o.reason]}
+                      </span>
+                    )}
                   </span>
                   <span className="block text-xs text-stone-500">
                     {kull(o.years) ?? 'Uten kull'}
@@ -313,7 +343,7 @@ function InviteForm({
               type="button"
               role="radio"
               aria-checked={selected === null}
-              onClick={() => setSelected(null)}
+              onClick={() => pick(null)}
               className={cx(
                 'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm ring-1 transition ring-inset',
                 selected === null

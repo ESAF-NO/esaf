@@ -431,7 +431,7 @@ Katalogen (`/medlemmer`), ⌘K og MCP-verktøyet `find_people` finner folk på h
 - **Modellen** er BGE-M3 (`Xenova/bge-m3`, ONNX via `@huggingface/transformers`), lokalt i Node; ingenting om medlemmene sendes til en tredjepart. Den var klart best av de lokale modellene vi prøvde (multilingual-e5-small og -base, EmbeddingGemma), særlig på norske søk mot engelske bioer. Den er stor: ca. 560 MB på disk og 1,5 GB minne når den er lastet, så den lastes først når noen søker eller en profil er endret, og slippes etter ti minutter uten bruk. Et søk tar ca. 10 ms (under ett sekund første gang etter en pause); å indeksere alle tar halvannet minutt. På en server med under 3 GB minne (eller en container med lavere grense) velger appen selv `Xenova/multilingual-e5-small` (120 MB, svakere på norsk mot engelsk), og skriver i loggen ved oppstart hvilken modell den bruker; `SEARCH_MODEL` overstyrer valget. Vektorene holdes i minnet og sammenlignes direkte; det trengs ingen pgvector for noen tusen personer. Feiler modellen, blir søket et rent ordsøk med begrepene.
 - **Indeksen** oppdateres av en bakgrunnsjobb i appen hvert minutt (`src/server/search.server.ts`): bitene bygges for alle, og bare personer der teksten eller modellen er endret, får nye vektorer (høyst 100 per runde). Modellen lastes bare når noe faktisk er endret. `pnpm search:reindex` gjør det samme fra kommandolinjen.
 - **Søkeord:** det modellen ikke kan vite (en metafor i en bio ser ut som romfart for den), retter søkeordene: 5–15 emner per person på norsk og engelsk, også bredere begreper: NASA → romfart, space, aerospace, satellitter. De skrives utenfor appen, av en admin med Claude Code, Codex eller en annen MCP-klient: oppskriften `tag_people` henter profilteksten med `list_people_for_tagging`, klienten skriver emnene, og `set_search_topics` lagrer dem (logges som `profile.search_topics`). Appen husker en hash av teksten emnene ble skrevet fra (`person.search_topics_source`); endres profilen, står personen som «utdatert» i lista til noen har sett på emnene igjen. En tom liste betyr «vurdert, ingenting å legge til». Søkeord vises ikke på profilen, bare som grunn til et treff, og står over treff via synonymer.
-- **Produksjon:** begge modellene lastes ned når Docker-bildet bygges (`pnpm search:download-model` til `SEARCH_MODEL_DIR=/repo/.data/models`), og appen laster aldri ned noe selv. Nedlastingen caches på byggeserveren mellom deployer (BuildKit-cache), så den skjer bare første gang. Bytter man til en annen modell enn de to, må den også lastes ned i `Dockerfile`. Lokalt lastes den ned første gang til `.data/models`.
+- **Produksjon:** begge modellene lastes ned når Docker-bildet bygges (`pnpm search:download-model` til `SEARCH_MODEL_DIR=/repo/.data/models`), og appen laster aldri ned noe selv. Bildet bygges i GitHub Actions, der laget med modellene caches mellom bygg. Bytter man til en annen modell enn de to, må den også lastes ned i `Dockerfile`. Lokalt lastes den ned første gang til `.data/models`.
 
 ## Admin-MCP
 
@@ -634,16 +634,21 @@ pnpm exec wrangler deploy
 
 ### Appen med Coolify
 
-Appen og Postgres kjører på en Hetzner-server i Tyskland, styrt av Coolify. Coolify bygger `apps/app/Dockerfile` på serveren ved push til `main`.
+Appen og Postgres kjører på en liten Hetzner-server i Tyskland (2 vCPU, 4 GB RAM), styrt av Coolify. Serveren bygger aldri appen selv: å bygge på den samme lille serveren som appen kjører på, tok den ned da flere bygg kom etter hverandre.
 
-**Flyten.** En endring går via PR. CI («Sjekk og bygg») må være grønn før PR-en kan merges, og `main` er beskyttet mot direkte push. Coolify deployer det som havner på `main`. Testene i Actions stopper ikke en deploy alene; det er kravet om grønn CI før merge som gjør det.
+**Flyten.** En endring går via PR. CI («Sjekk og bygg») må være grønn før PR-en kan merges, og `main` er beskyttet mot direkte push. På `main` gjør `.github/workflows/ci.yml` resten, én utgivelse om gangen:
 
-**Ved hver deploy** bygger Coolify bildet og starter en ny container. Containeren kjører migreringene og starter så serveren. Feiler migreringen eller helsesjekken (`GET /api/health`, 200 når databasen svarer), tar ikke den nye containeren over, og den forrige kjører videre. Migreringer rulles ikke tilbake. Lag dem derfor slik at også forrige versjon av appen tåler dem: legg til kolonner og tabeller i én deploy, og fjern gamle i en senere.
+1. `build-app` bygger `apps/app/Dockerfile` på GitHubs maskiner, for serverens arkitektur (repovariabelen `APP_IMAGE_PLATFORM`, standard `linux/amd64`), og legger bildet i GitHubs private register som `ghcr.io/esaf-no/esaf-app:main` og `:sha-<commit>`. Den bruker jobbens egen kortlevde `GITHUB_TOKEN`; ingen hemmeligheter trengs til bygget eller havner i bildet. Pakken er koblet til repoet og er privat som det.
+2. `deploy-app` ber Coolify deploye (`/api/v1/deploy`, med `COOLIFY_DEPLOY_TOKEN`, en Coolify-nøkkel som bare kan deploye, lagret i miljøet `production`), og venter til `/api/health` svarer med den nye committen (`version`). Gjør den ikke det innen 15 minutter, feiler jobben, og GitHub sender e-post. Jobben hoppes over til repovariabelen `COOLIFY_APP_UUID` er satt (sammen med `COOLIFY_URL`).
+
+Serveren henter bildet med en egen GitHub-nøkkel som bare kan lese pakker (klassisk nøkkel med `read:packages`, lagret med `docker login ghcr.io` på serveren; ett år, byttes før den går ut). For å deploye `main` på nytt uten ny commit: `gh workflow run CI --ref main`. For å rulle tilbake: sett taggen på appen i Coolify til `sha-<commit>` for en tidligere versjon og deploy. De 20 nyeste bildene beholdes; eldre slettes etter hvert bygg.
+
+**Ved hver deploy** henter Coolify bildet og starter en ny container. Containeren kjører migreringene og starter så serveren. Feiler migreringen eller helsesjekken (`GET /api/health`, 200 når databasen svarer), tar ikke den nye containeren over, og den forrige kjører videre. Migreringer rulles ikke tilbake. Lag dem derfor slik at også forrige versjon av appen tåler dem: legg til kolonner og tabeller i én deploy, og fjern gamle i en senere.
 
 **Oppsett i Coolify** (én gang):
 
 1. **Postgres:** ny ressurs, Postgres 18, ikke offentlig tilgjengelig. Databasen nås bare fra appen over Coolifys interne nettverk.
-2. **Appen:** ny ressurs fra GitHub-repoet, gren `main`, byggetype Dockerfile, basemappe `/`, Dockerfile `apps/app/Dockerfile`, port `3000`. Slå på automatisk deploy.
+2. **Appen:** ny ressurs av typen Docker Image, `ghcr.io/esaf-no/esaf-app` med taggen `main`, port `3000`, minnegrense 2 GB. Serveren må være logget inn på `ghcr.io` (se over). Sett appens UUID i repovariabelen `COOLIFY_APP_UUID` og adressen til Coolify i `COOLIFY_URL`.
 3. **Miljøvariabler** på appen: `DATABASE_URL` (den interne URL-en fra Postgres-ressursen), `BETTER_AUTH_SECRET` (`openssl rand -base64 32`), `BETTER_AUTH_URL=https://app.esaf.no` og S3-variablene for R2 (se «Profilbilder»). For e-post: `EMAIL_PROVIDER=cloudflare`, `CLOUDFLARE_ACCOUNT_ID` og `CLOUDFLARE_EMAIL_API_TOKEN` (se «E-post»). Uten `EMAIL_PROVIDER` er registrering og «Glemt passord?» stengt, og folk kommer inn med invitasjoner som admin deler selv. `NODE_ENV` og `PORT` er satt i bildet.
 4. **Domene:** `https://app.esaf.no` på appen, med DNS satt opp på samme måte som de andre domenene på serveren. La tilgangsloggen i proxyen være av, siden stien til invitasjoner inneholder tokenet.
 5. **Backup:** planlagt backup av Postgres-ressursen til S3-lagring utenfor serveren (en egen privat R2-bøtte), daglig. Gjenopprett én gang til en ny database for å se at det virker.
@@ -651,7 +656,9 @@ Appen og Postgres kjører på en Hetzner-server i Tyskland, styrt av Coolify. Co
 
 **Verktøy i produksjon.** Bildet har hele arbeidsområdet, så kommandoene fra «Kommandoer» kan kjøres i appens terminal i Coolify, for eksempel `pnpm admin:invite --email … --reason "…"` for den første hovedadmin. Kullisten lastes aldri opp til repoet eller bildet. Den kopieres inn i containeren bare for importen, og slettes etterpå.
 
-Lokalt kan bildet bygges og prøves med `docker build -f apps/app/Dockerfile .`. Bildebehandlingen (sharp) har native binærfiler for plattformen den installeres på, og derfor bygges bildet på serveren.
+Lokalt kan bildet bygges og prøves med `docker build -f apps/app/Dockerfile .`. Bildebehandlingen (sharp) har native binærfiler for plattformen den installeres på, og derfor bygges bildet for serverens arkitektur (`APP_IMAGE_PLATFORM`).
+
+**Driften.** Serveren har 4 GB swap (`/swapfile`, `vm.swappiness=10`), så en topp i minnebruken gjør den treg i stedet for at den henger. Coolify kjører høyst ett bygg om gangen. Cloudflare varsler på e-post når tunnelen til `app.esaf.no` er nede (Notifications → Tunnel Health Alert), og en feilet deploy gir e-post fra GitHub. Personsøket bruker den lille modellen i produksjon (`SEARCH_MODEL=Xenova/multilingual-e5-small`), siden den store tar om lag 1,5 GB RAM.
 
 ### E-post
 

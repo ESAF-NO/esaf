@@ -14,12 +14,17 @@ import {
   usePasskeySupport,
 } from '#/lib/passkey.ts'
 
+/** `til` kan peke på et endepunkt på serveren, som innloggingen for MCP-klienter. */
+const isServerPath = (path: string) => path.startsWith('/api/')
+
 export const Route = createFileRoute('/logg-inn')({
   // `til`: siden personen kom fra, for eksempel en invitasjon. Bare stier i appen godtas.
   validateSearch: z.object({ til: z.string().optional().transform(safeRedirect).catch(undefined) }),
   beforeLoad: ({ context, search }) => {
     if (context.viewer.level !== 'anonymous') {
-      throw search.til ? redirect({ href: search.til }) : redirect({ to: '/feed' })
+      throw search.til
+        ? redirect({ href: search.til, reloadDocument: isServerPath(search.til) })
+        : redirect({ to: '/feed' })
     }
   },
   // Med e-post kan man be om en lenke for nytt passord selv; ellers spør man styret.
@@ -44,7 +49,9 @@ function SignIn() {
   async function enter() {
     // Rutevaktene sender den som ikke er godkjent ennå, til riktig steg.
     await router.invalidate()
-    if (til) await router.navigate({ href: til })
+    // Stier på serveren (som innloggingen for MCP-klienter) er ikke sider i appen.
+    if (til && isServerPath(til)) window.location.assign(til)
+    else if (til) await router.navigate({ href: til })
     else await router.navigate({ to: '/feed' })
   }
 

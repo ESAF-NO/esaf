@@ -1008,6 +1008,190 @@ export const apiToken = pgTable(
   (t) => [index().on(t.userId)],
 )
 
+// ---------------------------------------------------------------------------
+// OAuth for MCP-klienter (Better Auths oauth-provider-plugin)
+// ---------------------------------------------------------------------------
+//
+// Appen er sin egen OAuth-server, så MCP-klienter (Claude, ChatGPT, Codex) kan
+// kobles til adminverktøyene med vanlig innlogging i nettleseren i stedet for en
+// nøkkel. Tabellene og feltene er pluginens; navnene må stemme med den. Tilgangs-
+// og fornyelsesnøkler er ugjennomsiktige og lagres bare som SHA-256, så de kan
+// trekkes tilbake med en gang. Se `auth-config.server.ts` i appen og
+// `oauth-mcp.ts` i @esaf/core for reglene.
+
+/** En MCP-klient, som regel registrert av klienten selv (RFC 7591). */
+export const oauthClient = pgTable(
+  'oauth_client',
+  {
+    id: text().primaryKey(),
+    clientId: text().notNull().unique(),
+    clientSecret: text(),
+    clientDiscoveryId: text(),
+    disabled: boolean().default(false),
+    skipConsent: boolean(),
+    enableEndSession: boolean(),
+    subjectType: text(),
+    scopes: text().array(),
+    clientCredentialsScopes: text().array().default([]),
+    userId: text().references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp({ withTimezone: true }),
+    updatedAt: timestamp({ withTimezone: true }),
+    /** Navnet klienten oppgir selv, f.eks. «Claude Code». Ikke bekreftet av noen. */
+    name: text(),
+    uri: text(),
+    icon: text(),
+    contacts: text().array(),
+    tos: text(),
+    policy: text(),
+    softwareId: text(),
+    softwareVersion: text(),
+    softwareStatement: text(),
+    redirectUris: text().array().notNull(),
+    postLogoutRedirectUris: text().array(),
+    backchannelLogoutUri: text(),
+    backchannelLogoutSessionRequired: boolean(),
+    tokenEndpointAuthMethod: text(),
+    applicationType: text(),
+    jwks: text(),
+    jwksUri: text(),
+    grantTypes: text().array(),
+    responseTypes: text().array(),
+    requirePKCE: boolean(),
+    dpopBoundAccessTokens: boolean().default(false),
+    referenceId: text(),
+    metadata: jsonb(),
+  },
+  (t) => [index().on(t.userId), index().on(t.createdAt)],
+)
+
+/** Ressursene det lages tilgangsnøkler for (RFC 8707). Her bare `/api/mcp`. */
+export const oauthResource = pgTable('oauth_resource', {
+  id: text().primaryKey(),
+  identifier: text().notNull().unique(),
+  name: text().notNull(),
+  accessTokenTtl: integer(),
+  refreshTokenTtl: integer(),
+  signingAlgorithm: text(),
+  signingKeyId: text(),
+  allowedScopes: text().array(),
+  customClaims: jsonb(),
+  dpopBoundAccessTokensRequired: boolean().default(false),
+  disabled: boolean().default(false),
+  createdAt: timestamp({ withTimezone: true }),
+  updatedAt: timestamp({ withTimezone: true }),
+  policyVersion: integer().default(1),
+  metadata: jsonb(),
+})
+
+export const oauthClientResource = pgTable(
+  'oauth_client_resource',
+  {
+    id: text().primaryKey(),
+    clientId: text()
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+    resourceId: text()
+      .notNull()
+      .references(() => oauthResource.identifier, { onDelete: 'cascade' }),
+    metadata: jsonb(),
+    createdAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [index().on(t.resourceId), uniqueIndex().on(t.clientId, t.resourceId)],
+)
+
+/** Fornyelsesnøkler (med `offline_access`). `token` er SHA-256 av nøkkelen. */
+export const oauthRefreshToken = pgTable(
+  'oauth_refresh_token',
+  {
+    id: text().primaryKey(),
+    token: text().notNull().unique(),
+    clientId: text()
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+    sessionId: text().references(() => session.id, { onDelete: 'set null' }),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    referenceId: text(),
+    authorizationCodeId: text(),
+    resources: text().array(),
+    requestedUserInfoClaims: text().array(),
+    expiresAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }),
+    revoked: timestamp({ withTimezone: true }),
+    rotatedAt: timestamp({ withTimezone: true }),
+    rotationReplayResponse: text(),
+    rotationReplayExpiresAt: timestamp({ withTimezone: true }),
+    authTime: timestamp({ withTimezone: true }),
+    confirmation: jsonb(),
+    scopes: text().array().notNull(),
+  },
+  (t) => [
+    index().on(t.clientId),
+    index().on(t.sessionId),
+    index().on(t.userId),
+    index().on(t.authorizationCodeId),
+    index().on(t.expiresAt),
+  ],
+)
+
+/** Tilgangsnøkler, gyldige en time. `token` er SHA-256 av nøkkelen. */
+export const oauthAccessToken = pgTable(
+  'oauth_access_token',
+  {
+    id: text().primaryKey(),
+    token: text().unique(),
+    clientId: text()
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+    sessionId: text().references(() => session.id, { onDelete: 'set null' }),
+    userId: text().references(() => user.id, { onDelete: 'cascade' }),
+    referenceId: text(),
+    authorizationCodeId: text(),
+    resources: text().array(),
+    requestedUserInfoClaims: text().array(),
+    refreshId: text().references(() => oauthRefreshToken.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }),
+    revoked: timestamp({ withTimezone: true }),
+    confirmation: jsonb(),
+    scopes: text().array().notNull(),
+  },
+  (t) => [
+    index().on(t.clientId),
+    index().on(t.sessionId),
+    index().on(t.userId),
+    index().on(t.authorizationCodeId),
+    index().on(t.refreshId),
+    index().on(t.expiresAt),
+  ],
+)
+
+/** At en admin har godkjent en klient, med hvilke rettigheter (`scopes`). */
+export const oauthConsent = pgTable(
+  'oauth_consent',
+  {
+    id: text().primaryKey(),
+    clientId: text()
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+    userId: text().references(() => user.id, { onDelete: 'cascade' }),
+    referenceId: text(),
+    resources: text().array(),
+    requestedUserInfoClaims: text().array(),
+    scopes: text().array().notNull(),
+    createdAt: timestamp({ withTimezone: true }),
+    updatedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [index().on(t.clientId), index().on(t.userId)],
+)
+
+/** Engangsmerker for klientpåstander (`private_key_jwt`). Brukes ikke av MCP-klientene i dag. */
+export const oauthClientAssertion = pgTable('oauth_client_assertion', {
+  id: text().primaryKey(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+})
+
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' })
 
 /**
@@ -1081,12 +1265,19 @@ export const auditEvent = pgTable(
     /**
      * MCP-nøkkelen handlingen ble gjort med, ellers null (appen eller CLI-en).
      * Settes av databasen fra `esaf.api_token_id`, som @esaf/core setter i hver
-     * transaksjon for forespørsler med nøkkel (`withApiTokenAudit`). Da kan ingen
+     * transaksjon for forespørsler med nøkkel (`withMcpAudit`). Da kan ingen
      * hendelse fra MCP havne i loggen uten merket, uansett hvor den skrives.
      */
     apiTokenId: uuid()
       .references(() => apiToken.id, { onDelete: 'set null' })
       .default(sql`nullif(current_setting('esaf.api_token_id', true), '')::uuid`),
+    /**
+     * MCP-klienten koblet til med OAuth som gjorde handlingen, ellers null. Settes
+     * av databasen fra `esaf.oauth_client_id` på samme måte (`withMcpAudit`).
+     */
+    oauthClientId: text()
+      .references(() => oauthClient.clientId, { onDelete: 'set null' })
+      .default(sql`nullif(current_setting('esaf.oauth_client_id', true), '')`),
     createdAt: timestamps.createdAt,
   },
   (t) => [index().on(t.subjectPersonId)],

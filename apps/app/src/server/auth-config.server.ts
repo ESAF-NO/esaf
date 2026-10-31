@@ -1,5 +1,18 @@
+import { oauthProvider } from '@better-auth/oauth-provider'
 import { getAuthenticatorName, passkey } from '@better-auth/passkey'
-import { mayChangeSignInMethods, type CreatedLink } from '@esaf/core'
+import {
+  assertMayApproveMcpClient,
+  hashOAuthToken,
+  loadViewer,
+  mayChangeSignInMethods,
+  MCP_OAUTH_SCOPES,
+  OAUTH_ACCESS_TOKEN_PREFIX,
+  OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+  OAUTH_REFRESH_TOKEN_PREFIX,
+  OAUTH_REFRESH_TOKEN_TTL_SECONDS,
+  recordMcpConnect,
+  type CreatedLink,
+} from '@esaf/core'
 import { schema, type Db } from '@esaf/db'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
@@ -22,6 +35,34 @@ const CHANGES_SIGN_IN_METHODS = new Set([
   '/passkey/delete-passkey',
   '/two-factor/enable',
 ])
+
+/** Godkjenningen av en MCP-klient. Bare admins i en sterk økt kommer gjennom. */
+const OAUTH_CONSENT = '/oauth2/consent'
+
+/**
+ * Endepunktene i OAuth-pluginen som ikke brukes: klienter registrerer seg selv
+ * (`/oauth2/register`), og tilkoblinger vises og kobles fra i appen med reglene
+ * i @esaf/core (`listMcpConnections`, `disconnectMcpClient`), som også logger.
+ */
+const UNUSED_OAUTH_PATHS = [
+  '/oauth2/create-client',
+  '/oauth2/get-client',
+  '/oauth2/get-clients',
+  '/oauth2/update-client',
+  '/oauth2/delete-client',
+  '/oauth2/client/rotate-secret',
+  '/oauth2/public-client',
+  '/oauth2/public-client-prelogin',
+  '/oauth2/get-consent',
+  '/oauth2/get-consents',
+  '/oauth2/update-consent',
+  '/oauth2/delete-consent',
+  '/oauth2/userinfo',
+  '/oauth2/end-session',
+]
+
+/** Adressen til MCP-serveren: ressursen OAuth-nøklene utstedes for (RFC 8707). */
+export const mcpResourceUrl = (baseURL: string) => new URL('/api/mcp', baseURL).href
 
 export const STRONG_AUTH_REQUIRED = 'STRONG_AUTH_REQUIRED'
 export const USER_VERIFICATION_REQUIRED = 'USER_VERIFICATION_REQUIRED'
@@ -55,6 +96,11 @@ export type AuthConfig = {
  * admin-plugin er bevisst ikke i bruk, og `user`-tabellen har ingen rollefelt
  * som kan settes ved registrering.
  *
+ * Appen er også OAuth-server for MCP-klienter (se `oauthProvider` under og
+ * `mcp-oauth.ts` i @esaf/core): klienter registrerer seg selv, en admin logger
+ * inn og godkjenner på `/mcp/godkjenn`, og klienten får en tilgangsnøkkel for
+ * `/api/mcp`.
+ *
  * Egen fabrikk, så integrasjonstestene kan lage en instans mot testdatabasen.
  */
 export function createAuth(config: AuthConfig) {
@@ -74,8 +120,16 @@ export function createAuth(config: AuthConfig) {
         verification: schema.verification,
         twoFactor: schema.twoFactor,
         passkey: schema.passkey,
+        oauthClient: schema.oauthClient,
+        oauthResource: schema.oauthResource,
+        oauthClientResource: schema.oauthClientResource,
+        oauthRefreshToken: schema.oauthRefreshToken,
+        oauthAccessToken: schema.oauthAccessToken,
+        oauthConsent: schema.oauthConsent,
+        oauthClientAssertion: schema.oauthClientAssertion,
       },
     }),
+    disabledPaths: UNUSED_OAUTH_PATHS,
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
@@ -132,6 +186,24 @@ export function createAuth(config: AuthConfig) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === OAUTH_CONSENT && ctx.body?.accept === true) {
+          // Godkjenningssiden sjekker det samme, men her avgjøres det.
+          const current = await getSessionFromCtx(ctx)
+          const viewer = current
+            ? await loadViewer(config.db, current.user.id, {
+                signedInWithPasskey: current.session.signedInWithPasskey === true,
+              })
+            : null
+          try {
+            assertMayApproveMcpClient(viewer)
+          } catch {
+            throw APIError.from('FORBIDDEN', {
+              code: STRONG_AUTH_REQUIRED,
+              message: 'Only admins signed in with a passkey or two-factor can approve MCP clients',
+            })
+          }
+          return
+        }
         if (!CHANGES_SIGN_IN_METHODS.has(ctx.path)) return
         const current = await getSessionFromCtx(ctx)
         // Uten økt avviser endepunktet selv forespørselen.
@@ -153,6 +225,20 @@ export function createAuth(config: AuthConfig) {
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === OAUTH_CONSENT && ctx.body?.accept === true) {
+          // Godkjent: i loggen, med klienten og rettighetene som ble gitt.
+          if (ctx.context.returned instanceof Error) return
+          const current = await getSessionFromCtx(ctx)
+          const query = new URLSearchParams(String(ctx.body.oauth_query ?? ''))
+          const clientId = query.get('client_id')
+          if (!current || !clientId) return
+          const viewer = await loadViewer(config.db, current.user.id, {
+            signedInWithPasskey: current.session.signedInWithPasskey === true,
+          })
+          const scopes = String(ctx.body.scope ?? query.get('scope') ?? '').split(' ')
+          await recordMcpConnect(config.db, viewer, { clientId, scopes })
+          return
+        }
         // Den som logger inn med passkey mens de allerede er innlogget (for å
         // oppgradere økten til adminverktøyene), får en ny økt. Den gamle
         // slettes, så den ikke blir liggende igjen uten at noen ser den.
@@ -201,6 +287,44 @@ export function createAuth(config: AuthConfig) {
             if (!verification.authenticationInfo.userVerified) throw userVerificationRequired()
           },
         },
+      }),
+      oauthProvider({
+        loginPage: '/api/mcp-oauth/logg-inn',
+        consentPage: '/api/mcp-oauth/godkjenn',
+        scopes: [...MCP_OAUTH_SCOPES],
+        grantTypes: ['authorization_code', 'refresh_token'],
+        // Ugjennomsiktige nøkler som slås opp i databasen ved hver forespørsel,
+        // så en frakobling eller tapt adminrolle virker med en gang. JWT-er kan
+        // ikke trekkes tilbake før de går ut.
+        disableJwtPlugin: true,
+        storeTokens: { hash: (token) => hashOAuthToken(token) },
+        prefix: {
+          opaqueAccessToken: OAUTH_ACCESS_TOKEN_PREFIX,
+          refreshToken: OAUTH_REFRESH_TOKEN_PREFIX,
+        },
+        accessTokenExpiresIn: OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+        refreshTokenExpiresIn: OAUTH_REFRESH_TOKEN_TTL_SECONDS,
+        // En klient som prøver fornyelsen på nytt (f.eks. etter et brudd), får
+        // samme svar i 30 sekunder i stedet for å bli logget ut.
+        refreshTokenReuseInterval: 30,
+        // MCP-klienter registrerer seg selv før innloggingen (RFC 7591). Det gir
+        // ingen tilgang: det krever en admins godkjenning.
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        // Klienter på maskinen (Claude Code, Codex) sender ofte ikke
+        // `application_type`, men bruker http://localhost som tilbakeadresse.
+        clientRegistrationDefaultApplicationType: 'infer',
+        clientRegistrationDefaultScopes: [...MCP_OAUTH_SCOPES],
+        resources: [
+          {
+            identifier: mcpResourceUrl(config.baseURL),
+            name: 'ESAF admin (MCP)',
+            allowedScopes: [...MCP_OAUTH_SCOPES],
+          },
+        ],
+        clientRegistrationDefaultResources: [mcpResourceUrl(config.baseURL)],
+        // Klienter håndteres ikke fra en økt; de registrerer seg selv.
+        clientPrivileges: () => false,
       }),
       // Må stå sist, så cookiene fra pluginene over også settes.
       tanstackStartCookies(),

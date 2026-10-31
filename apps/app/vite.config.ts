@@ -12,6 +12,7 @@ export default defineConfig({
       plugins: [
         './src/server/plugins/validate-env.ts',
         './src/server/plugins/cleanup-assets.ts',
+        './src/server/plugins/cleanup-oauth.ts',
         './src/server/plugins/search-index.ts',
       ],
       // Bildebehandlingen og embedding-modellen har native binærfiler som må ligge

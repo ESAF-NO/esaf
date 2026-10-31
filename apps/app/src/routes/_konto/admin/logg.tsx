@@ -163,10 +163,14 @@ function LogEntry({ entry: e }: { entry: Entry }) {
           {e.viaMcp && (
             <span
               className="ml-1.5 inline-flex items-center gap-1 text-xs text-stone-500"
-              title="Gjort fra en MCP-klient, med nøkkelen til personen"
+              title={
+                e.viaMcp.kind === 'key'
+                  ? 'Gjort fra en MCP-klient, med nøkkelen til personen'
+                  : 'Gjort fra en MCP-klient personen har koblet til med innlogging. Navnet er det klienten oppga.'
+              }
             >
               <Bot className="size-3.5" aria-hidden />
-              via MCP («{e.viaMcp.tokenName}»)
+              via MCP («{e.viaMcp.name}»)
             </span>
           )}
         </p>
@@ -174,6 +178,12 @@ function LogEntry({ entry: e }: { entry: Entry }) {
           <p className="mt-1 text-sm text-stone-600">
             {plural(count(e.details.revokedTokens), 'MCP-nøkkel', 'MCP-nøkler')} ble trukket
             tilbake.
+          </p>
+        )}
+        {count(e.details.revokedConnections) > 0 && (
+          <p className="mt-1 text-sm text-stone-600">
+            {plural(count(e.details.revokedConnections), 'MCP-tilkobling', 'MCP-tilkoblinger')} ble
+            koblet fra.
           </p>
         )}
         {excerpt && (
@@ -659,6 +669,17 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
   'mcp_token.revoke': ({ actor, details }) => (
     <>
       {actor} trakk tilbake MCP-nøkkelen «{text(details.name) ?? 'uten navn'}».
+    </>
+  ),
+  'mcp_oauth.connect': ({ actor, details }) => (
+    <>
+      {actor} koblet til MCP-klienten «{text(details.name) ?? 'uten navn'}»
+      {details.readOnly === true && ' (bare lesing)'}.
+    </>
+  ),
+  'mcp_oauth.disconnect': ({ actor, details }) => (
+    <>
+      {actor} koblet fra MCP-klienten «{text(details.name) ?? 'uten navn'}».
     </>
   ),
   'profile.admin_cohorts': ({ actor, subject, details }) => (

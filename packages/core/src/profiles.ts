@@ -183,6 +183,8 @@ export type Profile = {
   sources: FieldSource<ProfileSourceField>[]
   isOwn: boolean
   canEdit: boolean
+  /** Admin kan slå profilen sammen med et duplikat. */
+  canMerge: boolean
 }
 
 /**
@@ -263,6 +265,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     sources,
     isOwn,
     canEdit: isOwn || can(viewer, 'profiles.edit'),
+    canMerge: can(viewer, 'profiles.edit'),
   }
 }
 

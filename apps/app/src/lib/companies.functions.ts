@@ -13,6 +13,7 @@ import {
   listCompanies,
   mergeCompanies,
   searchCompanies,
+  setCompanyFormerNames,
   updateCompany,
   updateCompanyArticle,
   updateCompanyEvent,
@@ -61,8 +62,16 @@ export const findCompanies = createServerFn({ method: 'GET' })
   .handler(({ data }) => run((viewer) => searchCompanies(db, viewer, data.q, 6)))
 
 export const mergeCompany = createServerFn({ method: 'POST' })
-  .validator(z.object({ sourceId: z.uuid(), targetId: z.uuid() }))
+  .validator(
+    z.object({ sourceId: z.uuid(), targetId: z.uuid(), formerName: z.boolean().default(false) }),
+  )
   .handler(({ data }) => run((viewer) => mergeCompanies(db, storage, viewer, data)))
+
+export const saveFormerNames = createServerFn({ method: 'POST' })
+  .validator(z.object({ companyId: z.uuid(), names: z.array(z.string()).max(20) }))
+  .handler(({ data }) =>
+    run((viewer) => setCompanyFormerNames(db, viewer, data.companyId, data.names)),
+  )
 
 // Full validering av hendelsen skjer i @esaf/core (companyEventInput). Her sjekkes bare formen.
 const eventFields = z.object({

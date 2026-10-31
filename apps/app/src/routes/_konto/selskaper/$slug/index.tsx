@@ -137,6 +137,9 @@ function CompanyPage() {
               )}
             </h1>
             {c.tagline && <p className="mt-1 text-base text-stone-600">{c.tagline}</p>}
+            {c.formerNames.length > 0 && (
+              <p className="mt-1 text-sm text-stone-500">Tidligere {c.formerNames.join(', ')}</p>
+            )}
             {c.status === 'unknown' && c.lastSeenOnEsSite && (
               <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-stone-500">
                 <History className="size-4" aria-hidden />

@@ -41,11 +41,12 @@ export const quickSearch = createServerFn({ method: 'GET' })
       ].slice(0, 6)
       return {
         people,
-        companies: companies.map(({ slug, name, logo, tagline, people }) => ({
+        companies: companies.map(({ slug, name, logo, tagline, people, formerNames }) => ({
           slug,
           name,
           logo,
           tagline,
+          formerNames,
           people,
         })),
         posts: posts.map((p) => ({ id: p.id, title: p.title, channel: p.channel })),

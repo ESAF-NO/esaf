@@ -18,6 +18,7 @@ import {
   mergeCompanies,
   NotFoundError,
   removeCompanyLogo,
+  setCompanyFormerNames,
   setCompanyLogo,
   updateCompany,
   updateCompanyArticle,
@@ -113,6 +114,7 @@ async function companyDetails(ctx: ToolContext, ref: { companyId?: string; slug?
     slug: details.slug,
     link: links.company(ctx, details.slug),
     name: details.name,
+    formerNames: details.formerNames,
     status: details.status,
     tagline: details.tagline,
     description: details.description,
@@ -192,7 +194,7 @@ export function registerCompanyTools(server: McpServer, ctx: ToolContext) {
         .string()
         .max(100)
         .optional()
-        .describe('Case-insensitive match on name, slug or tagline.'),
+        .describe('Case-insensitive match on name, former names, slug or tagline.'),
       status: z.enum(companyStatuses).optional(),
       missing: z
         .array(z.enum(['logo', 'description', 'website', 'people', 'events']))
@@ -209,7 +211,10 @@ export function registerCompanyTools(server: McpServer, ctx: ToolContext) {
       const missing = new Set(args.missing ?? [])
       const all = (await listAdminCompanies(ctx.db, ctx.viewer)).filter(
         (c) =>
-          (!q || [c.name, c.slug, c.tagline].some((v) => v?.toLocaleLowerCase('nb').includes(q))) &&
+          (!q ||
+            [c.name, c.slug, c.tagline, ...c.formerNames].some((v) =>
+              v?.toLocaleLowerCase('nb').includes(q),
+            )) &&
           (!args.status || c.status === args.status) &&
           (args.esCompany === undefined || c.esCompany === args.esCompany) &&
           (args.cohort === undefined || c.cohortYears.includes(args.cohort)) &&
@@ -299,8 +304,9 @@ export function registerCompanyTools(server: McpServer, ctx: ToolContext) {
     name: 'update_company',
     title: 'Update company',
     description:
-      'Change company info. Only the fields you send change; null clears a field. A new name gives a new slug and ' +
-      'the old one becomes an alias. Add sources for researched data.',
+      'Change company info. Only the fields you send change; null clears a field. A new name gives a new slug, ' +
+      'the old one becomes an alias, and the old name is added to formerNames (unless it only differs in spelling ' +
+      'or legal form). Add sources for researched data.',
     input: z.object({
       companyId: id('The company'),
       name: z.string().max(120).optional(),
@@ -358,15 +364,40 @@ export function registerCompanyTools(server: McpServer, ctx: ToolContext) {
     title: 'Merge duplicate companies',
     description:
       'Merge a duplicate company (sourceId) into another (targetId): experience, ES team, history, articles, quotes, ' +
-      'suggestions and requests move; empty fields are filled; the duplicate slug becomes an alias. Cannot be undone.',
+      'suggestions and requests move; empty fields are filled; the duplicate slug becomes an alias. Set formerName ' +
+      'when the duplicate is the name the company had before a rebrand (e.g. Bølgepost → Fjordtek), not just another ' +
+      'spelling; it is then shown as «Tidligere Bølgepost». Cannot be undone.',
     input: z.object({
       sourceId: id('The duplicate, which disappears'),
       targetId: id('The company to keep'),
+      formerName: z
+        .boolean()
+        .default(false)
+        .describe("The duplicate's name is a former name of the company, not another spelling."),
     }),
     effect: 'destructive',
     run: async (args, ctx) => {
       const { slug } = await mergeCompanies(ctx.db, ctx.storage, ctx.viewer, args)
       return { keptSlug: slug, link: links.company(ctx, slug) }
+    },
+  })
+
+  defineTool(server, ctx, {
+    name: 'set_company_former_names',
+    title: 'Set former company names',
+    description:
+      'Replace the names the company had before, newest first (shown as «Tidligere …» and found by search). ' +
+      'New names also become aliases, so experience written with the old name links here. A name another company ' +
+      'has is rejected: merge them with merge_companies (formerName: true) instead. At most ten.',
+    input: z.object({
+      companyId: id('The company'),
+      formerNames: z.array(z.string().max(120)).max(10),
+    }),
+    effect: 'write',
+    idempotent: true,
+    run: async ({ companyId, formerNames }, ctx) => {
+      await setCompanyFormerNames(ctx.db, ctx.viewer, companyId, formerNames)
+      return companyDetails(ctx, { companyId })
     },
   })
 

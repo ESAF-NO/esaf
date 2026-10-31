@@ -14,6 +14,7 @@ export default defineConfig({
         './src/server/plugins/cleanup-assets.ts',
         './src/server/plugins/cleanup-oauth.ts',
         './src/server/plugins/search-index.ts',
+        './src/server/plugins/shutdown.ts',
       ],
       // Bildebehandlingen og embedding-modellen har native binærfiler som må ligge
       // som egne pakker i .output, ikke bakes inn i bundelen. `*` tar med hele pakken.

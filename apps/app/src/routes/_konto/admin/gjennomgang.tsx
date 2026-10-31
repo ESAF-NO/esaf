@@ -8,7 +8,7 @@ import type {
   ReviewQuote,
   ReviewSourceGroup,
 } from '@esaf/core'
-import { createFileRoute, getRouteApi, Link, notFound } from '@tanstack/react-router'
+import { createFileRoute, getRouteApi, Link, notFound, useRouter } from '@tanstack/react-router'
 import {
   ArrowUpRight,
   Check,
@@ -24,6 +24,7 @@ import {
 import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { LinkRequestCard, SuggestionCard, useAction } from '#/components/Contributions.tsx'
+import { PersonMergeDialog } from '#/components/PersonMergeDialog.tsx'
 import { EditQuoteDialog } from '#/components/Quotes.tsx'
 import {
   Avatar,
@@ -39,7 +40,6 @@ import {
 import { eventTypeLabels, statusLabels, type CompanyStatus } from '#/lib/companies.ts'
 import { mergeCompany, removeCompanyEvent } from '#/lib/companies.functions.ts'
 import { kull, partialDate, plural } from '#/lib/format.ts'
-import { mergePerson } from '#/lib/people.functions.ts'
 import { removeQuote } from '#/lib/quotes.functions.ts'
 import {
   approveEvent,
@@ -641,6 +641,7 @@ function PersonCard({ person: p }: { person: DuplicatePerson }) {
 }
 
 function PersonPair({ pair }: { pair: ReviewPersonPair }) {
+  const router = useRouter()
   const { busy, error, run } = useAction()
   const { first, second } = pair
   // Har én av dem konto, beholdes den; ellers velger admin.
@@ -651,14 +652,8 @@ function PersonPair({ pair }: { pair: ReviewPersonPair }) {
       : second.claimed
         ? [second]
         : [first, second]
-  const merge = (keep: DuplicatePerson) => {
-    const drop = keep === first ? second : first
-    return (
-      confirm(
-        `Slå sammen ${drop.fullName} med ${keep.fullName}? Erfaring, kull, e-post, sitater og kilder flyttes, tomme felt fylles, og duplikatet slettes. Det kan ikke angres.`,
-      ) && run(() => mergePerson({ data: { sourceId: drop.personId, targetId: keep.personId } }))
-    )
-  }
+  const [mergeTarget, setMergeTarget] = useState<DuplicatePerson | null>(null)
+
   return (
     <>
       <p className="mb-3 flex items-center gap-1.5 text-xs font-medium text-amber-800">
@@ -700,13 +695,24 @@ function PersonPair({ pair }: { pair: ReviewPersonPair }) {
             variant="secondary"
             size="sm"
             disabled={busy}
-            onClick={() => merge(keep)}
+            onClick={() => setMergeTarget(keep)}
           >
             <GitMerge className="size-4" aria-hidden />
-            {keepers.length === 1 ? 'Slå sammen' : `Behold ${keep.fullName}`}
+            {keepers.length === 1 ? 'Se sammenslåing' : `Se resultat med ${keep.fullName}`}
           </Button>
         ))}
       </Actions>
+      {mergeTarget && (
+        <PersonMergeDialog
+          sourceId={(mergeTarget === first ? second : first).personId}
+          targetId={mergeTarget.personId}
+          onClose={() => setMergeTarget(null)}
+          onMerged={async () => {
+            setMergeTarget(null)
+            await router.invalidate()
+          }}
+        />
+      )}
     </>
   )
 }

@@ -206,6 +206,25 @@ export const moveCompanySources = (
   fields: readonly string[],
 ) => moveFieldSources(tx, 'company', sourceId, targetId, fields)
 
+/** Kildene til noen felt på én person eller ett selskap, når verdien byttes ut. */
+export async function deleteFieldSourcesFor(
+  tx: Tx,
+  entityType: FieldSourceEntity,
+  entityId: string,
+  fields: readonly string[],
+) {
+  if (!fields.length) return
+  await tx
+    .delete(fieldSource)
+    .where(
+      and(
+        eq(fieldSource.entityType, entityType),
+        eq(fieldSource.entityId, entityId),
+        inArray(fieldSource.field, [...fields]),
+      ),
+    )
+}
+
 /** Kildene til personer eller selskaper som slettes. Radene har ingen fremmednøkkel som tar dem. */
 export async function deleteFieldSources(
   tx: Db | Tx,

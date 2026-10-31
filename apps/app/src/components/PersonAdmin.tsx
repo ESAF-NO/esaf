@@ -4,15 +4,10 @@ import { GitMerge, Plus, Search, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Section } from './CompanyForm.tsx'
 import { useAction } from './Contributions.tsx'
+import { PersonMergeDialog } from './PersonMergeDialog.tsx'
 import { Avatar, Button, ErrorText, Input, Select, Verified } from './ui.tsx'
 import { kull } from '#/lib/format.ts'
-import {
-  addEmail,
-  findAnyPerson,
-  mergePerson,
-  removeEmail,
-  saveCohorts,
-} from '#/lib/people.functions.ts'
+import { addEmail, findAnyPerson, removeEmail, saveCohorts } from '#/lib/people.functions.ts'
 
 type Relation = PersonAdminDetails['cohorts'][number]['relation']
 
@@ -215,7 +210,6 @@ function Merge({ person }: { person: PersonAdminDetails }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<AdminPerson[]>([])
-  const { busy, error, run } = useAction()
   const term = query.trim()
 
   useEffect(() => {
@@ -235,22 +229,7 @@ function Merge({ person }: { person: PersonAdminDetails }) {
     }
   }, [term, person.personId])
 
-  function merge(other: AdminPerson) {
-    const keepOther = other.claimed && !person.claimed
-    const [keep, drop] = keepOther
-      ? [other.fullName, person.fullName]
-      : [person.fullName, other.fullName]
-    const question = `Slå sammen ${drop} med ${keep}? Erfaring, kull, e-post, sitater, kilder og innhold flyttes til ${keep}, tomme felt fylles, og ${drop} slettes. Det kan ikke angres.`
-    if (!confirm(question)) return
-    void run(
-      () => mergePerson({ data: { sourceId: other.personId, targetId: person.personId } }),
-      async (result) => {
-        const { personId } = result as { personId: string }
-        await router.invalidate()
-        await router.navigate({ to: '/medlemmer/$personId/rediger', params: { personId } })
-      },
-    )
-  }
+  const [selected, setSelected] = useState<AdminPerson | null>(null)
 
   return (
     <Section
@@ -294,17 +273,28 @@ function Merge({ person }: { person: PersonAdminDetails }) {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={busy || blocked}
-                  onClick={() => merge(p)}
+                  disabled={blocked}
+                  onClick={() => setSelected(p)}
                 >
-                  <GitMerge className="size-4" aria-hidden /> Slå sammen
+                  <GitMerge className="size-4" aria-hidden /> Se sammenslåing
                 </Button>
               </li>
             )
           })}
         </ul>
       )}
-      {error && <ErrorText>{error}</ErrorText>}
+      {selected && (
+        <PersonMergeDialog
+          sourceId={selected.personId}
+          targetId={person.personId}
+          onClose={() => setSelected(null)}
+          onMerged={async (personId) => {
+            setSelected(null)
+            await router.invalidate()
+            await router.navigate({ to: '/medlemmer/$personId/rediger', params: { personId } })
+          }}
+        />
+      )}
     </Section>
   )
 }

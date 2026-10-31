@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   schema,
   type CohortRelation,
@@ -14,7 +15,12 @@ import { DomainError, NotFoundError } from './errors.ts'
 import { normalizeEmail, type Tx } from './members.ts'
 import { deletePhotoFiles, photoUrls, type ProfilePhoto } from './photos.ts'
 import { normalizePhone } from './profile-import.ts'
-import { deleteFieldSources, moveFieldSources, type ProfileSourceField } from './sources.ts'
+import {
+  deleteFieldSources,
+  deleteFieldSourcesFor,
+  moveFieldSources,
+  type ProfileSourceField,
+} from './sources.ts'
 import { normalizePersonName } from './validation.ts'
 import type { ObjectStorage } from './storage.ts'
 
@@ -511,6 +517,341 @@ const personColumns = {
 /** Et kontaktfelt som har en verdi, men er skjult for medlemmer. */
 const hiddenContact = (value: string | null, visible: boolean) => value !== null && !visible
 
+type MergePersonRow = { [K in keyof typeof personColumns]: (typeof person.$inferSelect)[K] }
+
+/** Feltene der admin kan velge duplikatets verdi når begge profilene har en. */
+export const mergeChoiceFields = [
+  'fullName',
+  'city',
+  'studyBackground',
+  'bio',
+  'linkedinUrl',
+  'expertise',
+  'industries',
+  'esCompanyId',
+  'photoKey',
+] as const
+export type MergeChoiceField = (typeof mergeChoiceFields)[number]
+
+/** Kilden til hvert felt (`field_source.field`), der feltet har kilder. */
+const sourceFieldOf: Partial<Record<MergeChoiceField, ProfileSourceField>> = {
+  city: 'city',
+  studyBackground: 'studyBackground',
+  bio: 'bio',
+  linkedinUrl: 'linkedinUrl',
+  expertise: 'expertise',
+  industries: 'industries',
+  esCompanyId: 'esCompany',
+  photoKey: 'photo',
+}
+
+const hasValue = (value: string | string[] | null) =>
+  value !== null && (!Array.isArray(value) || value.length > 0)
+
+/**
+ * Felt der begge profilene har en verdi, og verdiene er ulike. Bare der kan admin
+ * velge; ellers fylles tomme felt av seg selv.
+ */
+function conflicting(source: MergePersonRow, target: MergePersonRow, field: MergeChoiceField) {
+  return (
+    hasValue(source[field]) &&
+    hasValue(target[field]) &&
+    JSON.stringify(source[field]) !== JSON.stringify(target[field])
+  )
+}
+
+/**
+ * Verdiene profilen som beholdes får, brukt både av forhåndsvisningen og av selve
+ * sammenslåingen, så de alltid er like. Utfylte felt på profilen som beholdes,
+ * gjelder, med mindre admin har valgt duplikatets verdi (`useSource`); tomme felt
+ * fylles fra duplikatet. Kontaktinfo følger egne regler under.
+ */
+function mergedPersonValues(
+  source: MergePersonRow,
+  target: MergePersonRow,
+  useSource: ReadonlySet<MergeChoiceField> = new Set(),
+) {
+  const pick = <K extends MergeChoiceField>(field: K): MergePersonRow[K] =>
+    useSource.has(field) && conflicting(source, target, field)
+      ? source[field]
+      : hasValue(target[field])
+        ? target[field]
+        : source[field]
+  return {
+    fullName: pick('fullName'),
+    city: pick('city'),
+    studyBackground: pick('studyBackground'),
+    bio: pick('bio'),
+    linkedinUrl: pick('linkedinUrl'),
+    esCompanyId: pick('esCompanyId'),
+    expertise: pick('expertise'),
+    industries: pick('industries'),
+    photoKey: pick('photoKey'),
+    // Kontaktinfo bestemmer personen selv over når profilen er tatt i bruk.
+    // Ellers fylles tomme felt fra duplikatet, og er feltet skjult på en av
+    // profilene, blir det skjult på den som beholdes.
+    ...(target.userId
+      ? {}
+      : {
+          contactEmail: target.contactEmail ?? source.contactEmail,
+          contactEmailVisible: !(
+            hiddenContact(target.contactEmail, target.contactEmailVisible) ||
+            hiddenContact(source.contactEmail, source.contactEmailVisible)
+          ),
+          phone: target.phone ?? source.phone,
+          phoneVisible: !(
+            hiddenContact(target.phone, target.phoneVisible) ||
+            hiddenContact(source.phone, source.phoneVisible)
+          ),
+        }),
+  }
+}
+
+/**
+ * Forhåndsvisning av en sammenslåing: profilen slik den blir, hva som fylles fra
+ * duplikatet, hva som ikke tas med, og hva som flyttes. Skriver ingenting. Private
+ * kontaktverdier forlater aldri core; bare om de finnes og er synlige. `token` er
+ * en hash av alt forhåndsvisningen bygger på, så `mergePeople` kan avvise en
+ * sammenslåing hvis noe er endret siden.
+ */
+export async function previewPeopleMerge(
+  db: Db | Tx,
+  viewer: Viewer,
+  input: { sourceId: string; targetId: string },
+) {
+  assertCan(viewer, 'profiles.edit')
+  if (input.sourceId === input.targetId) throw new DomainError('Velg en annen person.')
+  const ids = [input.sourceId, input.targetId]
+  const rows = await db.select(personColumns).from(person).where(inArray(person.id, ids))
+  let source = rows.find((r) => r.id === input.sourceId)
+  let target = rows.find((r) => r.id === input.targetId)
+  if (!source || !target) throw new NotFoundError('Fant ikke personen.')
+  if (source.userId && target.userId)
+    throw new DomainError('Begge har egen konto og kan ikke slås sammen.')
+  if (source.userId) [source, target] = [target, source]
+  const from = source.id
+  const into = target.id
+  const [
+    cohorts,
+    jobs,
+    emails,
+    statuses,
+    quotes,
+    posts,
+    comments,
+    assets,
+    reps,
+    board,
+    events,
+    votes,
+  ] = await Promise.all([
+    db
+      .select({
+        personId: personCohort.personId,
+        year: cohort.graduationYear,
+        relation: personCohort.relation,
+      })
+      .from(personCohort)
+      .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+      .where(inArray(personCohort.personId, ids))
+      .orderBy(asc(cohort.graduationYear), asc(personCohort.personId)),
+    db
+      .select({
+        id: experience.id,
+        personId: experience.personId,
+        companyId: experience.companyId,
+        company: schema.company.name,
+        title: experience.title,
+        startYear: experience.startYear,
+        endYear: experience.endYear,
+        founder: experience.founder,
+        position: experience.position,
+      })
+      .from(experience)
+      .innerJoin(schema.company, eq(schema.company.id, experience.companyId))
+      .where(inArray(experience.personId, ids))
+      .orderBy(asc(experience.position), asc(experience.id)),
+    db
+      .select()
+      .from(personEmail)
+      .where(inArray(personEmail.personId, ids))
+      .orderBy(asc(personEmail.email)),
+    db
+      .select()
+      .from(membership)
+      .where(inArray(membership.personId, ids))
+      .orderBy(asc(membership.personId)),
+    db.select({ id: quote.id }).from(quote).where(eq(quote.personId, from)).orderBy(asc(quote.id)),
+    db
+      .select({ id: post.id })
+      .from(post)
+      .where(eq(post.authorPersonId, from))
+      .orderBy(asc(post.id)),
+    db
+      .select({ id: comment.id })
+      .from(comment)
+      .where(eq(comment.authorPersonId, from))
+      .orderBy(asc(comment.id)),
+    db
+      .select({ id: asset.id })
+      .from(asset)
+      .where(eq(asset.ownerPersonId, from))
+      .orderBy(asc(asset.id)),
+    db
+      .select()
+      .from(cohortRepresentative)
+      .where(inArray(cohortRepresentative.personId, ids))
+      .orderBy(asc(cohortRepresentative.id)),
+    db
+      .select()
+      .from(boardMember)
+      .where(inArray(boardMember.personId, ids))
+      .orderBy(asc(boardMember.id)),
+    db
+      .select({
+        personId: eventParticipation.personId,
+        eventId: eventParticipation.eventId,
+        role: eventParticipation.role,
+        note: eventParticipation.note,
+      })
+      .from(eventParticipation)
+      .where(inArray(eventParticipation.personId, ids))
+      .orderBy(asc(eventParticipation.eventId), asc(eventParticipation.personId)),
+    db
+      .select({ postId: postVote.postId })
+      .from(postVote)
+      .where(eq(postVote.personId, from))
+      .orderBy(asc(postVote.postId)),
+  ])
+  const companies = await db
+    .select({ id: schema.company.id, name: schema.company.name })
+    .from(schema.company)
+    .where(
+      inArray(
+        schema.company.id,
+        [source.esCompanyId, target.esCompanyId].filter((id): id is string => id !== null),
+      ),
+    )
+    .orderBy(asc(schema.company.id))
+  const values = mergedPersonValues(source, target)
+  const fields = mergeChoiceFields.map((field) => {
+    const display = (value: string | string[] | null): string | null => {
+      if (Array.isArray(value)) return value.length ? value.join(', ') : null
+      if (field === 'esCompanyId') return companies.find((c) => c.id === value)?.name ?? null
+      if (field === 'photoKey') return value ? photoUrls(value)!.small : null
+      return value
+    }
+    return {
+      field,
+      /** Verdien som gjelder uten valg: den beholdte, eller duplikatets hvis feltet er tomt. */
+      value: display(values[field]),
+      /** Verdien på profilen som beholdes. */
+      targetValue: display(target[field]),
+      sourceValue: display(source[field]),
+      origin:
+        JSON.stringify(values[field]) === JSON.stringify(target[field])
+          ? ('kept' as const)
+          : ('filled' as const),
+      /** Begge har ulike verdier: duplikatets tas ikke med, med mindre admin velger den. */
+      conflict: conflicting(source, target, field),
+    }
+  })
+  const jobKey = (e: (typeof jobs)[number]) =>
+    JSON.stringify([e.companyId, e.title, e.startYear, e.endYear, e.founder])
+  const seen = new Set(jobs.filter((j) => j.personId === into).map(jobKey))
+  const experienceRows = jobs
+    .filter((j) => j.personId === into)
+    .map((j) => ({ ...j, added: false }))
+  for (const job of jobs.filter((j) => j.personId === from)) {
+    if (seen.has(jobKey(job))) continue
+    seen.add(jobKey(job))
+    experienceRows.push({ ...job, added: true })
+  }
+  const cohortRows = [...new Set(cohorts.map((c) => c.year))]
+    .sort((a, b) => a - b)
+    .map((year) => {
+      const kept = cohorts.find((c) => c.year === year && c.personId === into)
+      const dropped = cohorts.find((c) => c.year === year && c.personId === from)
+      return {
+        year,
+        relation: (kept ?? dropped)!.relation,
+        added: !kept,
+        discardedRelation:
+          kept && dropped && kept.relation !== dropped.relation ? dropped.relation : null,
+      }
+    })
+  const targetStatus = statuses.find((s) => s.personId === into)?.status
+  const sourceStatus = statuses.find((s) => s.personId === from)?.status
+  const status = !targetStatus
+    ? (sourceStatus ?? 'pending')
+    : !target.userId && sourceStatus === 'active'
+      ? 'active'
+      : targetStatus
+  const identity = (p: MergePersonRow) => ({
+    personId: p.id,
+    fullName: p.fullName,
+    claimed: !!p.userId,
+    photo: photoUrls(p.photoKey),
+  })
+  const token = createHash('sha256')
+    .update(
+      JSON.stringify({
+        source,
+        target,
+        cohorts,
+        jobs,
+        emails,
+        statuses,
+        quotes,
+        posts,
+        comments,
+        assets,
+        reps,
+        board,
+        events,
+        votes,
+        companies,
+      }),
+    )
+    .digest('hex')
+  return {
+    token,
+    source: identity(source),
+    target: identity(target),
+    photo: photoUrls(values.photoKey),
+    fields,
+    cohorts: cohortRows,
+    experience: experienceRows,
+    duplicateExperience: jobs.length - experienceRows.length,
+    emails: emails.map((e) => ({ email: e.email, added: e.personId === from })),
+    status,
+    statusChanged: status !== (targetStatus ?? 'pending'),
+    transfers: [
+      { label: 'Sitater', count: quotes.length },
+      { label: 'Innlegg', count: posts.length },
+      { label: 'Kommentarer', count: comments.length },
+      { label: 'Dokumenter og filer', count: assets.length },
+      { label: 'Stemmer', count: votes.length },
+      { label: 'Verv som kullrepresentant', count: reps.filter((r) => r.personId === from).length },
+      { label: 'Styreverv', count: board.filter((r) => r.personId === from).length },
+      { label: 'Arrangementsdeltakelser', count: events.filter((r) => r.personId === from).length },
+    ],
+    contact: (['contactEmail', 'phone'] as const).map((field) => {
+      const visible = field === 'phone' ? 'phoneVisible' : 'contactEmailVisible'
+      const result = target.userId ? target[field] : values[field]
+      return {
+        field,
+        present: result != null,
+        visible: target.userId ? target[visible] : values[visible]!,
+        changed:
+          !target.userId && (result !== target[field] || values[visible] !== target[visible]),
+      }
+    }),
+  }
+}
+
+export type PersonMergePreview = Awaited<ReturnType<typeof previewPeopleMerge>>
+
 /**
  * Slår sammen to profiler for samme person. Alt fra `sourceId` flyttes til
  * personen som beholdes, tomme felt fylles fra duplikatet, og duplikatet slettes.
@@ -521,7 +862,14 @@ export async function mergePeople(
   db: Db,
   storage: ObjectStorage,
   viewer: Viewer,
-  input: { sourceId: string; targetId: string },
+  input: {
+    sourceId: string
+    targetId: string
+    /** Fra `previewPeopleMerge`. Er noe endret siden, avvises sammenslåingen. */
+    previewToken?: string
+    /** Felt der duplikatets verdi skal brukes i stedet for den beholdtes. */
+    useSource?: MergeChoiceField[]
+  },
 ): Promise<{ personId: string }> {
   assertCan(viewer, 'profiles.edit')
   if (input.sourceId === input.targetId) throw new DomainError('Velg en annen person.')
@@ -543,6 +891,14 @@ export async function mergePeople(
       )
     }
     if (source.userId) [source, target] = [target, source]
+    if (input.previewToken) {
+      const current = await previewPeopleMerge(tx, viewer, input)
+      if (current.token !== input.previewToken) {
+        throw new DomainError(
+          'Profilene er endret siden forhåndsvisningen. Last inn forhåndsvisningen på nytt før du slår sammen.',
+        )
+      }
+    }
     const from = source.id
     const into = target.id
 
@@ -551,7 +907,7 @@ export async function mergePeople(
       .select()
       .from(experience)
       .where(inArray(experience.personId, [from, into]))
-      .orderBy(asc(experience.position))
+      .orderBy(asc(experience.position), asc(experience.id))
     const key = (e: (typeof jobs)[number]) =>
       JSON.stringify([e.companyId, e.title, e.startYear, e.endYear, e.founder])
     const kept = new Set(jobs.filter((e) => e.personId === into).map(key))
@@ -734,43 +1090,23 @@ export async function mergePeople(
       await tx.update(membership).set({ status: 'active' }).where(eq(membership.personId, into))
     }
 
-    // Tomme felt fylles fra duplikatet, og kildene for dem følger med.
+    // Tomme felt fylles fra duplikatet, og felt admin valgte duplikatets verdi for,
+    // får den. Kildene følger verdiene: for et valgt felt fjernes kildene til den
+    // gamle verdien, og duplikatets flyttes hit.
+    const chosen = mergeChoiceFields.filter(
+      (field) => input.useSource?.includes(field) && conflicting(source, target, field),
+    )
+    const values = mergedPersonValues(source, target, new Set(chosen))
     const filled: ProfileSourceField[] = []
-    const fill = <K extends 'city' | 'studyBackground' | 'bio' | 'linkedinUrl'>(field: K) => {
-      if (target[field] === null && source[field] !== null) filled.push(field)
-      return target[field] ?? source[field]
+    for (const field of mergeChoiceFields) {
+      const sourceField = sourceFieldOf[field]
+      if (!sourceField) continue
+      const fromDuplicate =
+        chosen.includes(field) || (!hasValue(target[field]) && hasValue(source[field]))
+      if (fromDuplicate) filled.push(sourceField)
     }
-    const values = {
-      city: fill('city'),
-      studyBackground: fill('studyBackground'),
-      bio: fill('bio'),
-      linkedinUrl: fill('linkedinUrl'),
-      esCompanyId: target.esCompanyId ?? source.esCompanyId,
-      expertise: target.expertise.length ? target.expertise : source.expertise,
-      industries: target.industries.length ? target.industries : source.industries,
-      photoKey: target.photoKey ?? source.photoKey,
-      // Kontaktinfo bestemmer personen selv over når profilen er tatt i bruk.
-      // Ellers fylles tomme felt fra duplikatet, og er feltet skjult på en av
-      // profilene, blir det skjult på den som beholdes.
-      ...(target.userId
-        ? {}
-        : {
-            contactEmail: target.contactEmail ?? source.contactEmail,
-            contactEmailVisible: !(
-              hiddenContact(target.contactEmail, target.contactEmailVisible) ||
-              hiddenContact(source.contactEmail, source.contactEmailVisible)
-            ),
-            phone: target.phone ?? source.phone,
-            phoneVisible: !(
-              hiddenContact(target.phone, target.phoneVisible) ||
-              hiddenContact(source.phone, source.phoneVisible)
-            ),
-          }),
-    }
-    if (!target.esCompanyId && source.esCompanyId) filled.push('esCompany')
-    if (!target.expertise.length && source.expertise.length) filled.push('expertise')
-    if (!target.industries.length && source.industries.length) filled.push('industries')
-    if (!target.photoKey && source.photoKey) filled.push('photo')
+    const replaced = chosen.flatMap((field) => sourceFieldOf[field] ?? [])
+    if (replaced.length) await deleteFieldSourcesFor(tx, 'person', into, replaced)
     if (movedJobs) filled.push('experience')
     await moveFieldSources(tx, 'person', from, into, filled)
 
@@ -796,12 +1132,14 @@ export async function mergePeople(
         emails: emails.length,
         quotes: quotes.length,
         fields: filled,
+        chosenFromDuplicate: chosen,
+        ...(values.fullName !== target.fullName ? { previousName: target.fullName } : {}),
       },
     })
-    return {
-      personId: into,
-      unusedPhoto: target.photoKey && source.photoKey ? source.photoKey : null,
-    }
+    // Bildet som ikke ble brukt, slettes fra lagringen etterpå.
+    const keptPhoto = values.photoKey
+    const unused = [source.photoKey, target.photoKey].find((key) => key && key !== keptPhoto)
+    return { personId: into, unusedPhoto: unused ?? null }
   })
   if (unusedPhoto) await deletePhotoFiles(storage, unusedPhoto)
   return { personId }

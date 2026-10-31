@@ -5,6 +5,8 @@ import {
   getPersonAdmin,
   listPeopleForAdmin,
   mergePeople,
+  mergeChoiceFields,
+  previewPeopleMerge,
   removePersonEmail,
   searchAllPeople,
   setPersonCohorts,
@@ -65,6 +67,17 @@ export const findAnyPerson = createServerFn({ method: 'GET' })
   .validator(z.object({ q: z.string().max(100) }))
   .handler(({ data }) => run((viewer) => searchAllPeople(db, viewer, data.q)))
 
-export const mergePerson = createServerFn({ method: 'POST' })
+export const previewPersonMerge = createServerFn({ method: 'GET' })
   .validator(z.object({ sourceId: z.uuid(), targetId: z.uuid() }))
+  .handler(({ data }) => run((viewer) => previewPeopleMerge(db, viewer, data)))
+
+export const mergePerson = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      sourceId: z.uuid(),
+      targetId: z.uuid(),
+      previewToken: z.string().length(64),
+      useSource: z.array(z.enum(mergeChoiceFields)).max(mergeChoiceFields.length).default([]),
+    }),
+  )
   .handler(({ data }) => run((viewer) => mergePeople(db, storage, viewer, data)))

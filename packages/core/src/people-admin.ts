@@ -514,6 +514,18 @@ const personColumns = {
   phoneVisible: person.phoneVisible,
 }
 
+/**
+ * Kjører spørringene etter hverandre. Forhåndsvisningen kjører også inne i
+ * sammenslåingens transaksjon, og én tilkobling kan bare ha én spørring om gangen.
+ */
+async function inOrder<T extends readonly (() => PromiseLike<unknown>)[]>(
+  queries: T,
+): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
+  const results: unknown[] = []
+  for (const query of queries) results.push(await query())
+  return results as { -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }
+}
+
 /** Et kontaktfelt som har en verdi, men er skjult for medlemmer. */
 const hiddenContact = (value: string | null, visible: boolean) => value !== null && !visible
 
@@ -644,85 +656,101 @@ export async function previewPeopleMerge(
     board,
     events,
     votes,
-  ] = await Promise.all([
-    db
-      .select({
-        personId: personCohort.personId,
-        year: cohort.graduationYear,
-        relation: personCohort.relation,
-      })
-      .from(personCohort)
-      .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
-      .where(inArray(personCohort.personId, ids))
-      .orderBy(asc(cohort.graduationYear), asc(personCohort.personId)),
-    db
-      .select({
-        id: experience.id,
-        personId: experience.personId,
-        companyId: experience.companyId,
-        company: schema.company.name,
-        title: experience.title,
-        startYear: experience.startYear,
-        endYear: experience.endYear,
-        founder: experience.founder,
-        position: experience.position,
-      })
-      .from(experience)
-      .innerJoin(schema.company, eq(schema.company.id, experience.companyId))
-      .where(inArray(experience.personId, ids))
-      .orderBy(asc(experience.position), asc(experience.id)),
-    db
-      .select()
-      .from(personEmail)
-      .where(inArray(personEmail.personId, ids))
-      .orderBy(asc(personEmail.email)),
-    db
-      .select()
-      .from(membership)
-      .where(inArray(membership.personId, ids))
-      .orderBy(asc(membership.personId)),
-    db.select({ id: quote.id }).from(quote).where(eq(quote.personId, from)).orderBy(asc(quote.id)),
-    db
-      .select({ id: post.id })
-      .from(post)
-      .where(eq(post.authorPersonId, from))
-      .orderBy(asc(post.id)),
-    db
-      .select({ id: comment.id })
-      .from(comment)
-      .where(eq(comment.authorPersonId, from))
-      .orderBy(asc(comment.id)),
-    db
-      .select({ id: asset.id })
-      .from(asset)
-      .where(eq(asset.ownerPersonId, from))
-      .orderBy(asc(asset.id)),
-    db
-      .select()
-      .from(cohortRepresentative)
-      .where(inArray(cohortRepresentative.personId, ids))
-      .orderBy(asc(cohortRepresentative.id)),
-    db
-      .select()
-      .from(boardMember)
-      .where(inArray(boardMember.personId, ids))
-      .orderBy(asc(boardMember.id)),
-    db
-      .select({
-        personId: eventParticipation.personId,
-        eventId: eventParticipation.eventId,
-        role: eventParticipation.role,
-        note: eventParticipation.note,
-      })
-      .from(eventParticipation)
-      .where(inArray(eventParticipation.personId, ids))
-      .orderBy(asc(eventParticipation.eventId), asc(eventParticipation.personId)),
-    db
-      .select({ postId: postVote.postId })
-      .from(postVote)
-      .where(eq(postVote.personId, from))
-      .orderBy(asc(postVote.postId)),
-  ])
+  ] = await inOrder([
+    () =>
+      db
+        .select({
+          personId: personCohort.personId,
+          year: cohort.graduationYear,
+          relation: personCohort.relation,
+        })
+        .from(personCohort)
+        .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+        .where(inArray(personCohort.personId, ids))
+        .orderBy(asc(cohort.graduationYear), asc(personCohort.personId)),
+    () =>
+      db
+        .select({
+          id: experience.id,
+          personId: experience.personId,
+          companyId: experience.companyId,
+          company: schema.company.name,
+          title: experience.title,
+          startYear: experience.startYear,
+          endYear: experience.endYear,
+          founder: experience.founder,
+          position: experience.position,
+        })
+        .from(experience)
+        .innerJoin(schema.company, eq(schema.company.id, experience.companyId))
+        .where(inArray(experience.personId, ids))
+        .orderBy(asc(experience.position), asc(experience.id)),
+    () =>
+      db
+        .select()
+        .from(personEmail)
+        .where(inArray(personEmail.personId, ids))
+        .orderBy(asc(personEmail.email)),
+    () =>
+      db
+        .select()
+        .from(membership)
+        .where(inArray(membership.personId, ids))
+        .orderBy(asc(membership.personId)),
+    () =>
+      db
+        .select({ id: quote.id })
+        .from(quote)
+        .where(eq(quote.personId, from))
+        .orderBy(asc(quote.id)),
+    () =>
+      db
+        .select({ id: post.id })
+        .from(post)
+        .where(eq(post.authorPersonId, from))
+        .orderBy(asc(post.id)),
+    () =>
+      db
+        .select({ id: comment.id })
+        .from(comment)
+        .where(eq(comment.authorPersonId, from))
+        .orderBy(asc(comment.id)),
+    () =>
+      db
+        .select({ id: asset.id })
+        .from(asset)
+        .where(eq(asset.ownerPersonId, from))
+        .orderBy(asc(asset.id)),
+    () =>
+      db
+        .select()
+        .from(cohortRepresentative)
+        .where(inArray(cohortRepresentative.personId, ids))
+        .orderBy(asc(cohortRepresentative.id)),
+    () =>
+      db
+        .select()
+        .from(boardMember)
+        .where(inArray(boardMember.personId, ids))
+        .orderBy(asc(boardMember.id)),
+    () =>
+      db
+        .select({
+          personId: eventParticipation.personId,
+          eventId: eventParticipation.eventId,
+          role: eventParticipation.role,
+          note: eventParticipation.note,
+        })
+        .from(eventParticipation)
+        .where(inArray(eventParticipation.personId, ids))
+        .orderBy(asc(eventParticipation.eventId), asc(eventParticipation.personId)),
+    () =>
+      db
+        .select({ postId: postVote.postId })
+        .from(postVote)
+        .where(eq(postVote.personId, from))
+        .orderBy(asc(postVote.postId)),
+  ] as const)
   const companies = await db
     .select({ id: schema.company.id, name: schema.company.name })
     .from(schema.company)
@@ -793,11 +821,18 @@ export async function previewPeopleMerge(
     claimed: !!p.userId,
     photo: photoUrls(p.photoKey),
   })
+  // Private kontaktverdier går ikke inn i tokenet, bare om de finnes og er synlige,
+  // så tokenet ikke kan brukes til å gjette et skjult nummer.
+  const withoutContact = ({ contactEmail, phone, ...row }: MergePersonRow) => ({
+    ...row,
+    contactEmail: contactEmail !== null,
+    phone: phone !== null,
+  })
   const token = createHash('sha256')
     .update(
       JSON.stringify({
-        source,
-        target,
+        source: withoutContact(source),
+        target: withoutContact(target),
         cohorts,
         jobs,
         emails,
@@ -892,6 +927,12 @@ export async function mergePeople(
     }
     if (source.userId) [source, target] = [target, source]
     if (input.previewToken) {
+      // Medlemskapet låses også, så statusen ikke endres mellom sjekken og skrivingen.
+      await tx
+        .select({ personId: membership.personId })
+        .from(membership)
+        .where(inArray(membership.personId, [source.id, target.id]))
+        .for('update')
       const current = await previewPeopleMerge(tx, viewer, input)
       if (current.token !== input.previewToken) {
         throw new DomainError(
@@ -1101,8 +1142,11 @@ export async function mergePeople(
     for (const field of mergeChoiceFields) {
       const sourceField = sourceFieldOf[field]
       if (!sourceField) continue
+      // Har begge samme verdi, følger duplikatets kilder også med (de beholdtes går foran).
       const fromDuplicate =
-        chosen.includes(field) || (!hasValue(target[field]) && hasValue(source[field]))
+        chosen.includes(field) ||
+        (!hasValue(target[field]) && hasValue(source[field])) ||
+        (hasValue(source[field]) && JSON.stringify(source[field]) === JSON.stringify(target[field]))
       if (fromDuplicate) filled.push(sourceField)
     }
     const replaced = chosen.flatMap((field) => sourceFieldOf[field] ?? [])
@@ -1113,9 +1157,11 @@ export async function mergePeople(
     // Duplikatet slettes før målet får bildet, siden nøkkelen er unik.
     await tx.delete(person).where(eq(person.id, from))
     await tx.update(person).set(values).where(eq(person.id, into))
-    if (target.esCompanyId && source.esCompanyId && source.esCompanyId !== target.esCompanyId) {
-      await deleteOrphanCompanies(tx, [source.esCompanyId])
-    }
+    // ES-selskapet som ikke ble beholdt, ryddes bort hvis ingen andre er knyttet til det.
+    const droppedCompanies = [source.esCompanyId, target.esCompanyId].filter(
+      (id): id is string => id !== null && id !== values.esCompanyId,
+    )
+    if (droppedCompanies.length) await deleteOrphanCompanies(tx, droppedCompanies)
 
     await tx.insert(auditEvent).values({
       actorPersonId: viewer.personId,

@@ -776,13 +776,21 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
         emails: [],
         status: 'active',
       })
+      const oldCompany = await company('Bølgepost', { editedAt: null })
+      const newCompany = await company('Fjordtek', { editedAt: null })
       await db
         .update(schema.person)
-        .set({ city: 'Bergen', bio: 'Kort' })
+        .set({ city: 'Bergen', bio: 'Kort', esCompanyId: oldCompany, phone: '+47 911 11 111' })
         .where(eq(schema.person.id, keep.personId))
       await db
         .update(schema.person)
-        .set({ city: 'Trondheim', bio: 'Lang og god bio fra kullisten' })
+        .set({
+          city: 'Trondheim',
+          bio: 'Lang og god bio fra kullisten',
+          esCompanyId: newCompany,
+          phone: '+47 922 22 222',
+          phoneVisible: false,
+        })
         .where(eq(schema.person.id, drop.personId))
       const source = (entityId: string, field: string, sourceLabel: string) => ({
         entityType: 'person' as const,
@@ -806,12 +814,19 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
         sourceValue: 'Lang og god bio fra kullisten',
       })
       expect(preview.fields.find((f) => f.field === 'fullName')).toMatchObject({ conflict: true })
+      // Tokenet bygger ikke på private kontaktverdier: et nytt nummer gir samme token.
+      expect(JSON.stringify(preview)).not.toContain('922 22')
+      await db
+        .update(schema.person)
+        .set({ phone: '+47 933 33 333' })
+        .where(eq(schema.person.id, drop.personId))
+      expect((await previewPeopleMerge(db, admin, input)).token).toBe(preview.token)
 
       // Felt uten ulike verdier kan ikke velges; valget ignoreres.
       await mergePeople(db, storage, admin, {
         ...input,
         previewToken: preview.token,
-        useSource: ['bio', 'fullName', 'linkedinUrl'],
+        useSource: ['bio', 'fullName', 'linkedinUrl', 'esCompanyId'],
       })
       const merged = await getProfile(db, admin, keep.personId)
       expect(merged).toMatchObject({
@@ -820,6 +835,10 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
         city: 'Bergen',
         linkedinUrl: null,
       })
+      // ES-selskapet som ikke ble valgt, har ingen igjen og ryddes bort.
+      const left = await db.select({ id: schema.company.id }).from(schema.company)
+      expect(left.map((c) => c.id)).toContain(newCompany)
+      expect(left.map((c) => c.id)).not.toContain(oldCompany)
       const sources = await db
         .select({ field: schema.fieldSource.field, label: schema.fieldSource.sourceLabel })
         .from(schema.fieldSource)
@@ -828,7 +847,7 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       expect(sources).toEqual([{ field: 'bio', label: 'kullisten' }])
       const [event] = await audit('person.merge')
       expect(event!.details).toMatchObject({
-        chosenFromDuplicate: ['fullName', 'bio'],
+        chosenFromDuplicate: ['fullName', 'bio', 'esCompanyId'],
         previousName: 'Jonas Holm',
       })
     })

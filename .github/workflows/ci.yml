@@ -150,8 +150,19 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          # Ett enkelt bilde per commit, uten egne attestasjoner, så hver versjon i registeret er ett bilde
+          # og oppryddingen under ikke kan slette en del av et bilde som er i bruk.
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=app
           cache-to: type=gha,mode=max,scope=app
+      # Registeret er gratis i dag, men gamle bilder hoper seg opp. De 20 nyeste holder til tilbakerulling.
+      - name: Behold de 20 nyeste bildene
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
+        with:
+          package-name: esaf-app
+          package-type: container
+          min-versions-to-keep: 20
 
   # Ber Coolify hente og starte det nye bildet, og venter til appen svarer med den nye versjonen.
   # Coolify bytter først når den nye containeren er frisk; ellers kjører den forrige videre, og jobben

@@ -100,3 +100,107 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+  # Bygger appens Docker-bilde på GitHubs maskiner når alt over er grønt på main, og legger det i
+  # GitHubs private register (ghcr.io/esaf-no/esaf-app, tagget `main` og `sha-<commit>`). Serveren
+  # bygger aldri selv: det var bygging på den lille serveren som tok ned appen. Pushet gjøres med
+  # jobbens egen kortlevde GITHUB_TOKEN, og bildet har ingen hemmeligheter. Se README.
+  build-app:
+    name: Bygg appen
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    # Én utgivelse om gangen, bygg og deploy i rekkefølge. En nyere commit som venter, erstatter en eldre.
+    concurrency:
+      group: app-release
+      cancel-in-progress: false
+    env:
+      IMAGE: ghcr.io/esaf-no/esaf-app
+      # Serverens arkitektur. Settes med repovariabelen APP_IMAGE_PLATFORM (f.eks. linux/arm64).
+      PLATFORM: ${{ vars.APP_IMAGE_PLATFORM || 'linux/amd64' }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: env.PLATFORM != 'linux/amd64'
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bygg og last opp bildet
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/app/Dockerfile
+          platforms: ${{ env.PLATFORM }}
+          push: true
+          build-args: APP_VERSION=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:main
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          # Kobler pakken til repoet, så den arver at repoet er privat og hvem som har tilgang.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # Ett enkelt bilde per commit, uten egne attestasjoner, så hver versjon i registeret er ett bilde
+          # og oppryddingen under ikke kan slette en del av et bilde som er i bruk.
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+      # Registeret er gratis i dag, men gamle bilder hoper seg opp. De 20 nyeste holder til tilbakerulling.
+      - name: Behold de 20 nyeste bildene
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
+        with:
+          package-name: esaf-app
+          package-type: container
+          min-versions-to-keep: 20
+
+  # Ber Coolify hente og starte det nye bildet, og venter til appen svarer med den nye versjonen.
+  # Coolify bytter først når den nye containeren er frisk; ellers kjører den forrige videre, og jobben
+  # feiler (GitHub sender e-post). Hoppes over til repovariabelen COOLIFY_APP_UUID er satt. Nøkkelen
+  # kan bare deploye, og ligger som hemmelighet i miljøet `production`, som bare main kan bruke.
+  deploy-app:
+    name: Deploy appen
+    needs: build-app
+    if: vars.COOLIFY_APP_UUID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: app-release
+      cancel-in-progress: false
+
+    steps:
+      - name: Be Coolify om å deploye
+        env:
+          COOLIFY_DEPLOY_TOKEN: ${{ secrets.COOLIFY_DEPLOY_TOKEN }}
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_APP_UUID: ${{ vars.COOLIFY_APP_UUID }}
+        run: |
+          curl --fail-with-body --silent --show-error --retry 3 --max-time 30 \
+            --header "Authorization: Bearer $COOLIFY_DEPLOY_TOKEN" \
+            --get --data-urlencode "uuid=$COOLIFY_APP_UUID" \
+            "$COOLIFY_URL/api/v1/deploy"
+      - name: Vent til den nye versjonen svarer
+        env:
+          APP_URL: ${{ vars.APP_URL || 'https://app.esaf.no' }}
+        run: |
+          for _ in $(seq 1 90); do
+            version=$(curl --silent --max-time 10 "$APP_URL/api/health" | jq -r '.version // empty' 2>/dev/null || true)
+            if [ "$version" = "$GITHUB_SHA" ]; then
+              echo "Appen svarer med $GITHUB_SHA."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Appen svarte ikke med $GITHUB_SHA innen 15 minutter. Den forrige versjonen kjører trolig videre; se deployloggen i Coolify."
+          exit 1

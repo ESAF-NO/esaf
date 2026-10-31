@@ -192,6 +192,8 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   /** Den innloggede er gründer, i ES-teamet eller jobber der nå. */
   connected: boolean
   canEdit: boolean
+  /** Admin kan slå selskapet sammen med et duplikat. */
+  canMerge: boolean
   /** Hvordan den innloggede selv er knyttet til selskapet, også som tidligere ansatt. */
   viewerRoles: { founder: boolean; employee: boolean; es: boolean }
   /**
@@ -536,6 +538,7 @@ export async function getCompany(
     sources,
     connected,
     canEdit,
+    canMerge: can(viewer, 'profiles.edit'),
     viewerRoles,
     suggestions,
     linkRequests,

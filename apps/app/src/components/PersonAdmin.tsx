@@ -38,7 +38,9 @@ export function PersonAdmin({ person }: { person: PersonAdminDetails }) {
       <h2 className="text-sm font-semibold text-stone-500">Bare for admins</h2>
       <Cohorts person={person} />
       <Emails person={person} />
-      <Merge person={person} />
+      <div id="sla-sammen" className="scroll-mt-20">
+        <Merge person={person} />
+      </div>
     </div>
   )
 }

@@ -1,6 +1,9 @@
 # Produksjonsbilde for appen. Byggekonteksten er roten av repoet:
 #   docker build -f apps/app/Dockerfile .
-# Coolify bygger dette på serveren selv, så sharp får binærfiler for riktig arkitektur.
+# GitHub Actions bygger det for serverens arkitektur (jobben `build-app` i ci.yml) og
+# legger det i det private registeret ghcr.io. Serveren bygger aldri selv; Coolify
+# henter bare bildet. Ingen hemmeligheter trengs eller havner i bildet: alt fra
+# miljøet leses når containeren starter.
 
 FROM node:24-slim AS build
 WORKDIR /repo
@@ -15,9 +18,7 @@ COPY . .
 # Bare appen og pakkene den bruker, ikke nettsiden (Astro, Wrangler).
 RUN pnpm install --offline --frozen-lockfile --filter "@esaf/app..." --filter "@esaf/core..."
 RUN pnpm --filter @esaf/app build
-# Embedding-modellen til personsøket legges i bildet, så serveren aldri laster ned noe.
-# Nedlastingen (560 MB) caches på byggeserveren mellom deployer (BuildKit), så
-# den bare skjer første gang eller når modellen byttes.
+# Embedding-modellene til personsøket legges i bildet, så serveren aldri laster ned noe.
 RUN --mount=type=cache,id=esaf-search-models,target=/cache/models \
   SEARCH_MODEL_DIR=/cache/models pnpm search:download-model \
   && mkdir -p /repo/.data \
@@ -37,6 +38,9 @@ COPY --from=build --chown=node:node /repo /repo
 RUN corepack enable && su node -c "pnpm --version"
 USER node
 EXPOSE 3000
+# Committen bildet er bygget fra. Vises i /api/health, så deployen kan se at den nye versjonen svarer.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 # Migreringer kjøres før serveren starter. Feiler de, starter ikke den nye

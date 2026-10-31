@@ -277,6 +277,14 @@ export const company = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    /**
+     * Navn selskapet hadde før, nyeste først («Tidligere Bølgepost»). Fylles ved
+     * navnebytte, når et duplikat slås sammen som et tidligere navn, og for hånd.
+     */
+    formerNames: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /** Én linje om hva selskapet gjør. */
     tagline: text(),
     /** «Om selskapet». */

@@ -164,7 +164,7 @@ jobs:
           package-type: container
           min-versions-to-keep: 20
 
-  # Ber Coolify hente og starte det nye bildet, og venter til appen svarer med den nye versjonen.
+  # Ber Coolify hente og starte det nye bildet (POST /api/v1/deploy), og venter til appen svarer med den nye versjonen.
   # Coolify bytter først når den nye containeren er frisk; ellers kjører den forrige videre, og jobben
   # feiler (GitHub sender e-post). Hoppes over til repovariabelen COOLIFY_APP_UUID er satt. Nøkkelen
   # kan bare deploye, og ligger som hemmelighet i miljøet `production`, som bare main kan bruke.
@@ -187,9 +187,8 @@ jobs:
           COOLIFY_APP_UUID: ${{ vars.COOLIFY_APP_UUID }}
         run: |
           curl --fail-with-body --silent --show-error --retry 3 --max-time 30 \
-            --header "Authorization: Bearer $COOLIFY_DEPLOY_TOKEN" \
-            --get --data-urlencode "uuid=$COOLIFY_APP_UUID" \
-            "$COOLIFY_URL/api/v1/deploy"
+            --request POST --header "Authorization: Bearer $COOLIFY_DEPLOY_TOKEN" \
+            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_APP_UUID"
       - name: Vent til den nye versjonen svarer
         env:
           APP_URL: ${{ vars.APP_URL || 'https://app.esaf.no' }}

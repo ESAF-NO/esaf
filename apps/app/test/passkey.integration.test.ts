@@ -6,6 +6,7 @@ import {
   loadViewer,
 } from '@esaf/core'
 import { createDb, loadRootEnv, runMigrations, schema, sql, type Db } from '@esaf/db'
+import { getIP } from 'better-auth/api'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createAuth } from '../src/server/auth-config.server.ts'
 import {
@@ -133,6 +134,33 @@ describe.skipIf(!url)('passkeys og sterk innlogging', () => {
     expect(result.status).toBe(401)
     expect(result.body.code).toBe('USER_VERIFICATION_REQUIRED')
     expect(await b.session()).toBeNull()
+  })
+
+  it('nettleseren blir bedt om å bekrefte personen, ikke bare oppfordret', async () => {
+    // Med «preferred» hopper Google Passordlagring over PIN, og svaret avvises.
+    const anonymous = await browser().call('/passkey/generate-authenticate-options')
+    expect(anonymous.body.userVerification).toBe('required')
+
+    const id = await account('medlem@example.test')
+    const key = await addPasskey(id)
+    const b = browser()
+    await b.signInWithPassword('medlem@example.test')
+    const signedIn = await b.call('/passkey/generate-authenticate-options')
+    expect(signedIn.body.userVerification).toBe('required')
+    expect(signedIn.body.allowCredentials).toHaveLength(1)
+    // Utfordringen virker fortsatt: cookien fra pluginen er med.
+    expect((await b.signInWithPasskey(key)).status).toBe(200)
+  })
+
+  it('grensene for innlogging gjelder hver klient, bak Cloudflare og Traefik', () => {
+    const ip = (forwardedFor: string) =>
+      getIP(new Request(origin, { headers: { 'x-forwarded-for': forwardedFor } }), auth.options)
+    // Cloudflare legger til klienten, Traefik adressen til cloudflared.
+    expect(ip('203.0.113.7, 172.18.0.5')).toBe('203.0.113.7')
+    // En forfalsket adresse foran hjelper ikke: den bakerste ukjente er klienten.
+    expect(ip('198.51.100.1, 203.0.113.7, 172.18.0.5')).toBe('203.0.113.7')
+    // Direkte til serveren, uten mellomledd.
+    expect(ip('203.0.113.7')).toBe('203.0.113.7')
   })
 
   it('svar laget for en annen opprinnelse avvises', async () => {

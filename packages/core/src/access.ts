@@ -77,6 +77,8 @@ export const permissions = {
   'audit.read': 'admin',
   /** Lage MCP-nøkler og bruke adminverktøyene fra en MCP-klient. */
   'mcp.access': 'admin',
+  /** Lage, publisere og dele ut merker. */
+  'badges.manage': 'admin',
   /** Gi og fjerne roller. */
   'roles.manage': 'owner',
 } as const satisfies Record<string, MemberRole>

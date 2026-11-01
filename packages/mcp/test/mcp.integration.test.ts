@@ -108,7 +108,7 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
   beforeEach(async () => {
     fetched.length = 0
     await db.execute(
-      sql`truncate ${schema.apiToken}, ${schema.oauthClient}, ${schema.fieldSource}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user}, ${schema.company}, ${schema.quote}, ${schema.invitation}, ${schema.event}, ${schema.eventParticipation} cascade`,
+      sql`truncate ${schema.apiToken}, ${schema.oauthClient}, ${schema.fieldSource}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.personEmail}, ${schema.person}, ${schema.cohort}, ${schema.user}, ${schema.company}, ${schema.quote}, ${schema.invitation}, ${schema.event}, ${schema.eventParticipation}, ${schema.badge} cascade`,
     )
     for (const [name, role] of [
       ['Eier', 'owner'],
@@ -673,6 +673,91 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       )
       expect(event.startDate).toBe('2024-01-01')
       expect(event.groups.flatMap((g) => g.people)).toMatchObject([{ role: 'organizer' }])
+      await client.close()
+    })
+
+    it('lager en stige med merker, forhåndsviser, publiserer og deler ut for hånd', async () => {
+      const client = await connect(await tokenFor(admin))
+      const options = await call<{ eventTypes: { id: string; slug: string }[]; icons: string[] }>(
+        client,
+        'badge_options',
+      )
+      const weekend = options.eventTypes.find((t) => t.slug === 'esaf-helgen')!.id
+      expect(options.icons).toContain('tent')
+      const { eventId } = await call<{ eventId: string }>(client, 'create_event', {
+        typeId: weekend,
+        name: 'ESAF-helgen høst 2018',
+        startDate: '2018-09-07',
+      })
+      await call(client, 'add_event_participants', { eventId, personIds: [admin!.personId] })
+
+      const preview = await call<{ ruleText: string; total: number }>(client, 'preview_badge', {
+        rule: { kind: 'event_count', eventTypeId: weekend, count: 1 },
+      })
+      expect(preview).toMatchObject({ ruleText: 'Vært på ESAF-helgen', total: 1 })
+
+      const series = await call<{ slug: string; status: string; sortOrder: number }[]>(
+        client,
+        'create_badge_series',
+        {
+          series: 'ESAF-helgen',
+          icon: 'tent',
+          color: 'brand',
+          rule: { kind: 'event_count', eventTypeId: weekend, count: 1 },
+          tiers: [
+            { threshold: 3, name: 'ESAF-helgen ×3', description: 'Vært på tre ESAF-helger.' },
+            { threshold: 1, name: 'ESAF-helgen', description: 'Vært på ESAF-helgen.' },
+          ],
+        },
+      )
+      expect(series.map((b) => [b.slug, b.status, b.sortOrder])).toEqual([
+        ['esaf-helgen', 'draft', 100],
+        ['esaf-helgen-3', 'draft', 101],
+      ])
+
+      const published = await call<{ holders: { total: number }; holderList: unknown[] }>(
+        client,
+        'set_badge_status',
+        { badge: 'esaf-helgen', status: 'published' },
+      )
+      expect(published.holders.total).toBe(1)
+
+      const manual = await call<{ badgeId: string }>(client, 'create_badge', {
+        name: 'Ildsjel',
+        description: 'For en helt spesiell innsats for ESAF.',
+        icon: 'flame',
+        color: 'amber',
+        rule: { kind: 'manual' },
+        publish: true,
+      })
+      expect(
+        await call(client, 'award_badge', {
+          badge: manual.badgeId,
+          personIds: [owner!.personId],
+          citation: 'For innsatsen med ESAF-helgen 2024',
+        }),
+      ).toEqual({ awarded: 1, updated: 0 })
+      expect(
+        await callError(client, 'award_badge', {
+          badge: 'esaf-helgen',
+          personIds: [owner!.personId],
+        }),
+      ).toMatch(/deles ut etter regelen/)
+
+      const person = await call<{
+        badges: { slug: string; source: string; citation: string | null }[]
+      }>(client, 'get_person', { personId: owner!.personId })
+      expect(person.badges).toMatchObject([
+        { slug: 'ildsjel', source: 'manual', citation: 'For innsatsen med ESAF-helgen 2024' },
+      ])
+      const list = await call<{ slug: string; holders: { total: number } }[]>(
+        client,
+        'list_badges',
+        {
+          status: 'published',
+        },
+      )
+      expect(list.map((b) => b.slug).sort()).toEqual(['esaf-helgen', 'ildsjel'])
       await client.close()
     })
 

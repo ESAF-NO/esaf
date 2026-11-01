@@ -22,6 +22,7 @@ export default defineConfig({
         './src/server/plugins/validate-env.ts',
         './src/server/plugins/cleanup-assets.ts',
         './src/server/plugins/cleanup-oauth.ts',
+        './src/server/plugins/sync-badges.ts',
         './src/server/plugins/search-index.ts',
         './src/server/plugins/shutdown.ts',
       ],

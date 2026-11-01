@@ -1,5 +1,6 @@
 import { Link, useLocation, useRouteContext, useRouter } from '@tanstack/react-router'
 import {
+  Award,
   Building2,
   CalendarDays,
   GraduationCap,
@@ -149,6 +150,13 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             icon={Building2}
             label="Selskaper"
             active={path.startsWith('/selskaper')}
+            onNavigate={onNavigate}
+          />
+          <NavItem
+            to="/merker"
+            icon={Award}
+            label="Merker"
+            active={path.startsWith('/merker') || path === '/var-du-der'}
             onNavigate={onNavigate}
           />
           {viewer.adminArea && (

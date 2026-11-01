@@ -141,6 +141,26 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
     ],
   },
   {
+    id: 'badges',
+    title: 'Merker',
+    description:
+      'Merker på profilene: lage og forhåndsvise regler, hele stiger (×1, ×3, ×5), publisere, og dele ut merker for hånd med begrunnelse.',
+    tools: [
+      'badge_options',
+      'list_badges',
+      'get_badge',
+      'preview_badge',
+      'create_badge',
+      'create_badge_series',
+      'update_badge',
+      'set_badge_status',
+      'delete_badge',
+      'award_badge',
+      'revoke_badge',
+      'sync_badges',
+    ],
+  },
+  {
     id: 'discovery',
     title: 'Søk og ES-universet',
     description:
@@ -185,6 +205,13 @@ export const MCP_RECIPES: readonly McpRecipe[] = [
     description:
       'Skriver søkeord for dem som mangler eller har endret profilen siden sist, så de blir funnet på hva de kan.',
     example: 'Skriv søkeord for alle som trenger det.',
+  },
+  {
+    name: 'design_badges',
+    title: 'Lag merker',
+    description:
+      'Foreslår et sett med merker ut fra dataene, viser hvor mange som får hvert, og lager dem når du har godkjent.',
+    example: 'Lag merker for ESAF-helgen og for gründere.',
   },
   {
     name: 'work_review_queue',

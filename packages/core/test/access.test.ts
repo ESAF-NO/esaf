@@ -96,6 +96,7 @@ describe('rettigheter', () => {
       'profiles.edit',
       'audit.read',
       'mcp.access',
+      'badges.manage',
     ],
     owner: Object.keys(permissions) as Permission[],
   }

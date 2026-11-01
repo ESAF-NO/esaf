@@ -1,9 +1,10 @@
-import type { EventDetails, EventParticipant, EventRole } from '@esaf/core'
+import type { BadgeChip, EventDetails, EventParticipant, EventRole } from '@esaf/core'
 import { createFileRoute, Link, redirect, useNavigate, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, Check, CircleCheck, MapPin, Pencil, Tent, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { z } from 'zod'
 import { DocumentsCard, EventAlbum } from '#/components/Attachments.tsx'
+import { NewBadgesDialog } from '#/components/Badges.tsx'
 import { RoleBadge } from '#/components/EventCharts.tsx'
 import { EventDialog } from '#/components/EventForm.tsx'
 import { EventParticipantsAdmin } from '#/components/EventParticipantsAdmin.tsx'
@@ -219,6 +220,7 @@ function SelfToggle({ event: w }: { event: EventDetails }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [earned, setEarned] = useState<BadgeChip[]>([])
 
   async function toggle(participated: boolean) {
     if (
@@ -231,8 +233,9 @@ function SelfToggle({ event: w }: { event: EventDetails }) {
     setBusy(true)
     setError(null)
     try {
-      await setParticipated({ data: { eventId: w.id, participated } })
+      const { badges } = await setParticipated({ data: { eventId: w.id, participated } })
       await router.invalidate()
+      setEarned(badges)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
     } finally {
@@ -292,6 +295,7 @@ function SelfToggle({ event: w }: { event: EventDetails }) {
           <ErrorText>{error}</ErrorText>
         </div>
       )}
+      {!!earned.length && <NewBadgesDialog badges={earned} onClose={() => setEarned([])} />}
     </Card>
   )
 }

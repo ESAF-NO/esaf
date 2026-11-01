@@ -880,6 +880,81 @@ export const eventParticipation = pgTable(
   (t) => [primaryKey({ columns: [t.eventId, t.personId] }), index().on(t.personId)],
 )
 
+/**
+ * Et merke er utkast mens admins lager det, publisert når det deles ut og vises,
+ * og arkivert når det ikke lenger brukes. Arkiverte merker vises ikke, men
+ * hvem som hadde dem, blir stående.
+ */
+export const badgeStatus = pgEnum('badge_status', ['draft', 'published', 'archived'])
+
+/**
+ * Merker (achievements) admins lager: «ESAF-helgen ×5», «Grunnla selskap på ES»,
+ * «Mentor». Hvem som får et merke, avgjøres av regelen, som leser dataene som
+ * allerede finnes (arrangementer, kull, styret, selskaper, profilen), eller en
+ * admin deler det ut for hånd. Regelen valideres og forklares i @esaf/core
+ * (badges.ts); her lagres den som JSON.
+ */
+export const badge = pgTable(
+  'badge',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    /** Adressen (`/merker/<slug>`), fra navnet. Endres ikke, så lenker virker. */
+    slug: text().notNull().unique(),
+    name: text().notNull(),
+    /** Hva som skal til, slik medlemmene ser det: «Vært på fem ESAF-helger». */
+    description: text().notNull(),
+    /** Et ikon fra listen i @esaf/core (`badgeIcons`). */
+    icon: text().notNull(),
+    /** En farge fra listen i @esaf/core (`badgeColors`). */
+    color: text().notNull(),
+    rule: jsonb().$type<Record<string, unknown>>().notNull(),
+    status: badgeStatus().notNull().default('draft'),
+    /**
+     * Merker i samme serie er trinn på samme stige (×1, ×3, ×5). Profilen viser
+     * bare det høyeste trinnet personen har nådd: det sist i rekkefølgen.
+     */
+    series: text(),
+    /** Lavest først. */
+    sortOrder: integer().notNull().default(100),
+    publishedAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [check('badge_slug', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)],
+)
+
+/** Fra regelen, regnet ut av serveren, eller delt ut av en admin. */
+export const badgeAwardSource = pgEnum('badge_award_source', ['rule', 'manual'])
+
+/**
+ * Hvem som har et merke. Merker med regel holdes oppdatert av serveren
+ * (`syncBadges`): rader legges til og fjernes når dataene endres. Merker som
+ * deles ut for hånd, endres bare av admins.
+ */
+export const badgeAward = pgTable(
+  'badge_award',
+  {
+    badgeId: uuid()
+      .notNull()
+      .references(() => badge.id, { onDelete: 'cascade' }),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    source: badgeAwardSource().notNull(),
+    /**
+     * Når merket ble fortjent, når dataene sier det: datoen for arrangementet
+     * som gjorde at regelen slo til. Null når det ikke er kjent.
+     */
+    achievedOn: date({ mode: 'string' }),
+    /** Hvorfor, for merker delt ut for hånd: «For innsatsen med ESAF-helgen 2024». Vises for medlemmer. */
+    citation: text(),
+    awardedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    /** Personen har skjult merket fra profilen og listene. */
+    hidden: boolean().notNull().default(false),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.badgeId, t.personId] }), index().on(t.personId)],
+)
+
 export const membershipStatus = pgEnum('membership_status', ['pending', 'active', 'inactive'])
 /**
  * Roller fra minst til mest. Hva hver rolle får gjøre, står i `permissions` i
@@ -1312,6 +1387,8 @@ export type ParticipationRole = (typeof participationRole.enumValues)[number]
 export type EventDatePrecision = (typeof eventDatePrecision.enumValues)[number]
 export type ParticipationSource = (typeof participationSource.enumValues)[number]
 export type BoardRole = (typeof boardRole.enumValues)[number]
+export type BadgeStatus = (typeof badgeStatus.enumValues)[number]
+export type BadgeAwardSource = (typeof badgeAwardSource.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Fellesskap: innlegg, kommentarer og stemmer (Bookface-forum)
@@ -1412,6 +1489,8 @@ export const notificationType = pgEnum('notification_type', [
   'company_link_request',
   /** Personen mottakeren la til i et selskap, bekreftet det. */
   'company_link_confirmed',
+  /** Mottakeren fikk et merke. */
+  'badge_awarded',
 ])
 
 export type NotificationPayload = {
@@ -1445,6 +1524,8 @@ export const notification = pgTable(
     commentId: uuid().references(() => comment.id, { onDelete: 'cascade' }),
     /** Selskapet varselet gjelder, for forslag og tilknytninger. Navnet hentes ved visning. */
     companyId: uuid().references(() => company.id, { onDelete: 'cascade' }),
+    /** Merket varselet gjelder. Navnet hentes ved visning. */
+    badgeId: uuid().references(() => badge.id, { onDelete: 'cascade' }),
     /**
      * Hendelsen varselet gjelder, for eksempel `comment:<id>`. Unik per mottaker:
      * én hendelse gir aldri mer enn ett varsel til samme person, heller ikke når

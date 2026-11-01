@@ -17,11 +17,13 @@ import {
   readAllNotifications,
   readNotification,
 } from '#/lib/notifications.functions.ts'
+import { BadgeMedal } from './Badges.tsx'
 import { linkRoleLabels } from './Contributions.tsx'
 import { Avatar, cx } from './ui.tsx'
 
 /** Hvor et varsel leder: til kommentaren, innlegget, selskapet, personen eller kullet. */
 function target(n: NotificationView) {
+  if (n.badge) return linkOptions({ to: '/merker/$slug', params: { slug: n.badge.slug } })
   if (n.company) {
     return linkOptions({
       to: '/selskaper/$slug',
@@ -84,6 +86,14 @@ function Sentence({ n }: { n: NotificationView }) {
           {who} sier at du var {role === 'med' ? 'med' : role} i {company}. Stemmer det?
         </>
       )
+    case 'badge_awarded':
+      return (
+        <>
+          Du fikk merket{' '}
+          <strong className="font-semibold text-stone-900">{n.badge?.name ?? 'et merke'}</strong>
+          {n.actor ? <> av {who}</> : null}
+        </>
+      )
     case 'company_link_confirmed':
       return (
         <>
@@ -139,6 +149,9 @@ function detail(n: NotificationView): string | null {
 }
 
 function Picture({ n, size }: { n: NotificationView; size: 'sm' | 'md' }) {
+  if (n.badge) {
+    return <BadgeMedal badge={n.badge} size="sm" className={size === 'sm' ? 'size-8' : 'size-10'} />
+  }
   if (n.actor) return <Avatar name={n.actor.fullName} size={size} muted={!n.actor.claimed} />
   // Varsler fra ESAF selv, som velkomsten, får logoen.
   return (

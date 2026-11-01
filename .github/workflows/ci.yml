@@ -105,18 +105,20 @@ jobs:
   # GitHubs private register (ghcr.io/esaf-no/esaf-app, tagget `main` og `sha-<commit>`). Serveren
   # bygger aldri selv: det var bygging på den lille serveren som tok ned appen. Pushet gjøres med
   # jobbens egen kortlevde GITHUB_TOKEN, og bildet har ingen hemmeligheter. Se README.
+  # Bygges samtidig med sjekkene, ikke etter, så deployen går fortere. Bildet får bare taggen
+  # `sha-<commit>`; `:main`, som Coolify henter, flyttes først i deploy-app når sjekkene også er grønne.
+  # Et bilde fra en commit som feilet sjekkene, kan derfor aldri startes, heller ikke ved en omstart.
   build-app:
     name: Bygg appen
-    needs: check
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
       contents: read
       packages: write
-    # Én utgivelse om gangen, bygg og deploy i rekkefølge. En nyere commit som venter, erstatter en eldre.
+    # Ett bygg om gangen. En nyere commit som venter, erstatter en eldre.
     concurrency:
-      group: app-release
+      group: app-build
       cancel-in-progress: false
     env:
       IMAGE: ghcr.io/esaf-no/esaf-app
@@ -143,9 +145,7 @@ jobs:
           platforms: ${{ env.PLATFORM }}
           push: true
           build-args: APP_VERSION=${{ github.sha }}
-          tags: |
-            ${{ env.IMAGE }}:main
-            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
           # Kobler pakken til repoet, så den arver at repoet er privat og hvem som har tilgang.
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -170,16 +170,31 @@ jobs:
   # kan bare deploye, og ligger som hemmelighet i miljøet `production`, som bare main kan bruke.
   deploy-app:
     name: Deploy appen
-    needs: build-app
+    needs: [check, build-app]
     if: vars.COOLIFY_APP_UUID != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
+    permissions:
+      contents: read
+      packages: write
+    # Én utgivelse om gangen. En nyere commit som venter, erstatter en eldre.
     concurrency:
       group: app-release
       cancel-in-progress: false
+    env:
+      IMAGE: ghcr.io/esaf-no/esaf-app
 
     steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Sjekkene og bygget er grønne: nå, og først nå, blir bildet `:main`. Ingen nytt bygg, bare taggen.
+      - name: Merk bildet som main
+        run: docker buildx imagetools create --tag "$IMAGE:main" "$IMAGE:sha-$GITHUB_SHA"
       - name: Be Coolify om å deploye
         env:
           COOLIFY_DEPLOY_TOKEN: ${{ secrets.COOLIFY_DEPLOY_TOKEN }}

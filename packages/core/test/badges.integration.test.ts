@@ -1,0 +1,416 @@
+import { randomUUID } from 'node:crypto'
+import { createDb, loadRootEnv, runMigrations, schema, type Db } from '@esaf/db'
+import { and, eq, ne, sql } from 'drizzle-orm'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import {
+  AccessDeniedError,
+  addEventParticipants,
+  addOwnParticipations,
+  awardBadge,
+  createBadge,
+  createEvent,
+  createProfile,
+  decideMembership,
+  deleteBadge,
+  getBadge,
+  getBadgeForAdmin,
+  getProfile,
+  grantRoleAsOperator,
+  listBadges,
+  listBadgesForAdmin,
+  listMissedEvents,
+  listNotifications,
+  loadViewer,
+  mergePeople,
+  previewBadgeRule,
+  removeEventParticipant,
+  revokeBadge,
+  setBadgeStatus,
+  setOwnBadgeHidden,
+  setPersonCohorts,
+  syncBadges,
+  updateBadge,
+  type BadgeInput,
+  type ObjectStorage,
+  type Viewer,
+} from '../src/index.ts'
+
+loadRootEnv()
+const url = process.env.TEST_DATABASE_URL
+if (!url && process.env.CI) throw new Error('TEST_DATABASE_URL må være satt i CI.')
+
+const storage: ObjectStorage = {
+  put: () => Promise.resolve(),
+  get: () => Promise.resolve(null),
+  delete: () => Promise.resolve(),
+}
+
+describe.skipIf(!url)('merker', () => {
+  let db: Db
+  let admin: Viewer
+  let weakAdmin: Viewer
+  let ola: Viewer
+  let kari: Viewer
+  let weekendType: string
+
+  beforeAll(async () => {
+    await runMigrations(url!)
+    db = createDb(url!)
+  })
+  afterAll(() => db?.close())
+
+  async function account(name: string) {
+    const id = randomUUID()
+    await db
+      .insert(schema.user)
+      .values({ id, name, email: `${name.toLowerCase()}@example.test`, emailVerified: true })
+    return id
+  }
+
+  async function member(name: string, year: number) {
+    const v = await loadViewer(db, await account(name))
+    await decideMembership(db, admin, { personId: v!.personId!, decision: 'approve' })
+    await setPersonCohorts(db, admin, v!.personId!, [{ graduationYear: year, relation: 'student' }])
+    return loadViewer(db, v!.userId)
+  }
+
+  async function weekend(startDate: string) {
+    const { id } = await createEvent(db, admin, {
+      typeId: weekendType,
+      name: `ESAF-helgen ${startDate}`,
+      startDate,
+      endDate: null,
+      location: null,
+      description: null,
+    })
+    return id
+  }
+
+  async function attend(eventId: string, ...people: Viewer[]) {
+    await addEventParticipants(db, admin, eventId, {
+      personIds: people.map((p) => p!.personId!),
+      source: 'admin',
+    })
+  }
+
+  const badgeFields = (patch: Partial<BadgeInput> = {}): BadgeInput => ({
+    name: 'ESAF-helgen ×2',
+    description: 'Vært på to ESAF-helger.',
+    icon: 'tent',
+    color: 'brand',
+    rule: { kind: 'event_count', eventTypeId: weekendType, count: 2 },
+    ...patch,
+  })
+
+  beforeEach(async () => {
+    await db.execute(
+      sql`truncate ${schema.badge}, ${schema.event}, ${schema.notification}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
+    )
+    await db.delete(schema.eventType).where(ne(schema.eventType.slug, 'esaf-helgen'))
+    weekendType = (
+      await db
+        .select({ id: schema.eventType.id })
+        .from(schema.eventType)
+        .where(eq(schema.eventType.slug, 'esaf-helgen'))
+    )[0]!.id
+    await account('Admin')
+    await grantRoleAsOperator(db, { email: 'admin@example.test', reason: 'test', role: 'admin' })
+    await db
+      .update(schema.user)
+      .set({ twoFactorEnabled: true })
+      .where(eq(schema.user.email, 'admin@example.test'))
+    admin = await loadViewer(db, (await db.select().from(schema.user))[0]!.id)
+    weakAdmin = { ...admin!, twoFactorEnabled: false, passkeySession: false }
+    ola = await member('Ola', 2018)
+    kari = await member('Kari', 2019)
+  })
+
+  async function denial(promise: Promise<unknown>) {
+    try {
+      await promise
+      return 'allowed'
+    } catch (error) {
+      if (error instanceof AccessDeniedError) return error.reason
+      throw error
+    }
+  }
+
+  const awards = (badgeId: string) =>
+    db
+      .select({ personId: schema.badgeAward.personId, achievedOn: schema.badgeAward.achievedOn })
+      .from(schema.badgeAward)
+      .where(eq(schema.badgeAward.badgeId, badgeId))
+
+  const badgeNotifications = async (v: Viewer) =>
+    (await listNotifications(db, v)).items.filter((n) => n.type === 'badge_awarded')
+
+  it('bare admins med sterk innlogging lager og deler ut merker; medlemmer ser dem', async () => {
+    const { id } = await createBadge(db, admin, badgeFields())
+    const calls: [string, (v: Viewer) => Promise<unknown>][] = [
+      ['createBadge', (v) => createBadge(db, v, badgeFields({ name: 'Annet' }))],
+      ['updateBadge', (v) => updateBadge(db, v, id, { name: 'Nytt' })],
+      ['setBadgeStatus', (v) => setBadgeStatus(db, v, id, 'published')],
+      ['deleteBadge', (v) => deleteBadge(db, v, id)],
+      ['previewBadgeRule', (v) => previewBadgeRule(db, v, { kind: 'manual' })],
+      ['listBadgesForAdmin', (v) => listBadgesForAdmin(db, v)],
+      ['awardBadge', (v) => awardBadge(db, v, id, { personIds: [ola!.personId!] })],
+    ]
+    for (const [name, call] of calls) {
+      expect([name, await denial(call(ola))]).toEqual([name, 'forbidden'])
+      expect([name, await denial(call(weakAdmin))]).toEqual([name, 'strong_auth_required'])
+      expect([name, await denial(call(null))]).toEqual([name, 'unauthenticated'])
+    }
+    expect(await denial(listBadges(db, null))).toBe('unauthenticated')
+    expect(await listBadges(db, ola)).toEqual([])
+  })
+
+  it('utkast forhåndsvises; publisering deler ut merket, varsler og viser det på profilen', async () => {
+    const [w1, w2, w3] = [
+      await weekend('2018-09-07'),
+      await weekend('2019-09-06'),
+      await weekend('2020-09-04'),
+    ]
+    await attend(w1, ola, kari)
+    await attend(w2, ola)
+    await attend(w3, ola)
+    const { id, slug, status } = await createBadge(db, admin, badgeFields())
+    expect(status).toBe('draft')
+    expect(slug).toBe('esaf-helgen-2')
+
+    const preview = await previewBadgeRule(db, admin, {
+      kind: 'event_count',
+      eventTypeId: weekendType,
+      count: 2,
+    })
+    expect(preview).toMatchObject({
+      ruleText: 'Vært på ESAF-helgen minst 2 ganger',
+      total: 1,
+      activeMembers: 1,
+    })
+    expect(preview.sample[0]).toMatchObject({ fullName: 'Ola', achievedOn: '2019-09-06' })
+
+    // Utkastet er ikke delt ut og vises ikke for medlemmer.
+    expect(await awards(id)).toEqual([])
+    expect(await listBadges(db, ola)).toEqual([])
+    await expect(getBadge(db, ola, slug)).rejects.toThrow('Fant ikke merket.')
+
+    await setBadgeStatus(db, admin, id, 'published')
+    expect(await awards(id)).toEqual([{ personId: ola!.personId, achievedOn: '2019-09-06' }])
+    const [n] = await badgeNotifications(ola)
+    expect(n?.badge).toMatchObject({ slug, name: 'ESAF-helgen ×2', icon: 'tent' })
+    expect(await badgeNotifications(kari)).toEqual([])
+
+    const [forKari] = await listBadges(db, kari)
+    expect(forKari).toMatchObject({
+      holders: 1,
+      own: { earned: false, progress: { current: 1, target: 2 } },
+    })
+    const details = await getBadge(db, kari, slug)
+    expect(details.holderList.map((h) => h.fullName)).toEqual(['Ola'])
+    expect((await getProfile(db, kari, ola!.personId!)).badges.map((b) => b.slug)).toEqual([slug])
+
+    // Publisering igjen gir ikke flere varsler.
+    await syncBadges(db)
+    expect(await badgeNotifications(ola)).toHaveLength(1)
+    expect((await db.select().from(schema.auditEvent)).map((e) => e.action)).toEqual(
+      expect.arrayContaining(['badge.create', 'badge.publish']),
+    )
+  })
+
+  it('merket følger dataene: rettes de, mistes merket; ny regel deler ut på nytt', async () => {
+    const [w1, w2] = [await weekend('2018-09-07'), await weekend('2019-09-06')]
+    await attend(w1, ola, kari)
+    await attend(w2, ola, kari)
+    const { id } = await createBadge(db, admin, badgeFields(), { publish: true })
+    expect(await awards(id)).toHaveLength(2)
+
+    await removeEventParticipant(db, admin, w2, kari!.personId!)
+    await syncBadges(db)
+    expect((await awards(id)).map((a) => a.personId)).toEqual([ola!.personId])
+
+    await updateBadge(db, admin, id, {
+      rule: { kind: 'event_count', eventTypeId: weekendType, count: 1 },
+    })
+    expect(await awards(id)).toHaveLength(2)
+    expect(await badgeNotifications(kari)).toHaveLength(1)
+
+    await expect(
+      updateBadge(db, admin, id, {
+        rule: { kind: 'event_count', eventTypeId: randomUUID(), count: 1 },
+      }),
+    ).rejects.toThrow('Fant ikke arrangementstypen.')
+    await expect(updateBadge(db, admin, id, { rule: { kind: 'manual' } })).rejects.toThrow(
+      'kan ikke gjøres om',
+    )
+  })
+
+  it('merker for hånd: begrunnelse, varsel først når de publiseres, og kan tas tilbake', async () => {
+    const { id, slug } = await createBadge(
+      db,
+      admin,
+      badgeFields({ name: 'Ildsjel', icon: 'flame', rule: { kind: 'manual' } }),
+    )
+    await awardBadge(db, admin, id, {
+      personIds: [ola!.personId!],
+      citation: 'For innsatsen med ESAF-helgen 2024',
+    })
+    expect(await badgeNotifications(ola)).toEqual([])
+    await setBadgeStatus(db, admin, id, 'published')
+    expect(await badgeNotifications(ola)).toHaveLength(1)
+    expect((await getBadge(db, kari, slug)).holderList[0]).toMatchObject({
+      fullName: 'Ola',
+      citation: 'For innsatsen med ESAF-helgen 2024',
+    })
+
+    // Regelen tar ikke merker delt ut for hånd.
+    await syncBadges(db)
+    expect(await awards(id)).toHaveLength(1)
+
+    await revokeBadge(db, admin, id, { personIds: [ola!.personId!] })
+    expect(await awards(id)).toEqual([])
+    const log = await db
+      .select({ action: schema.auditEvent.action, subject: schema.auditEvent.subjectPersonId })
+      .from(schema.auditEvent)
+      .where(sql`${schema.auditEvent.action} in ('badge.award', 'badge.revoke')`)
+    expect(log).toEqual([
+      { action: 'badge.award', subject: ola!.personId },
+      { action: 'badge.revoke', subject: ola!.personId },
+    ])
+
+    // Merker med regel kan ikke deles ut for hånd.
+    const { id: auto } = await createBadge(db, admin, badgeFields({ name: 'Auto' }))
+    await expect(awardBadge(db, admin, auto, { personIds: [kari!.personId!] })).rejects.toThrow(
+      'deles ut etter regelen',
+    )
+  })
+
+  it('egne merker kan skjules; i en serie vises bare det høyeste trinnet', async () => {
+    const [w1, w2] = [await weekend('2018-09-07'), await weekend('2019-09-06')]
+    await attend(w1, ola)
+    await attend(w2, ola)
+    const one = await createBadge(
+      db,
+      admin,
+      badgeFields({
+        name: 'ESAF-helgen ×1',
+        series: 'ESAF-helgen',
+        sortOrder: 1,
+        rule: { kind: 'event_count', eventTypeId: weekendType, count: 1 },
+      }),
+      { publish: true },
+    )
+    const two = await createBadge(db, admin, badgeFields({ series: 'ESAF-helgen', sortOrder: 2 }), {
+      publish: true,
+    })
+    expect((await getProfile(db, kari, ola!.personId!)).badges.map((b) => b.slug)).toEqual([
+      two.slug,
+    ])
+
+    await setOwnBadgeHidden(db, ola, two.id, true)
+    // Andre ser neste trinn; Ola ser begge, med det skjulte merket.
+    expect((await getProfile(db, kari, ola!.personId!)).badges.map((b) => b.slug)).toEqual([
+      one.slug,
+    ])
+    expect((await getProfile(db, ola, ola!.personId!)).badges).toMatchObject([
+      { slug: two.slug, hidden: true },
+    ])
+    expect((await getBadge(db, kari, two.slug)).holderList).toEqual([])
+    expect((await getBadge(db, ola, two.slug)).holderList).toMatchObject([{ hidden: true }])
+    await expect(setOwnBadgeHidden(db, kari, two.id, true)).rejects.toThrow(
+      'Du har ikke dette merket.',
+    )
+  })
+
+  it('«Var du der?» viser helgene fra kullet startet, og gir merket med en gang', async () => {
+    const old = await weekend('2010-09-03')
+    const [w1, w2] = [await weekend('2017-09-01'), await weekend('2018-09-07')]
+    const future = await weekend('2099-09-04')
+    await attend(w1, kari)
+    const { id } = await createBadge(db, admin, badgeFields(), { publish: true })
+
+    const groups = await listMissedEvents(db, ola)
+    expect(groups).toHaveLength(1)
+    // Ola er ES 2018 og startet høsten 2016: ikke 2010, ikke framtiden.
+    expect(groups[0]!.events.map((e) => e.id)).toEqual([w2, w1])
+    expect(groups[0]!.events.find((e) => e.id === w1)).toMatchObject({
+      participants: 1,
+      fromCohort: 0,
+    })
+
+    const result = await addOwnParticipations(db, ola, { eventIds: [w1, w2] })
+    expect(result).toMatchObject({ added: 2, badges: [{ id, name: 'ESAF-helgen ×2' }] })
+    expect(await listMissedEvents(db, ola)).toEqual([])
+    await expect(addOwnParticipations(db, ola, { eventIds: [future] })).rejects.toThrow(
+      'som har vært',
+    )
+    expect(old).toBeTruthy()
+  })
+
+  it('arkiverte merker vises ikke; sletting fjerner merket og varslene', async () => {
+    const w1 = await weekend('2018-09-07')
+    await attend(w1, ola)
+    const { id, slug } = await createBadge(
+      db,
+      admin,
+      badgeFields({ rule: { kind: 'event_count', eventTypeId: weekendType, count: 1 } }),
+      { publish: true },
+    )
+    await setBadgeStatus(db, admin, id, 'archived')
+    expect(await listBadges(db, ola)).toEqual([])
+    expect((await getProfile(db, ola, ola!.personId!)).badges).toEqual([])
+    expect(await badgeNotifications(ola)).toEqual([])
+    await expect(getBadge(db, ola, slug)).rejects.toThrow('Fant ikke merket.')
+    // Admins ser fortsatt hvem som hadde det.
+    expect((await getBadgeForAdmin(db, admin, slug)).awards).toHaveLength(1)
+
+    await deleteBadge(db, admin, id)
+    expect(await db.select().from(schema.badgeAward)).toEqual([])
+    expect(
+      await db
+        .select()
+        .from(schema.notification)
+        .where(eq(schema.notification.type, 'badge_awarded')),
+    ).toEqual([])
+  })
+
+  it('sammenslåing tar med merker delt ut for hånd, og regner ut resten på nytt', async () => {
+    const duplicate = (
+      await createProfile(db, admin, {
+        fullName: 'Ola Dobbel',
+        cohorts: [{ graduationYear: 2018, relation: 'student' }],
+        emails: [],
+        status: 'active',
+      })
+    ).personId
+    const w1 = await weekend('2018-09-07')
+    await addEventParticipants(db, admin, w1, { personIds: [duplicate], source: 'admin' })
+    const manual = await createBadge(
+      db,
+      admin,
+      badgeFields({ name: 'Ildsjel', rule: { kind: 'manual' } }),
+      { publish: true },
+    )
+    await awardBadge(db, admin, manual.id, { personIds: [duplicate], citation: 'Hjalp til' })
+    const auto = await createBadge(
+      db,
+      admin,
+      badgeFields({ rule: { kind: 'event_count', eventTypeId: weekendType, count: 1 } }),
+      { publish: true },
+    )
+    expect((await awards(auto.id)).map((a) => a.personId)).toEqual([duplicate])
+
+    await mergePeople(db, storage, admin, { sourceId: duplicate, targetId: ola!.personId! })
+    expect(await awards(manual.id)).toMatchObject([{ personId: ola!.personId }])
+    expect(await awards(auto.id)).toMatchObject([{ personId: ola!.personId }])
+    const [kept] = await db
+      .select({ citation: schema.badgeAward.citation })
+      .from(schema.badgeAward)
+      .where(
+        and(
+          eq(schema.badgeAward.badgeId, manual.id),
+          eq(schema.badgeAward.personId, ola!.personId!),
+        ),
+      )
+    expect(kept?.citation).toBe('Hjalp til')
+  })
+})

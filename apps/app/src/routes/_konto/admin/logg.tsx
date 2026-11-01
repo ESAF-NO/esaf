@@ -286,6 +286,22 @@ function EventLink({ details }: { details: Entry['details'] }) {
   )
 }
 
+/** Merket i en setning, med lenke. */
+function BadgeLink({ details }: { details: Entry['details'] }) {
+  const name = text(details.name) ?? 'et merke'
+  const slug = text(details.slug)
+  if (!slug) return <>«{name}»</>
+  return (
+    <Link
+      to="/merker/$slug"
+      params={{ slug }}
+      className="font-medium text-stone-900 hover:text-brand-600"
+    >
+      {name}
+    </Link>
+  )
+}
+
 /** Typen i en setning, med lenke. */
 function EventTypeLink({ details }: { details: Entry['details'] }) {
   const name = text(details.name) ?? 'en arrangementstype'
@@ -811,6 +827,54 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
   'weekend.attendance_remove': ({ actor, subject, details }) => (
     <>
       {actor} fjernet {subject} fra <EventLink details={details} />.
+    </>
+  ),
+  'badge.create': ({ actor, details }) => (
+    <>
+      {actor} lagde merket <BadgeLink details={details} />
+      {details.status === 'published' ? ' og publiserte det' : ' som utkast'}.
+    </>
+  ),
+  'badge.edit': ({ actor, details }) => (
+    <>
+      {actor} endret merket <BadgeLink details={details} />
+      {Array.isArray(details.fields) && details.fields.includes('rule')
+        ? ', også hvem som får det'
+        : ''}
+      .
+    </>
+  ),
+  'badge.publish': ({ actor, details }) => (
+    <>
+      {actor} publiserte merket <BadgeLink details={details} />.
+    </>
+  ),
+  'badge.archive': ({ actor, details }) => (
+    <>
+      {actor} arkiverte merket <BadgeLink details={details} />.
+    </>
+  ),
+  'badge.delete': ({ actor, details }) => (
+    <>
+      {actor} slettet merket «{text(details.name) ?? 'ukjent'}»
+      {count(details.holders) ? ` (${count(details.holders)} hadde det)` : ''}.
+    </>
+  ),
+  'badge.award': ({ actor, subject, details }) => (
+    <>
+      {actor} ga {subject} merket <BadgeLink details={details} />
+      {text(details.citation) ? `: «${text(details.citation)}»` : ''}.
+    </>
+  ),
+  'badge.citation': ({ actor, subject, details }) => (
+    <>
+      {actor} endret begrunnelsen for merket <BadgeLink details={details} /> til {subject}
+      {text(details.citation) ? `: «${text(details.citation)}»` : ''}.
+    </>
+  ),
+  'badge.revoke': ({ actor, subject, details }) => (
+    <>
+      {actor} tok merket <BadgeLink details={details} /> fra {subject}.
     </>
   ),
   'event_type.create': ({ actor, details }) => (

@@ -9,10 +9,11 @@ import {
 } from '@esaf/db'
 import { and, asc, eq, ilike, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { moveManualBadges, syncBadges } from './badges.ts'
 import { assertCan, type Viewer } from './access.ts'
 import { deleteOrphanCompanies } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
-import { normalizeEmail, type Tx } from './members.ts'
+import { inOrder, normalizeEmail, type Tx } from './members.ts'
 import { deletePhotoFiles, photoUrls, type ProfilePhoto } from './photos.ts'
 import { normalizePhone } from './profile-import.ts'
 import {
@@ -514,18 +515,6 @@ const personColumns = {
   phoneVisible: person.phoneVisible,
 }
 
-/**
- * Kjører spørringene etter hverandre. Forhåndsvisningen kjører også inne i
- * sammenslåingens transaksjon, og én tilkobling kan bare ha én spørring om gangen.
- */
-async function inOrder<T extends readonly (() => PromiseLike<unknown>)[]>(
-  queries: T,
-): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
-  const results: unknown[] = []
-  for (const query of queries) results.push(await query())
-  return results as { -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }
-}
-
 /** Et kontaktfelt som har en verdi, men er skjult for medlemmer. */
 const hiddenContact = (value: string | null, visible: boolean) => value !== null && !visible
 
@@ -1010,6 +999,9 @@ export async function mergePeople(
       sql`insert into ${eventParticipation} (event_id, person_id, role, source, note, created_at) select event_id, ${into}, role, source, note, created_at from ${eventParticipation} where person_id = ${from} on conflict (event_id, person_id) do update set role = coalesce(${eventParticipation}.role, excluded.role), note = coalesce(${eventParticipation}.note, excluded.note) returning (xmax = 0) as inserted`,
     )
 
+    // Merker delt ut for hånd flyttes; merker med regel regnes ut på nytt etterpå.
+    const movedBadges = await moveManualBadges(tx, from, into)
+
     const emails = await tx
       .update(personEmail)
       .set({ personId: into })
@@ -1175,6 +1167,7 @@ export async function mergePeople(
         representatives: movedReps.length,
         board: movedBoard.length,
         events: movedEvents.rows.filter((r) => r.inserted).length,
+        badges: movedBadges,
         emails: emails.length,
         quotes: quotes.length,
         fields: filled,
@@ -1188,6 +1181,7 @@ export async function mergePeople(
     return { personId: into, unusedPhoto: unused ?? null }
   })
   if (unusedPhoto) await deletePhotoFiles(storage, unusedPhoto)
+  await syncBadges(db, { personIds: [personId] })
   return { personId }
 }
 

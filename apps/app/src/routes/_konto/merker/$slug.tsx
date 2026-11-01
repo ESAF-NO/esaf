@@ -58,7 +58,7 @@ function BadgePage() {
             <p className="mt-2 text-sm text-stone-500">
               {b.manual
                 ? 'Deles ut av styret.'
-                : `Slik får du det: ${b.ruleText.toLocaleLowerCase('nb')}.`}{' '}
+                : `Slik får du det: ${b.ruleText.charAt(0).toLocaleLowerCase('nb')}${b.ruleText.slice(1)}.`}{' '}
               {b.holders === 0
                 ? 'Ingen har det ennå.'
                 : `${plural(b.holders, 'medlem', 'medlemmer')} har det.`}

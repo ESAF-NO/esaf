@@ -325,7 +325,8 @@ function BadgeEditor({
       title={badge ? `Rediger «${badge.name}»` : 'Nytt merke'}
       onClose={onClose}
       busy={busy}
-      className="max-w-3xl"
+      // `sm:` vinner over standardbredden til dialogen.
+      className="sm:max-w-3xl"
     >
       <form
         onSubmit={(e) => {

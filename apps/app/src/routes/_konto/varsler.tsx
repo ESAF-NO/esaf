@@ -85,7 +85,7 @@ function NotificationList({ first }: { first: ReturnType<typeof Route.useLoaderD
     <div className="mx-auto max-w-2xl">
       <PageHeader
         title="Varsler"
-        description="Kommentarer, omtaler, forslag til selskaper du er knyttet til, svar på dine egne forslag, og merker du får."
+        description="Kommentarer, omtaler, forslag til selskaper du er knyttet til, og svar på dine egne forslag."
         actions={
           first.unread > 0 && (
             <Button variant="secondary" size="sm" onClick={markAll} disabled={busy}>

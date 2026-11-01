@@ -7,7 +7,7 @@ import { NotFoundError } from './errors.ts'
 import { mentionsToPlainText, reachablePeople } from './mentions.ts'
 import type { Tx } from './members.ts'
 
-const { badge, cohort, comment, company, notification, person, personCohort, post } = schema
+const { cohort, comment, company, notification, person, personCohort, post } = schema
 
 /**
  * Varsler lages i samme transaksjon som det de handler om, så et varsel aldri
@@ -29,7 +29,6 @@ export type NewNotification = {
   postId?: string
   commentId?: string
   companyId?: string
-  badgeId?: string
   eventKey: string
   payload?: NotificationPayload
 }
@@ -176,8 +175,6 @@ export type NotificationView = {
   commentId: string | null
   /** Selskapet, for forslag og tilknytninger. Navnet er det gjeldende. */
   company: { slug: string; name: string } | null
-  /** Merket, for varsler om merker. Navnet er det gjeldende. */
-  badge: { slug: string; name: string; icon: string; color: string } | null
   /** Hva et forslag gjaldt: selskapsinfo eller en hendelse. */
   suggestionKind: NotificationPayload['suggestionKind'] | null
   /** Rollen i en tilknytning: gründer, ES-team eller ansatt. */
@@ -195,11 +192,6 @@ const visible = () =>
   and(
     or(isNull(notification.postId), isNull(post.deletedAt)),
     or(isNull(notification.commentId), isNull(comment.deletedAt)),
-    // Merker som er arkivert, vises ikke, og heller ikke varslene om dem.
-    or(
-      isNull(notification.badgeId),
-      sql`exists (select 1 from ${badge} where ${badge.id} = ${notification.badgeId} and ${badge.status} = 'published')`,
-    ),
   )!
 
 const EXCERPT_LENGTH = 160
@@ -245,10 +237,6 @@ export async function listNotifications(
       postTitle: post.title,
       companySlug: company.slug,
       companyName: company.name,
-      badgeSlug: badge.slug,
-      badgeName: badge.name,
-      badgeIcon: badge.icon,
-      badgeColor: badge.color,
       // Innholdet i innlegget trengs bare til utdrag når varselet gjelder selve innlegget.
       postBody: sql<
         string | null
@@ -260,7 +248,6 @@ export async function listNotifications(
     .leftJoin(post, eq(post.id, notification.postId))
     .leftJoin(comment, eq(comment.id, notification.commentId))
     .leftJoin(company, eq(company.id, notification.companyId))
-    .leftJoin(badge, eq(badge.id, notification.badgeId))
     .where(and(...conditions))
     .orderBy(desc(notification.createdAt), desc(notification.id))
     .limit(limit + 1)
@@ -279,10 +266,6 @@ export async function listNotifications(
       post: r.postId && r.postTitle !== null ? { id: r.postId, title: r.postTitle } : null,
       commentId: r.commentId,
       company: r.companySlug && r.companyName ? { slug: r.companySlug, name: r.companyName } : null,
-      badge:
-        r.badgeSlug && r.badgeName && r.badgeIcon && r.badgeColor
-          ? { slug: r.badgeSlug, name: r.badgeName, icon: r.badgeIcon, color: r.badgeColor }
-          : null,
       suggestionKind: r.payload.suggestionKind ?? null,
       linkRole: r.payload.linkRole ?? null,
       excerpt: excerptOf(r.commentBody ?? r.postBody),

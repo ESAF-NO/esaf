@@ -1,15 +1,14 @@
 import type {
-  BadgeChip,
   BadgeColor,
   BadgeIcon as BadgeIconName,
-  BadgeProgress,
   BadgeRarity,
   BadgeRarityTier,
   BadgeStep,
   OwnBadgeUpdate,
   PlayerLevel,
+  ProfileBadge,
 } from '@esaf/core'
-import { Link } from '@tanstack/react-router'
+import { Link, useRouteContext, useRouter } from '@tanstack/react-router'
 import {
   Anchor,
   Award,
@@ -53,8 +52,10 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react'
+import { useState } from 'react'
+import { hideOwnBadge } from '#/lib/badges.functions.ts'
 import { Dialog, DialogActions } from './Dialog.tsx'
-import { buttonClass, cx } from './ui.tsx'
+import { buttonClass, cx, ErrorText } from './ui.tsx'
 
 /** Ikonene fra `badgeIcons` i @esaf/core. */
 export const badgeIconComponents: Record<BadgeIconName, LucideIcon> = {
@@ -286,13 +287,13 @@ export function RarityTag({
 }
 
 /** Nivået i en ring som fylles mot neste nivå. */
-export function LevelRing({ level, size = 'md' }: { level: PlayerLevel; size?: 'sm' | 'md' }) {
+export function LevelRing({ level, size = 'md' }: { level: PlayerLevel; size?: 'xs' | 'md' }) {
   const share = (level.xp - level.levelXp) / (level.nextXp - level.levelXp)
   return (
     <span
       className={cx(
         'relative grid shrink-0 place-items-center rounded-full',
-        size === 'md' ? 'size-20' : 'size-10',
+        size === 'md' ? 'size-20' : 'size-5',
       )}
       style={{
         background: `conic-gradient(var(--color-brand-500) ${share * 360}deg, var(--color-stone-200) 0)`,
@@ -303,7 +304,7 @@ export function LevelRing({ level, size = 'md' }: { level: PlayerLevel; size?: '
       <span
         className={cx(
           'grid place-items-center rounded-full bg-white font-bold text-stone-950 tabular-nums',
-          size === 'md' ? 'size-16 text-2xl' : 'size-8 text-sm',
+          size === 'md' ? 'size-16 text-2xl' : 'size-3.5 text-[8px]',
         )}
       >
         {level.level}
@@ -312,66 +313,124 @@ export function LevelRing({ level, size = 'md' }: { level: PlayerLevel; size?: '
   )
 }
 
-/** Et lite merke med navnet, til profilen. Lenker til merket. */
-export function BadgePill({
-  badge,
-  rarity,
-  hidden = false,
-  title,
-}: {
-  badge: BadgeChip
-  rarity?: BadgeRarityTier
-  /** Personen har skjult det; bare hen selv ser det, nedtonet. */
-  hidden?: boolean
-  title?: string
-}) {
+/**
+ * Merkene på en profil, som på GitHub: medaljene i et rutenett, og et klikk
+ * viser hva merket er, når personen fikk det og hvor sjeldent det er. På egen
+ * profil kan merket skjules derfra.
+ */
+export function ProfileBadgeGrid({ badges, isOwn }: { badges: ProfileBadge[]; isOwn: boolean }) {
+  const [open, setOpen] = useState<ProfileBadge | null>(null)
   return (
-    <Link
-      to="/merker/$slug"
-      params={{ slug: badge.slug }}
-      title={title ?? badge.description}
-      className={cx(
-        'inline-flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-xs font-medium ring-1 transition ring-inset hover:brightness-95',
-        hidden ? 'bg-white text-stone-400 ring-stone-200 ring-dashed' : colorOf(badge.color).soft,
+    <>
+      <ul className="grid grid-cols-4 gap-x-2 gap-y-3" aria-label="Merker">
+        {badges.map((b) => (
+          <li key={b.id}>
+            <button
+              type="button"
+              onClick={() => setOpen(b)}
+              title={b.name}
+              className="group flex w-full flex-col items-center gap-1.5 rounded-xl p-1 text-center focus-visible:outline-2 focus-visible:outline-brand-500"
+            >
+              <BadgeMedal
+                badge={b}
+                rarity={b.hidden ? undefined : b.rarity.tier}
+                earned={!b.hidden}
+                step={b.step}
+                className="self-center transition group-hover:-translate-y-0.5 group-hover:scale-105"
+              />
+              <span className="line-clamp-2 text-[11px] leading-tight font-medium text-stone-700">
+                {b.name}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open && (
+        <BadgeDialog
+          // Hentes fra lista, så skjult/vist oppdateres etter lagring.
+          badge={badges.find((b) => b.id === open.id) ?? open}
+          isOwn={isOwn}
+          onClose={() => setOpen(null)}
+        />
       )}
-    >
-      <BadgeMedal badge={badge} rarity={rarity} earned={!hidden} size="xs" />
-      {badge.name}
-      {hidden && <span className="sr-only"> (skjult for andre)</span>}
-    </Link>
+    </>
   )
 }
 
-/** «3 av 5» med en stolpe. */
-export function BadgeProgressBar({
-  progress,
-  color,
-  className,
+/** Ett merke: hva det er, når det ble fortjent, hvor sjeldent det er. */
+function BadgeDialog({
+  badge: b,
+  isOwn,
+  onClose,
 }: {
-  progress: BadgeProgress
-  color: BadgeColor
-  className?: string
+  badge: ProfileBadge
+  isOwn: boolean
+  onClose: () => void
 }) {
-  const share = Math.round((progress.current / progress.target) * 100)
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function setHidden(hidden: boolean) {
+    setBusy(true)
+    setError(null)
+    try {
+      await hideOwnBadge({ data: { badgeId: b.id, hidden } })
+      await router.invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <div className={className}>
-      <div
-        className="h-1.5 overflow-hidden rounded-full bg-stone-100"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={progress.target}
-        aria-valuenow={progress.current}
-        aria-label={`${progress.current} av ${progress.target}`}
-      >
-        <div
-          className={cx('h-full rounded-full', colorOf(color).bar)}
-          style={{ width: `${Math.max(share, progress.current > 0 ? 6 : 0)}%` }}
+    <Dialog title={b.name} onClose={onClose} busy={busy}>
+      <div className="flex items-start gap-4">
+        <BadgeMedal
+          badge={b}
+          rarity={b.hidden ? undefined : b.rarity.tier}
+          earned={!b.hidden}
+          step={b.step}
+          size="lg"
         />
+        <div className="min-w-0 space-y-1.5 text-sm">
+          <p className="text-stone-800">{b.description}</p>
+          <RarityTag rarity={b.rarity} showXp />
+          <p className="text-stone-500">
+            {b.ruleText}
+            {b.step && ` · trinn ${b.step.index} av ${b.step.count}`}
+            {b.achievedOn && ` · siden ${b.achievedOn.slice(0, 4)}`}
+          </p>
+          {b.citation && <p className="text-stone-700 italic">«{b.citation}»</p>}
+        </div>
       </div>
-      <p className="mt-1 text-xs text-stone-500 tabular-nums">
-        {progress.current} av {progress.target}
-      </p>
-    </div>
+      {error && (
+        <div className="mt-4">
+          <ErrorText>{error}</ErrorText>
+        </div>
+      )}
+      <DialogActions>
+        {isOwn && (
+          <button
+            type="button"
+            onClick={() => setHidden(!b.hidden)}
+            disabled={busy}
+            className={buttonClass({ variant: 'secondary' })}
+          >
+            {b.hidden ? 'Vis på profilen' : 'Skjul fra profilen'}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className={buttonClass({ variant: 'primary' })}
+          data-autofocus
+        >
+          Lukk
+        </button>
+      </DialogActions>
+    </Dialog>
   )
 }
 
@@ -387,6 +446,7 @@ export function NewBadgesDialog({
   update: OwnBadgeUpdate
   onClose: () => void
 }) {
+  const { viewer } = useRouteContext({ from: '/_konto' })
   const { badges, level, previousLevel } = update
   if (!badges.length) return null
   const one = badges.length === 1
@@ -415,7 +475,7 @@ export function NewBadgesDialog({
           </span>
           <p className="text-sm text-stone-700">
             Du er nå <strong className="font-semibold text-stone-950">{level.title}</strong>, med{' '}
-            {level.xp} XP{level.rank ? ` og plass #${level.rank} på topplista` : ''}.
+            {level.xp} XP.
           </p>
         </div>
       )}
@@ -439,9 +499,15 @@ export function NewBadgesDialog({
         ))}
       </ul>
       <DialogActions>
-        <Link to="/merker" className={buttonClass({ variant: 'secondary' })}>
-          Se nivået ditt
-        </Link>
+        {viewer.personId && (
+          <Link
+            to="/medlemmer/$personId"
+            params={{ personId: viewer.personId }}
+            className={buttonClass({ variant: 'secondary' })}
+          >
+            Se profilen din
+          </Link>
+        )}
         <button
           type="button"
           onClick={onClose}

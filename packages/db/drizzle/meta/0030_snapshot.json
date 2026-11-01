@@ -1,5 +1,5 @@
 {
-  "id": "ce63684c-6205-48ef-9b7f-6ca6ee49fe92",
+  "id": "a4247aec-fb43-4e39-9e5e-3411a2b7a803",
   "prevId": "fbb7375f-e083-4f76-bed0-908bf7f7ddba",
   "version": "7",
   "dialect": "postgresql",
@@ -3380,12 +3380,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "badge_id": {
-          "name": "badge_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "event_key": {
           "name": "event_key",
           "type": "text",
@@ -3559,19 +3553,6 @@
           "tableTo": "company",
           "columnsFrom": [
             "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "notification_badge_id_badge_id_fk": {
-          "name": "notification_badge_id_badge_id_fk",
-          "tableFrom": "notification",
-          "tableTo": "badge",
-          "columnsFrom": [
-            "badge_id"
           ],
           "columnsTo": [
             "id"
@@ -6317,8 +6298,7 @@
         "suggestion_accepted",
         "suggestion_rejected",
         "company_link_request",
-        "company_link_confirmed",
-        "badge_awarded"
+        "company_link_confirmed"
       ]
     },
     "public.participation_role": {

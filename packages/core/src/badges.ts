@@ -10,16 +10,11 @@ import {
 import { and, asc, desc, eq, ilike, inArray, isNull, lte, sql, type AnyColumn } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
-import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import { assertCan, assertMember, type Viewer } from './access.ts'
 import {
-  cohortStandings,
-  leaderboard,
   loadBadgeStats,
   playerStanding,
   type BadgeRarity,
-  type BadgeStats,
-  type CohortStanding,
-  type LeaderboardEntry,
   type PlayerStanding,
 } from './badge-game.ts'
 import { boardRoleNames, boardRoles } from './board.ts'
@@ -27,8 +22,6 @@ import { companySlug } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { normalizeRole, osloToday, type EventRole } from './events.ts'
 import { inOrder, type Tx } from './members.ts'
-import { deliver } from './notifications.ts'
-import { photoUrls, type ProfilePhoto } from './photos.ts'
 import { optionalText } from './validation.ts'
 
 const {
@@ -933,29 +926,12 @@ export async function syncBadges(
         .returning({ personId: badgeAward.personId })
       removed += gone.length
     }
-    await notifyAwards(tx, awarded, null)
     return {
       awarded: awarded.map(({ badgeId, personId }) => ({ badgeId, personId })),
       removed,
       updated: moved.length,
     }
   })
-}
-
-/** Varsel til dem som fikk merket. Ett varsel per merke og person, også om det mistes og fås igjen. */
-async function notifyAwards(tx: Tx, awards: BadgeAwardChange[], actorPersonId: string | null) {
-  for (let i = 0; i < awards.length; i += 1000) {
-    await deliver(
-      tx,
-      awards.slice(i, i + 1000).map((a) => ({
-        recipientPersonId: a.personId,
-        type: 'badge_awarded' as const,
-        actorPersonId,
-        badgeId: a.badgeId,
-        eventKey: `badge:${a.badgeId}`,
-      })),
-    )
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -999,34 +975,6 @@ function chip(row: {
   }
 }
 
-/** Merket slik den innloggede har det. */
-export type OwnBadge = {
-  earned: boolean
-  hidden: boolean
-  achievedOn: string | null
-  citation: string | null
-  /** For merker med regel som ikke er nådd ennå. */
-  progress: BadgeProgress | null
-  /** Hvilket nummer den innloggede var til å få merket. Bare på siden for merket. */
-  number?: number | null
-}
-
-export type BadgeOverviewItem = BadgeChip & {
-  series: string | null
-  /** Regeltypen, så appen kan vise hva som hjelper («Var du der?» for arrangementer). */
-  kind: BadgeRuleKind
-  manual: boolean
-  /** Regelen i ord: «Vært på ESAF-helgen minst 3 ganger». */
-  ruleText: string
-  /** Aktive medlemmer som har merket og ikke har skjult det. */
-  holders: number
-  /** Hvor sjeldent merket er, og hvor mye XP det gir. */
-  rarity: BadgeRarity
-  /** Trinnet i serien: «II av III». Null utenfor en serie. */
-  step: BadgeStep | null
-  own: OwnBadge | null
-}
-
 /** Trinnet et merke er i serien sin, fra 1. */
 export type BadgeStep = { index: number; count: number }
 
@@ -1058,236 +1006,6 @@ function seriesSteps(
   return steps
 }
 
-/** Alle publiserte merker, med hvor mange som har dem og hvor langt den innloggede har kommet. */
-export async function listBadges(
-  db: Db,
-  viewer: Viewer,
-  options: { stats?: BadgeStats } = {},
-): Promise<BadgeOverviewItem[]> {
-  assertMember(viewer)
-  const rows = await db
-    .select({
-      ...chipColumns,
-      rule: badge.rule,
-      series: badge.series,
-      sortOrder: badge.sortOrder,
-    })
-    .from(badge)
-    .where(eq(badge.status, 'published'))
-    .orderBy(asc(badge.sortOrder), asc(badge.name))
-  const rules = await withLiveEvents(
-    db,
-    rows.map((r) => storedRule(r.rule)),
-  )
-  const [names, own, facts, stats] = await Promise.all([
-    loadRuleNames(db, rules),
-    db
-      .select({
-        badgeId: badgeAward.badgeId,
-        hidden: badgeAward.hidden,
-        achievedOn: badgeAward.achievedOn,
-        citation: badgeAward.citation,
-      })
-      .from(badgeAward)
-      .where(eq(badgeAward.personId, viewer.personId)),
-    loadBadgeFacts(db, [viewer.personId]),
-    options.stats ?? loadBadgeStats(db),
-  ])
-  const mine = new Map(own.map((a) => [a.badgeId, a]))
-  const myFacts = facts.get(viewer.personId) ?? emptyBadgeFacts()
-  const steps = seriesSteps(rows.map((r, i) => ({ ...r, rule: rules[i]! })))
-  return rows.map(({ rule: _rule, series, sortOrder: _sortOrder, ...row }, i) => {
-    const rule = rules[i]!
-    const award = mine.get(row.id)
-    return {
-      ...chip(row),
-      series,
-      kind: rule.kind,
-      manual: isManualRule(rule),
-      ruleText: describeBadgeRule(rule, names),
-      holders: stats.holders.get(row.id) ?? 0,
-      rarity: stats.rarity(row.id),
-      step: steps.get(row.id) ?? null,
-      own: award
-        ? {
-            earned: true,
-            hidden: award.hidden,
-            achievedOn: award.achievedOn,
-            citation: award.citation,
-            progress: null,
-          }
-        : {
-            earned: false,
-            hidden: false,
-            achievedOn: null,
-            citation: null,
-            progress: isManualRule(rule) ? null : evaluateBadgeRule(rule, myFacts).progress,
-          },
-    }
-  })
-}
-
-export type BadgeOverview = {
-  badges: BadgeOverviewItem[]
-  /** Nivået og plassen til den innloggede. */
-  me: PlayerStanding
-  leaderboard: LeaderboardEntry[]
-  /** Kull mot kull. */
-  cohorts: CohortStanding[]
-  /** Kullene den innloggede gikk i som student, for å markere dem. */
-  ownCohorts: number[]
-}
-
-/** Merkesiden: alle merkene, nivået ditt, topplista og kull mot kull. */
-export async function getBadgeOverview(db: Db, viewer: Viewer): Promise<BadgeOverview> {
-  assertMember(viewer)
-  const stats = await loadBadgeStats(db)
-  const [badges, top, cohorts, own] = await Promise.all([
-    listBadges(db, viewer, { stats }),
-    leaderboard(db, stats),
-    cohortStandings(db, stats),
-    db
-      .select({ year: cohort.graduationYear })
-      .from(personCohort)
-      .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
-      .where(and(eq(personCohort.personId, viewer.personId), eq(personCohort.relation, 'student'))),
-  ])
-  return {
-    badges,
-    me: playerStanding(stats, viewer.personId),
-    leaderboard: top,
-    cohorts,
-    ownCohorts: own.map((c) => c.year),
-  }
-}
-
-/** Hvor et kull står i kull mot kull, til kullsiden. Null når kullet er for lite. */
-export async function getCohortBadgeStanding(
-  db: Db,
-  viewer: Viewer,
-  graduationYear: number,
-): Promise<{ standing: CohortStanding | null; cohorts: number }> {
-  assertMember(viewer)
-  const standings = await cohortStandings(db, await loadBadgeStats(db))
-  return {
-    standing: standings.find((s) => s.graduationYear === graduationYear) ?? null,
-    cohorts: standings.length,
-  }
-}
-
-export type BadgeHolder = {
-  personId: string
-  fullName: string
-  photo: ProfilePhoto | null
-  claimed: boolean
-  cohortYears: number[]
-  achievedOn: string | null
-  citation: string | null
-  /** Bare den innloggede selv kan se sitt eget skjulte merke i lista. */
-  hidden: boolean
-  /** Hvilket nummer personen var til å få merket: «#3». */
-  number: number
-}
-
-export type BadgeDetails = BadgeOverviewItem & {
-  status: BadgeStatus
-  holderList: BadgeHolder[]
-  /** Hvor mange aktive medlemmer som har fått merket, også de som har skjult det: «#3 av 41». */
-  awarded: number
-}
-
-/** Ett merke med dem som har det, eldste først. Utkast og arkiverte bare for admins. */
-export async function getBadge(db: Db, viewer: Viewer, slug: string): Promise<BadgeDetails> {
-  assertMember(viewer)
-  const [row] = await db.select().from(badge).where(eq(badge.slug, slug))
-  if (!row || (row.status !== 'published' && !can(viewer, 'badges.manage'))) {
-    throw new NotFoundError('Fant ikke merket.')
-  }
-  const [rule] = (await withLiveEvents(db, [storedRule(row.rule)])) as [BadgeRule]
-  const [names, holders, facts, stats, ladder] = await Promise.all([
-    loadRuleNames(db, [rule]),
-    db
-      .select({
-        personId: person.id,
-        fullName: person.fullName,
-        photoKey: person.photoKey,
-        userId: person.userId,
-        achievedOn: badgeAward.achievedOn,
-        citation: badgeAward.citation,
-        hidden: badgeAward.hidden,
-        cohortYears: sql<
-          number[]
-        >`coalesce((select array_agg(${cohort.graduationYear} order by ${cohort.graduationYear}) from ${personCohort} inner join ${cohort} on ${cohort.id} = ${personCohort.cohortId} where ${personCohort.personId} = ${person.id}), '{}')`,
-      })
-      .from(badgeAward)
-      .innerJoin(person, eq(person.id, badgeAward.personId))
-      .innerJoin(membership, eq(membership.personId, person.id))
-      // Alle aktive, også skjulte, så numrene er de samme for alle. De skjulte fjernes under.
-      .where(and(eq(badgeAward.badgeId, row.id), eq(membership.status, 'active')))
-      .orderBy(
-        sql`${badgeAward.achievedOn} asc nulls last`,
-        asc(badgeAward.createdAt),
-        asc(person.fullName),
-      ),
-    isManualRule(rule) ? null : loadBadgeFacts(db, [viewer.personId]),
-    loadBadgeStats(db),
-    row.series
-      ? db
-          .select({
-            id: badge.id,
-            name: badge.name,
-            series: badge.series,
-            sortOrder: badge.sortOrder,
-            rule: badge.rule,
-          })
-          .from(badge)
-          .where(
-            and(eq(badge.status, 'published'), sql`lower(${badge.series}) = lower(${row.series})`),
-          )
-      : Promise.resolve([]),
-  ])
-  const numbered = holders.map((h, i) => ({ ...h, number: i + 1 }))
-  const shown = numbered.filter((h) => !h.hidden || h.personId === viewer.personId)
-  const own = numbered.find((h) => h.personId === viewer.personId)
-  const steps = seriesSteps(ladder.map((b) => ({ ...b, rule: storedRule(b.rule) })))
-  return {
-    ...chip(row),
-    series: row.series,
-    kind: rule.kind,
-    manual: isManualRule(rule),
-    ruleText: describeBadgeRule(rule, names),
-    status: row.status,
-    holders: shown.filter((h) => !h.hidden).length,
-    awarded: numbered.length,
-    rarity: stats.rarity(row.id),
-    step: steps.get(row.id) ?? null,
-    own: own
-      ? {
-          earned: true,
-          hidden: own.hidden,
-          achievedOn: own.achievedOn,
-          citation: own.citation,
-          progress: null,
-          number: own.number,
-        }
-      : {
-          earned: false,
-          hidden: false,
-          achievedOn: null,
-          citation: null,
-          progress: facts
-            ? evaluateBadgeRule(rule, facts.get(viewer.personId) ?? emptyBadgeFacts()).progress
-            : null,
-          number: null,
-        },
-    holderList: shown.map(({ photoKey, userId, ...h }) => ({
-      ...h,
-      photo: photoUrls(photoKey),
-      claimed: userId !== null,
-    })),
-  }
-}
-
 /** Et merke på profilen. */
 export type ProfileBadge = BadgeChip & {
   achievedOn: string | null
@@ -1296,6 +1014,10 @@ export type ProfileBadge = BadgeChip & {
   hidden: boolean
   rarity: BadgeRarity
   step: BadgeStep | null
+  /** Regelen i ord: «Vært på ESAF-helgen minst 3 ganger». */
+  ruleText: string
+  /** Aktive medlemmer som har merket og ikke har skjult det. */
+  holders: number
 }
 
 /** Merkene og nivået på en profil. */
@@ -1346,8 +1068,13 @@ export async function loadProfileBadges(
       ),
     )
   // Laveste først: rekkefølgen admins har satt, så tallet regelen krever, så navnet.
+  const rules = await withLiveEvents(
+    db,
+    rows.map((r) => storedRule(r.rule)),
+  )
+  const names = await loadRuleNames(db, rules)
   const sorted = rows
-    .map((r) => ({ ...r, level: ruleLevel(storedRule(r.rule)) }))
+    .map((r, i) => ({ ...r, rule: rules[i]!, level: ruleLevel(rules[i]!) }))
     .sort(
       (a, b) =>
         a.sortOrder - b.sortOrder || a.level - b.level || a.name.localeCompare(b.name, 'nb'),
@@ -1357,13 +1084,15 @@ export async function loadProfileBadges(
   for (const r of sorted) if (r.series) top.set(r.series.toLocaleLowerCase('nb'), r.id)
   const badges = sorted
     .filter((r) => !r.series || top.get(r.series.toLocaleLowerCase('nb')) === r.id)
-    .map(({ achievedOn, citation, hidden, id, slug, name, description, icon, color }) => ({
+    .map(({ achievedOn, citation, hidden, rule, id, slug, name, description, icon, color }) => ({
       ...chip({ id, slug, name, description, icon, color }),
       achievedOn,
       citation,
       hidden,
       rarity: stats.rarity(id),
       step: steps.get(id) ?? null,
+      ruleText: describeBadgeRule(rule, names),
+      holders: stats.holders.get(id) ?? 0,
     }))
   return { badges, level: playerStanding(stats, personId) }
 }
@@ -1937,18 +1666,6 @@ export async function setBadgeStatus(
       action: status === 'published' ? 'badge.publish' : 'badge.archive',
       details: { badgeId, slug: current.slug, name: current.name },
     })
-    if (status === 'published' && isManualRule(current.rule)) {
-      // Merker delt ut for hånd mens merket var utkast, gir varsel nå.
-      const holders = await tx
-        .select({ personId: badgeAward.personId, by: badgeAward.awardedByPersonId })
-        .from(badgeAward)
-        .where(eq(badgeAward.badgeId, badgeId))
-      await notifyAwards(
-        tx,
-        holders.map((h) => ({ badgeId, personId: h.personId })),
-        viewer.personId,
-      )
-    }
     return status === 'published' && !isManualRule(current.rule)
   })
   if (result) await syncBadges(db, { badgeIds: [badgeId] })
@@ -2054,13 +1771,6 @@ export async function awardBadge(
           action,
           details: { badgeId, slug: current.slug, name: current.name, citation: values.citation },
         })),
-      )
-    }
-    if (current.status === 'published') {
-      await notifyAwards(
-        tx,
-        fresh.map((personId) => ({ badgeId, personId })),
-        viewer.personId,
       )
     }
     return { awarded: fresh.length, updated: recited.length }

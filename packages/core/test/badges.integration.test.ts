@@ -15,13 +15,9 @@ import {
   createProfile,
   decideMembership,
   deleteBadge,
-  getBadge,
   getBadgeForAdmin,
-  getBadgeOverview,
-  getCohortBadgeStanding,
   getProfile,
   grantRoleAsOperator,
-  listBadges,
   listBadgesForAdmin,
   listMissedEvents,
   listNotifications,
@@ -146,8 +142,11 @@ describe.skipIf(!url)('merker', () => {
       .from(schema.badgeAward)
       .where(eq(schema.badgeAward.badgeId, badgeId))
 
-  const badgeNotifications = async (v: Viewer) =>
-    (await listNotifications(db, v)).items.filter((n) => n.type === 'badge_awarded')
+  /** Merkene på profilen til personen, slik `v` ser dem. */
+  const badgesOn = async (v: Viewer, personId: string) => (await getProfile(db, v, personId)).badges
+
+  /** Merker gir aldri varsler: de dukker bare opp på profilen. */
+  const notifications = async (v: Viewer) => (await listNotifications(db, v)).items
 
   it('bare admins med sterk innlogging lager og deler ut merker; medlemmer ser dem', async () => {
     const { id } = await createBadge(db, admin, badgeFields())
@@ -165,11 +164,10 @@ describe.skipIf(!url)('merker', () => {
       expect([name, await denial(call(weakAdmin))]).toEqual([name, 'strong_auth_required'])
       expect([name, await denial(call(null))]).toEqual([name, 'unauthenticated'])
     }
-    expect(await denial(listBadges(db, null))).toBe('unauthenticated')
-    expect(await listBadges(db, ola)).toEqual([])
+    expect(await badgesOn(ola, ola!.personId!)).toEqual([])
   })
 
-  it('utkast forhåndsvises; publisering deler ut merket, varsler og viser det på profilen', async () => {
+  it('utkast forhåndsvises; publisering deler ut merket og viser det på profilen, uten varsel', async () => {
     const [w1, w2, w3] = [
       await weekend('2018-09-07'),
       await weekend('2019-09-06'),
@@ -196,27 +194,19 @@ describe.skipIf(!url)('merker', () => {
 
     // Utkastet er ikke delt ut og vises ikke for medlemmer.
     expect(await awards(id)).toEqual([])
-    expect(await listBadges(db, ola)).toEqual([])
-    await expect(getBadge(db, ola, slug)).rejects.toThrow('Fant ikke merket.')
+    expect(await badgesOn(ola, ola!.personId!)).toEqual([])
 
     await setBadgeStatus(db, admin, id, 'published')
     expect(await awards(id)).toEqual([{ personId: ola!.personId, achievedOn: '2019-09-06' }])
-    const [n] = await badgeNotifications(ola)
-    expect(n?.badge).toMatchObject({ slug, name: 'ESAF-helgen ×2', icon: 'tent' })
-    expect(await badgeNotifications(kari)).toEqual([])
-
-    const [forKari] = await listBadges(db, kari)
-    expect(forKari).toMatchObject({
-      holders: 1,
-      own: { earned: false, progress: { current: 1, target: 2 } },
-    })
-    const details = await getBadge(db, kari, slug)
-    expect(details.holderList.map((h) => h.fullName)).toEqual(['Ola'])
-    expect((await getProfile(db, kari, ola!.personId!)).badges.map((b) => b.slug)).toEqual([slug])
-
-    // Publisering igjen gir ikke flere varsler.
-    await syncBadges(db)
-    expect(await badgeNotifications(ola)).toHaveLength(1)
+    expect(await badgesOn(kari, ola!.personId!)).toMatchObject([
+      {
+        slug,
+        achievedOn: '2019-09-06',
+        holders: 1,
+        ruleText: 'Vært på ESAF-helgen minst 2 ganger',
+      },
+    ])
+    expect(await notifications(ola)).toEqual([])
     expect((await db.select().from(schema.auditEvent)).map((e) => e.action)).toEqual(
       expect.arrayContaining(['badge.create', 'badge.publish']),
     )
@@ -237,7 +227,6 @@ describe.skipIf(!url)('merker', () => {
       rule: { kind: 'event_count', eventTypeId: weekendType, count: 1 },
     })
     expect(await awards(id)).toHaveLength(2)
-    expect(await badgeNotifications(kari)).toHaveLength(1)
 
     await expect(
       updateBadge(db, admin, id, {
@@ -249,7 +238,7 @@ describe.skipIf(!url)('merker', () => {
     )
   })
 
-  it('merker for hånd: begrunnelse, varsel først når de publiseres, og kan tas tilbake', async () => {
+  it('merker for hånd: begrunnelsen vises på profilen, og merket kan tas tilbake', async () => {
     const { id, slug } = await createBadge(
       db,
       admin,
@@ -259,13 +248,13 @@ describe.skipIf(!url)('merker', () => {
       personIds: [ola!.personId!],
       citation: 'For innsatsen med ESAF-helgen 2024',
     })
-    expect(await badgeNotifications(ola)).toEqual([])
+    // Utkast vises ikke, heller ikke delt ut for hånd.
+    expect(await badgesOn(kari, ola!.personId!)).toEqual([])
     await setBadgeStatus(db, admin, id, 'published')
-    expect(await badgeNotifications(ola)).toHaveLength(1)
-    expect((await getBadge(db, kari, slug)).holderList[0]).toMatchObject({
-      fullName: 'Ola',
-      citation: 'For innsatsen med ESAF-helgen 2024',
-    })
+    expect(await badgesOn(kari, ola!.personId!)).toMatchObject([
+      { slug, citation: 'For innsatsen med ESAF-helgen 2024', ruleText: 'Deles ut av styret' },
+    ])
+    expect(await notifications(ola)).toEqual([])
 
     // Regelen tar ikke merker delt ut for hånd.
     await syncBadges(db)
@@ -319,8 +308,6 @@ describe.skipIf(!url)('merker', () => {
     expect((await getProfile(db, ola, ola!.personId!)).badges).toMatchObject([
       { slug: two.slug, hidden: true },
     ])
-    expect((await getBadge(db, kari, two.slug)).holderList).toEqual([])
-    expect((await getBadge(db, ola, two.slug)).holderList).toMatchObject([{ hidden: true }])
     await expect(setOwnBadgeHidden(db, kari, two.id, true)).rejects.toThrow(
       'Du har ikke dette merket.',
     )
@@ -357,7 +344,7 @@ describe.skipIf(!url)('merker', () => {
     expect(old).toBeTruthy()
   })
 
-  it('arkiverte merker vises ikke; sletting fjerner merket og varslene', async () => {
+  it('arkiverte merker vises ikke; sletting fjerner merket', async () => {
     const w1 = await weekend('2018-09-07')
     await attend(w1, ola)
     const { id, slug } = await createBadge(
@@ -367,21 +354,12 @@ describe.skipIf(!url)('merker', () => {
       { publish: true },
     )
     await setBadgeStatus(db, admin, id, 'archived')
-    expect(await listBadges(db, ola)).toEqual([])
-    expect((await getProfile(db, ola, ola!.personId!)).badges).toEqual([])
-    expect(await badgeNotifications(ola)).toEqual([])
-    await expect(getBadge(db, ola, slug)).rejects.toThrow('Fant ikke merket.')
+    expect(await badgesOn(ola, ola!.personId!)).toEqual([])
     // Admins ser fortsatt hvem som hadde det.
     expect((await getBadgeForAdmin(db, admin, slug)).awards).toHaveLength(1)
 
     await deleteBadge(db, admin, id)
     expect(await db.select().from(schema.badgeAward)).toEqual([])
-    expect(
-      await db
-        .select()
-        .from(schema.notification)
-        .where(eq(schema.notification.type, 'badge_awarded')),
-    ).toEqual([])
   })
 
   it('sammenslåing tar med merker delt ut for hånd, og regner ut resten på nytt', async () => {
@@ -515,7 +493,7 @@ describe.skipIf(!url)('merker', () => {
     expect(actions.sort()).toEqual(['badge.award', 'badge.award', 'badge.citation'])
   })
 
-  it('sammenslåing beholder merker på arkiverte merker, uten nye varsler', async () => {
+  it('sammenslåing beholder merker på arkiverte merker', async () => {
     const duplicate = (
       await createProfile(db, admin, {
         fullName: 'Kari Dobbel',
@@ -531,21 +509,19 @@ describe.skipIf(!url)('merker', () => {
     })
     const live = await createBadge(db, admin, badgeFields({ name: 'Ny', rule }), { publish: true })
     await setBadgeStatus(db, admin, archived.id, 'archived')
-    expect(await badgeNotifications(kari)).toEqual([])
 
     await mergePeople(db, storage, admin, { sourceId: duplicate, targetId: kari!.personId! })
     expect(await awards(archived.id)).toMatchObject([{ personId: kari!.personId }])
     expect(await awards(live.id)).toMatchObject([{ personId: kari!.personId }])
-    expect(await badgeNotifications(kari)).toEqual([])
   })
 
-  it('spillet: sjeldenhet, nummer, nivå, toppliste og kull mot kull', async () => {
+  it('sjeldenhet, trinn og nivå på profilen; skjulte merker teller ikke', async () => {
     const per = await member('Per', 2019)
     const lise = await member('Lise', 2019)
     const [w1, w2] = [await weekend('2018-09-07'), await weekend('2019-09-06')]
     await attend(w1, ola, kari, per, lise)
     await attend(w2, ola)
-    const one = await createBadge(
+    await createBadge(
       db,
       admin,
       badgeFields({
@@ -560,33 +536,23 @@ describe.skipIf(!url)('merker', () => {
       publish: true,
     })
 
-    const overview = await getBadgeOverview(db, kari)
     // Fem aktive medlemmer (admin, Ola, Kari, Per, Lise): fire har «Helg», én har ×2.
-    const helg = overview.badges.find((b) => b.id === one.id)!
-    expect(helg).toMatchObject({ rarity: { tier: 'common' }, step: { index: 1, count: 2 } })
-    expect(overview.badges.find((b) => b.id === two.id)).toMatchObject({
-      // Én av fem: sjelden.
-      rarity: { tier: 'rare', xp: 70 },
-      step: { index: 2, count: 2 },
-    })
-    expect(overview.leaderboard[0]).toMatchObject({ fullName: 'Ola', rank: 1, badges: 2 })
-    expect(overview.me).toMatchObject({ badges: 1, rank: 2, xp: 25, level: 1 })
-    // ES 2019 (Kari, Per, Lise) er med; ES 2018 har bare Ola og er for lite.
-    expect(overview.cohorts).toEqual([
-      expect.objectContaining({ graduationYear: 2019, rank: 1, members: 3, collectors: 1 }),
+    expect(await badgesOn(kari, kari!.personId!)).toMatchObject([
+      { name: 'Helg', rarity: { tier: 'common', xp: 25 }, step: { index: 1, count: 2 } },
     ])
-    expect(overview.ownCohorts).toEqual([2019])
-    expect((await getCohortBadgeStanding(db, kari, 2018)).standing).toBeNull()
+    expect(await badgesOn(kari, ola!.personId!)).toMatchObject([
+      // Én av fem: sjelden. Ola har begge, men profilen viser det høyeste trinnet.
+      { id: two.id, rarity: { tier: 'rare', xp: 70 }, step: { index: 2, count: 2 } },
+    ])
+    expect((await getProfile(db, kari, ola!.personId!)).level).toMatchObject({
+      xp: 95,
+      level: 2,
+      title: 'Deltaker',
+      badges: 2,
+    })
 
-    // Numrene står fast, også når noen skjuler merket.
-    const details = await getBadge(db, kari, one.slug)
-    expect(details.awarded).toBe(4)
-    expect(details.own?.number).toBeGreaterThanOrEqual(1)
-    await setOwnBadgeHidden(db, ola, one.id, true)
     await setOwnBadgeHidden(db, ola, two.id, true)
-    const after = await getBadgeOverview(db, kari)
-    // Skjulte merker teller ikke: Ola er ute av topplista.
-    expect(after.leaderboard.map((e) => e.fullName)).not.toContain('Ola')
-    expect((await getProfile(db, kari, kari!.personId!)).level).toMatchObject({ xp: 25, badges: 1 })
+    // Skjulte merker teller ikke, heller ikke for personen selv.
+    expect((await getProfile(db, ola, ola!.personId!)).level).toMatchObject({ xp: 25, badges: 1 })
   })
 })

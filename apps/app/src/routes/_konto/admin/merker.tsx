@@ -70,7 +70,7 @@ function AdminBadgesPage() {
           <p>
             Merker deles ut av seg selv etter regelen, ut fra det som allerede står i appen:
             arrangementer, kull, styret, selskaper og profilen. Lag dem som utkast, se hvem som får
-            dem, og publiser når de er klare. Da får alle som har merket et varsel.
+            dem, og publiser når de er klare. Da dukker de opp på profilene, uten varsler.
           </p>
           <p className="mt-2 text-stone-500">
             Du kan også be Claude om det med MCP: «Lag merker for ESAF-helgen og for gründere».
@@ -135,13 +135,7 @@ function BadgeRow({ badge: b, onAward }: { badge: AdminBadge; onAward: () => voi
         <BadgeMedal badge={b} earned={b.status !== 'archived'} />
         <div className="min-w-0 flex-1 basis-60">
           <p className="font-semibold text-stone-950">
-            {b.status === 'published' ? (
-              <Link to="/merker/$slug" params={{ slug: b.slug }} className="hover:text-brand-600">
-                {b.name}
-              </Link>
-            ) : (
-              b.name
-            )}
+            {b.name}
             {b.series && (
               <span className="ml-2 text-xs font-normal text-stone-500">Serie: {b.series}</span>
             )}
@@ -921,8 +915,8 @@ function AwardDialog({ badge, onClose }: { badge: AdminBadge; onClose: () => voi
       title={`Del ut «${badge.name}»`}
       description={
         badge.status === 'draft'
-          ? 'Merket er et utkast. De du deler det ut til, får varsel når det publiseres.'
-          : 'De du deler det ut til, får varsel. Begrunnelsen vises på merket.'
+          ? 'Merket er et utkast. Det vises på profilene når det publiseres.'
+          : 'Merket vises på profilene med en gang, med begrunnelsen.'
       }
       onClose={onClose}
       busy={busy}

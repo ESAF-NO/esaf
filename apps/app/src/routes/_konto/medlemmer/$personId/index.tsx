@@ -24,7 +24,7 @@ import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
 import { RoleBadge } from '#/components/EventCharts.tsx'
-import { BadgePill, LevelRing } from '#/components/Badges.tsx'
+import { LevelRing, ProfileBadgeGrid } from '#/components/Badges.tsx'
 import { BoardBadge } from '#/components/Board.tsx'
 import { RepresentativeBadges } from '#/components/Representatives.tsx'
 import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
@@ -687,51 +687,41 @@ function EventsCard({ profile: p }: { profile: Profile }) {
 }
 
 /**
- * Merkene personen har. På egen profil vises også skjulte merker (nedtonet),
- * og en lenke til alle merkene og hvor langt man har kommet.
+ * Merkene personen har, som på GitHub: nivået og medaljene. På egen profil
+ * vises også skjulte merker (nedtonet), og en lenke for å fylle inn
+ * arrangementene, som gir flere.
  */
 function BadgesCard({ profile: p }: { profile: Profile }) {
   if (!p.badges.length && !p.isOwn) return null
   return (
     <Card className="p-5">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
-        <Award className="size-4 text-stone-400" aria-hidden /> Merker
-      </h2>
-      {p.level.xp > 0 && (
-        <Link to="/merker" className="mt-3 flex items-center gap-3 rounded-xl bg-stone-50 p-2.5">
-          <LevelRing level={p.level} size="sm" />
-          <span className="min-w-0 text-sm">
-            <span className="block font-semibold text-stone-950">
-              Nivå {p.level.level} · {p.level.title}
-            </span>
-            <span className="block text-xs text-stone-500 tabular-nums">
-              {p.level.xp} XP{p.level.rank ? ` · #${p.level.rank} på topplista` : ''}
-            </span>
+      <h2 className="flex items-center justify-between gap-2 text-sm font-semibold text-stone-950">
+        <span className="flex items-center gap-2">
+          <Award className="size-4 text-stone-400" aria-hidden /> Merker
+        </span>
+        {p.level.xp > 0 && (
+          <span
+            className="flex items-center gap-1.5 text-xs font-medium text-stone-500"
+            title={`${p.level.xp} XP`}
+          >
+            <LevelRing level={p.level} size="xs" />
+            Nivå {p.level.level} · {p.level.title}
           </span>
-        </Link>
-      )}
+        )}
+      </h2>
       {p.badges.length ? (
-        <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Merker">
-          {p.badges.map((b) => (
-            <li key={b.id}>
-              <BadgePill
-                badge={b}
-                rarity={b.rarity.tier}
-                hidden={b.hidden}
-                title={b.citation ? `${b.description} «${b.citation}»` : b.description}
-              />
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3">
+          <ProfileBadgeGrid badges={p.badges} isOwn={p.isOwn} />
+        </div>
       ) : (
         <p className="mt-1 text-sm text-stone-500">Du har ingen merker ennå.</p>
       )}
       {p.isOwn && (
         <Link
-          to="/merker"
+          to="/var-du-der"
           className="mt-3 inline-block text-xs font-medium text-stone-500 hover:text-stone-900"
         >
-          Se alle merker og hva som skal til
+          Mangler noe? Kryss av for arrangementene du var på
         </Link>
       )}
     </Card>

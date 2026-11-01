@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as KontoRouteImport } from './routes/_konto'
+import { Route as AvmeldRouteImport } from './routes/avmeld'
 import { Route as GlemtPassordRouteImport } from './routes/glemt-passord'
 import { Route as LoggInnRouteImport } from './routes/logg-inn'
 import { Route as RegistrerRouteImport } from './routes/registrer'
@@ -55,6 +56,7 @@ import { Route as ApiImportKullrepresentanterRouteImport } from './routes/api/im
 import { Route as ApiLogoerKeyRouteImport } from './routes/api/logoer/$key'
 import { Route as ApiMcpOauthGodkjennRouteImport } from './routes/api/mcp-oauth/godkjenn'
 import { Route as ApiMcpOauthLoggInnRouteImport } from './routes/api/mcp-oauth/logg-inn'
+import { Route as ApiVarslerAvmeldRouteImport } from './routes/api/varsler/avmeld'
 import { Route as ApiVedleggIndexRouteImport } from './routes/api/vedlegg/index'
 import { Route as ApiVedleggNameRouteImport } from './routes/api/vedlegg/$name'
 import { Route as KontoAdminArrangementerImportRouteImport } from './routes/_konto/admin/arrangementer_.import'
@@ -77,6 +79,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const KontoRoute = KontoRouteImport.update({
   id: '/_konto',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AvmeldRoute = AvmeldRouteImport.update({
+  id: '/avmeld',
+  path: '/avmeld',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GlemtPassordRoute = GlemtPassordRouteImport.update({
@@ -302,6 +309,11 @@ const ApiMcpOauthLoggInnRoute = ApiMcpOauthLoggInnRouteImport.update({
   path: '/api/mcp-oauth/logg-inn',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVarslerAvmeldRoute = ApiVarslerAvmeldRouteImport.update({
+  id: '/api/varsler/avmeld',
+  path: '/api/varsler/avmeld',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiVedleggIndexRoute = ApiVedleggIndexRouteImport.update({
   id: '/api/vedlegg/',
   path: '/api/vedlegg/',
@@ -385,6 +397,7 @@ const ApiSelskaperCompanyIdLogoRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/avmeld': typeof AvmeldRoute
   '/glemt-passord': typeof GlemtPassordRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
@@ -422,6 +435,7 @@ export interface FileRoutesByFullPath {
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
   '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
+  '/api/varsler/avmeld': typeof ApiVarslerAvmeldRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin/': typeof KontoAdminIndexRoute
   '/arrangementer/': typeof KontoArrangementerIndexRoute
@@ -446,6 +460,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/avmeld': typeof AvmeldRoute
   '/glemt-passord': typeof GlemtPassordRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
@@ -482,6 +497,7 @@ export interface FileRoutesByTo {
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
   '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
+  '/api/varsler/avmeld': typeof ApiVarslerAvmeldRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin': typeof KontoAdminIndexRoute
   '/arrangementer': typeof KontoArrangementerIndexRoute
@@ -508,6 +524,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_konto': typeof KontoRouteWithChildren
+  '/avmeld': typeof AvmeldRoute
   '/glemt-passord': typeof GlemtPassordRoute
   '/logg-inn': typeof LoggInnRoute
   '/registrer': typeof RegistrerRoute
@@ -545,6 +562,7 @@ export interface FileRoutesById {
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
   '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
+  '/api/varsler/avmeld': typeof ApiVarslerAvmeldRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/_konto/admin/': typeof KontoAdminIndexRoute
   '/_konto/arrangementer/': typeof KontoArrangementerIndexRoute
@@ -571,6 +589,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/avmeld'
     | '/glemt-passord'
     | '/logg-inn'
     | '/registrer'
@@ -608,6 +627,7 @@ export interface FileRouteTypes {
     | '/api/logoer/$key'
     | '/api/mcp-oauth/godkjenn'
     | '/api/mcp-oauth/logg-inn'
+    | '/api/varsler/avmeld'
     | '/api/vedlegg/$name'
     | '/admin/'
     | '/arrangementer/'
@@ -632,6 +652,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/avmeld'
     | '/glemt-passord'
     | '/logg-inn'
     | '/registrer'
@@ -668,6 +689,7 @@ export interface FileRouteTypes {
     | '/api/logoer/$key'
     | '/api/mcp-oauth/godkjenn'
     | '/api/mcp-oauth/logg-inn'
+    | '/api/varsler/avmeld'
     | '/api/vedlegg/$name'
     | '/admin'
     | '/arrangementer'
@@ -693,6 +715,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_konto'
+    | '/avmeld'
     | '/glemt-passord'
     | '/logg-inn'
     | '/registrer'
@@ -730,6 +753,7 @@ export interface FileRouteTypes {
     | '/api/logoer/$key'
     | '/api/mcp-oauth/godkjenn'
     | '/api/mcp-oauth/logg-inn'
+    | '/api/varsler/avmeld'
     | '/api/vedlegg/$name'
     | '/_konto/admin/'
     | '/_konto/arrangementer/'
@@ -756,6 +780,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   KontoRoute: typeof KontoRouteWithChildren
+  AvmeldRoute: typeof AvmeldRoute
   GlemtPassordRoute: typeof GlemtPassordRoute
   LoggInnRoute: typeof LoggInnRoute
   RegistrerRoute: typeof RegistrerRoute
@@ -772,6 +797,7 @@ export interface RootRouteChildren {
   ApiLogoerKeyRoute: typeof ApiLogoerKeyRoute
   ApiMcpOauthGodkjennRoute: typeof ApiMcpOauthGodkjennRoute
   ApiMcpOauthLoggInnRoute: typeof ApiMcpOauthLoggInnRoute
+  ApiVarslerAvmeldRoute: typeof ApiVarslerAvmeldRoute
   ApiVedleggNameRoute: typeof ApiVedleggNameRoute
   ApiVedleggIndexRoute: typeof ApiVedleggIndexRoute
   ApiMedlemmerPersonIdBildeRoute: typeof ApiMedlemmerPersonIdBildeRoute
@@ -792,6 +818,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof KontoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/avmeld': {
+      id: '/avmeld'
+      path: '/avmeld'
+      fullPath: '/avmeld'
+      preLoaderRoute: typeof AvmeldRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/glemt-passord': {
@@ -1102,6 +1135,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMcpOauthLoggInnRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/varsler/avmeld': {
+      id: '/api/varsler/avmeld'
+      path: '/api/varsler/avmeld'
+      fullPath: '/api/varsler/avmeld'
+      preLoaderRoute: typeof ApiVarslerAvmeldRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/vedlegg/': {
       id: '/api/vedlegg/'
       path: '/api/vedlegg'
@@ -1302,6 +1342,7 @@ const KontoRouteWithChildren = KontoRoute._addFileChildren(KontoRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   KontoRoute: KontoRouteWithChildren,
+  AvmeldRoute: AvmeldRoute,
   GlemtPassordRoute: GlemtPassordRoute,
   LoggInnRoute: LoggInnRoute,
   RegistrerRoute: RegistrerRoute,
@@ -1318,6 +1359,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLogoerKeyRoute: ApiLogoerKeyRoute,
   ApiMcpOauthGodkjennRoute: ApiMcpOauthGodkjennRoute,
   ApiMcpOauthLoggInnRoute: ApiMcpOauthLoggInnRoute,
+  ApiVarslerAvmeldRoute: ApiVarslerAvmeldRoute,
   ApiVedleggNameRoute: ApiVedleggNameRoute,
   ApiVedleggIndexRoute: ApiVedleggIndexRoute,
   ApiMedlemmerPersonIdBildeRoute: ApiMedlemmerPersonIdBildeRoute,

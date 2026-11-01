@@ -1,5 +1,9 @@
 import {
   countUnreadNotifications,
+  describeUnsubscribe,
+  getEmailPreferences,
+  setEmailPreference,
+  unsubscribe,
   listMentionable,
   listNotifications,
   markAllNotificationsRead,
@@ -9,6 +13,8 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
+import { mailer } from '#/server/email.server.ts'
+import { env } from '#/server/env.server.ts'
 
 // Tilgang sjekkes i @esaf/core for hvert kall: alle ser og endrer bare sine egne varsler.
 
@@ -49,3 +55,39 @@ export const readAllNotifications = createServerFn({ method: 'POST' }).handler((
 export const fetchMentionable = createServerFn({ method: 'GET' }).handler(() =>
   run((viewer) => listMentionable(db, viewer)),
 )
+
+// Varsler på e-post. Valgene er den innloggedes egne; avmeldingen virker uten
+// innlogging, med den signerte lenken fra e-posten (se `notification-email.ts`).
+
+export const fetchEmailPreferences = createServerFn({ method: 'GET' }).handler(() =>
+  run(async (viewer) => ({
+    ...(await getEmailPreferences(db, viewer)),
+    // Uten e-postleverandør sendes ingenting; siden sier det.
+    sending: mailer !== null,
+  })),
+)
+
+export const saveEmailPreference = createServerFn({ method: 'POST' })
+  .validator(z.object({ category: z.string().max(40), frequency: z.string().max(20) }))
+  .handler(({ data }) => run((viewer) => setEmailPreference(db, viewer, data)))
+
+/** Hva avmeldingslenken slår av, uten å gjøre det (lenkesjekkere i e-post skal ikke melde av). */
+export const fetchUnsubscribe = createServerFn({ method: 'GET' })
+  .validator(z.object({ token: z.string().max(500) }))
+  .handler(({ data }) => {
+    try {
+      return describeUnsubscribe(env.BETTER_AUTH_SECRET, data.token)
+    } catch {
+      return null
+    }
+  })
+
+export const confirmUnsubscribe = createServerFn({ method: 'POST' })
+  .validator(z.object({ token: z.string().max(500) }))
+  .handler(async ({ data }) => {
+    try {
+      return await unsubscribe(db, env.BETTER_AUTH_SECRET, data.token)
+    } catch {
+      throw new Error('Lenken er ikke gyldig. Endre varslene under Konto og sikkerhet i stedet.')
+    }
+  })

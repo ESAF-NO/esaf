@@ -9,6 +9,9 @@ import {
   awardBadge,
   createBadge,
   createEvent,
+  createEventType,
+  deleteEvent,
+  deleteEventType,
   createProfile,
   decideMembership,
   deleteBadge,
@@ -412,5 +415,119 @@ describe.skipIf(!url)('merker', () => {
         ),
       )
     expect(kept?.citation).toBe('Hjalp til')
+  })
+
+  it('slettede arrangementer og typer: merket kan fortsatt deles ut og rettes', async () => {
+    const [a, b] = [await weekend('2018-09-07'), await weekend('2019-09-06')]
+    await attend(a, ola)
+    const { id } = await createBadge(
+      db,
+      admin,
+      badgeFields({
+        name: 'Begge',
+        rule: { kind: 'event_attended', eventIds: [a, b], match: 'all' },
+      }),
+      { publish: true },
+    )
+    expect(await awards(id)).toEqual([])
+    // Arrangementet Ola ikke var på, slettes: da er «alle» det ene som er igjen.
+    await deleteEvent(db, admin, b)
+    await syncBadges(db)
+    expect((await awards(id)).map((x) => x.personId)).toEqual([ola!.personId])
+    await updateBadge(db, admin, id, { description: 'Var på den første helgen.' })
+    const [stored] = await db.select().from(schema.badge).where(eq(schema.badge.id, id))
+    expect(stored!.rule).toMatchObject({ eventIds: [a] })
+
+    // En type et merke bruker, kan ikke slettes.
+    const type = await createEventType(db, admin, {
+      name: 'Fagkveld',
+      plural: null,
+      description: null,
+      sortOrder: 100,
+    })
+    await createBadge(
+      db,
+      admin,
+      badgeFields({
+        name: 'Fagkveld',
+        rule: { kind: 'event_count', eventTypeId: type.id, count: 1 },
+      }),
+    )
+    await expect(deleteEventType(db, admin, type.id)).rejects.toThrow('Merket «Fagkveld» bruker')
+  })
+
+  it('i en serie med lik rekkefølge vises trinnet som krever mest', async () => {
+    for (const d of ['2017-09-01', '2018-09-07', '2019-09-06']) await attend(await weekend(d), ola)
+    for (const count of [3, 1, 2]) {
+      await createBadge(
+        db,
+        admin,
+        badgeFields({
+          name: `Helg ${count}`,
+          series: 'ESAF-helgen',
+          rule: { kind: 'event_count', eventTypeId: weekendType, count },
+        }),
+        { publish: true },
+      )
+    }
+    expect((await getProfile(db, kari, ola!.personId!)).badges.map((b) => b.name)).toEqual([
+      'Helg 3',
+    ])
+  })
+
+  it('å dele ut på nytt uten begrunnelse beholder den gamle', async () => {
+    const { id } = await createBadge(
+      db,
+      admin,
+      badgeFields({ name: 'Ildsjel', rule: { kind: 'manual' } }),
+      { publish: true },
+    )
+    await awardBadge(db, admin, id, { personIds: [ola!.personId!], citation: 'For innsatsen 2024' })
+    expect(
+      await awardBadge(db, admin, id, { personIds: [ola!.personId!, kari!.personId!] }),
+    ).toEqual({ awarded: 1, updated: 0 })
+    const rows = await db
+      .select({ personId: schema.badgeAward.personId, citation: schema.badgeAward.citation })
+      .from(schema.badgeAward)
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { personId: ola!.personId, citation: 'For innsatsen 2024' },
+        { personId: kari!.personId, citation: null },
+      ]),
+    )
+    await awardBadge(db, admin, id, { personIds: [ola!.personId!], citation: 'For alt i 2025' })
+    const actions = (
+      await db
+        .select({ action: schema.auditEvent.action })
+        .from(schema.auditEvent)
+        .where(
+          sql`${schema.auditEvent.action} like 'badge.%' and ${schema.auditEvent.subjectPersonId} is not null`,
+        )
+    ).map((r) => r.action)
+    expect(actions.sort()).toEqual(['badge.award', 'badge.award', 'badge.citation'])
+  })
+
+  it('sammenslåing beholder merker på arkiverte merker, uten nye varsler', async () => {
+    const duplicate = (
+      await createProfile(db, admin, {
+        fullName: 'Kari Dobbel',
+        cohorts: [{ graduationYear: 2019, relation: 'student' }],
+        emails: [],
+        status: 'active',
+      })
+    ).personId
+    await attend(await weekend('2018-09-07'), { ...kari!, personId: duplicate })
+    const rule = { kind: 'event_count' as const, eventTypeId: weekendType, count: 1 }
+    const archived = await createBadge(db, admin, badgeFields({ name: 'Gammel', rule }), {
+      publish: true,
+    })
+    const live = await createBadge(db, admin, badgeFields({ name: 'Ny', rule }), { publish: true })
+    await setBadgeStatus(db, admin, archived.id, 'archived')
+    expect(await badgeNotifications(kari)).toEqual([])
+
+    await mergePeople(db, storage, admin, { sourceId: duplicate, targetId: kari!.personId! })
+    expect(await awards(archived.id)).toMatchObject([{ personId: kari!.personId }])
+    expect(await awards(live.id)).toMatchObject([{ personId: kari!.personId }])
+    expect(await badgeNotifications(kari)).toEqual([])
   })
 })

@@ -164,7 +164,17 @@ export function describeEmail(config: EmailConfig | null): string {
 // Sending
 // ---------------------------------------------------------------------------
 
-export type EmailMessage = { to: string; subject: string; text: string; html: string }
+export type EmailMessage = {
+  to: string
+  subject: string
+  text: string
+  html: string
+  /**
+   * Egne e-posthoder, som `List-Unsubscribe`. Cloudflare godtar bare hoder på
+   * sin liste og `X-…`; et ukjent hode stopper hele sendingen.
+   */
+  headers?: Record<string, string>
+}
 
 export type EmailErrorReason = 'bounced' | 'rejected' | 'throttled' | 'unavailable'
 
@@ -244,7 +254,11 @@ export function createMailer(config: EmailConfig, options: MailerOptions = {}): 
         assertRecipient(message.to)
         // Bare i utvikling (se `emailEnvIssues`): lenkene skal kunne klikkes rett fra terminalen.
         log.info(
-          `\n[esaf/e-post] Til: ${message.to}\nEmne: ${message.subject}\n\n${message.text}\n`,
+          `\n[esaf/e-post] Til: ${message.to}\nEmne: ${message.subject}\n${Object.entries(
+            message.headers ?? {},
+          )
+            .map(([name, value]) => `${name}: ${value}\n`)
+            .join('')}\n${message.text}\n`,
         )
       },
     }
@@ -279,6 +293,7 @@ export function createMailer(config: EmailConfig, options: MailerOptions = {}): 
             text: message.text,
             html: message.html,
             ...(config.replyTo && { reply_to: config.replyTo }),
+            ...(message.headers && { headers: message.headers }),
           }),
           signal: AbortSignal.timeout(timeoutMs),
         })

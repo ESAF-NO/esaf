@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  badgeRarity,
   badgeRule,
   describeBadgeRule,
   emptyBadgeFacts,
   evaluateBadgeRule,
+  levelFor,
+  xpForLevel,
   type BadgeFacts,
   type BadgeRuleInput,
 } from '../src/index.ts'
@@ -220,5 +223,24 @@ describe('regler for merker', () => {
       'Fylt ut bilde, om deg og erfaring på profilen',
     )
     expect(text({ kind: 'manual' })).toBe('Deles ut av styret')
+  })
+})
+
+describe('spillet: sjeldenhet og nivå', () => {
+  it('sjeldenheten følger andelen aktive medlemmer som har merket', () => {
+    expect(badgeRarity(0, 200)).toMatchObject({ tier: 'legendary', xp: 200 })
+    expect(badgeRarity(4, 200)).toMatchObject({ tier: 'legendary', share: 0.02 })
+    expect(badgeRarity(10, 200).tier).toBe('epic')
+    expect(badgeRarity(30, 200).tier).toBe('rare')
+    expect(badgeRarity(80, 200).tier).toBe('uncommon')
+    expect(badgeRarity(150, 200)).toMatchObject({ tier: 'common', xp: 25 })
+  })
+
+  it('nivåene krever stadig mer XP, og har titler', () => {
+    expect([1, 2, 3, 4, 5].map(xpForLevel)).toEqual([0, 40, 100, 180, 280])
+    expect(levelFor(0)).toMatchObject({ level: 1, title: 'Nykommer', nextXp: 40 })
+    expect(levelFor(39).level).toBe(1)
+    expect(levelFor(40)).toMatchObject({ level: 2, title: 'Deltaker', levelXp: 40, nextXp: 100 })
+    expect(levelFor(5000)).toMatchObject({ title: 'Legende' })
   })
 })

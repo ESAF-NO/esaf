@@ -1,11 +1,12 @@
 import type { CohortCompany, CohortRepresentatives, MemberListItem } from '@esaf/core'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { ArrowLeft, Megaphone, Pencil, Search } from 'lucide-react'
+import { ArrowLeft, Megaphone, Pencil, Search, Trophy } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 import { comparePeople, PersonCard } from '#/components/PersonCard.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { RepresentativeCard } from '#/components/Representatives.tsx'
 import { buttonClass, Card, CompanyLogo } from '#/components/ui.tsx'
+import { fetchCohortStanding } from '#/lib/badges.functions.ts'
 import { fetchCohort } from '#/lib/cohorts.functions.ts'
 import { esPeriod, plural, yearSpan } from '#/lib/format.ts'
 
@@ -15,9 +16,13 @@ export const Route = createFileRoute('/_konto/kull/$year')({
     parse: ({ year }) => ({ year: Number(year) }),
     stringify: ({ year }) => ({ year: String(year) }),
   },
-  loader: ({ params }) => {
+  loader: async ({ params }) => {
     if (!Number.isInteger(params.year)) throw notFound()
-    return fetchCohort({ data: { year: params.year } })
+    const [cohort, race] = await Promise.all([
+      fetchCohort({ data: { year: params.year } }),
+      fetchCohortStanding({ data: { year: params.year } }),
+    ])
+    return { ...cohort, race }
   },
   head: ({ loaderData }) => ({
     meta: [{ title: loaderData ? `ES ${loaderData.graduationYear} – ESAF` : 'Kull – ESAF' }],
@@ -99,6 +104,32 @@ function CohortPage() {
         reps={c.representatives}
         canManage={viewer.permissions.includes('members.manage')}
       />
+
+      {c.race.standing && (
+        <Link
+          to="/merker"
+          className="mb-8 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl bg-gradient-to-br from-brand-50 via-white to-amber-50 p-4 shadow-card ring-1 ring-stone-200/70 transition hover:ring-stone-300"
+        >
+          <span className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-full bg-white text-amber-500 shadow-sm ring-1 ring-amber-200">
+              <Trophy className="size-5" aria-hidden />
+            </span>
+            <span>
+              <span className="block text-xs font-semibold tracking-wide text-brand-700 uppercase">
+                Kull mot kull
+              </span>
+              <span className="block text-lg font-semibold text-stone-950 tabular-nums">
+                #{c.race.standing.rank} av {c.race.cohorts}
+              </span>
+            </span>
+          </span>
+          <span className="text-sm text-stone-600 tabular-nums">
+            {c.race.standing.xpPerMember.toLocaleString('nb')} XP per medlem ·{' '}
+            {c.race.standing.badgesPerMember.toLocaleString('nb')} merker per medlem ·{' '}
+            {Math.round(c.race.standing.collectors * 100)} % har minst ett
+          </span>
+        </Link>
+      )}
 
       {c.members === 0 ? (
         <p className="text-sm text-stone-500">Ingen fra ES {year} er med i ESAF-appen ennå.</p>

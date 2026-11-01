@@ -41,7 +41,9 @@ Data model:
 - badges ("merker"): achievements shown on profiles and at /merker. Each has a rule that reads data already in the
   app (events and roles, years in a row, cohort, board, cohort representative, companies founded/at ES/acquired,
   profile fields, feed activity) and is awarded and removed automatically, or is manual and awarded by hand with a
-  citation. Drafts are invisible until published; publishing notifies everyone who gets it.
+  citation. Drafts are invisible until published; publishing notifies everyone who gets it. Rarer badges (by the share
+  of active members holding them) give more XP; members get a level and a leaderboard, and cohorts compete on XP per
+  member.
 - field sources: where a field on a profile or company came from. Members see "Fra <source> · ikke bekreftet"
   until the person confirms. Confidence (high/medium/low) is only visible to admins.
 
@@ -249,8 +251,9 @@ Design badges ("merker") for the ESAF member app${theme ? `, focused on: ${theme
    ladders (create_badge_series) like ESAF-helgen ×1/×3/×5/×10 and years in a row, roles (arranged, spoke,
    volunteered), firsts and specific historic events, started a company at ES, founder, exit (acquired), mentor,
    board, cohort representative, a complete profile, and a few manual ones for special effort.
-3. Run preview_badge for each and show me one table: name, rule in words, how many would get it now. Aim for a
-   mix of easy and rare badges; adjust thresholds that give nobody or everybody.
+3. Run preview_badge for each and show me one table: name, rule in words, how many would get it now. Rarity (and
+   XP) follows the share of active members who have a badge, so aim for a ladder from common to legendary: a few
+   easy ones everyone gets, and some that only a handful reach. Adjust thresholds that give nobody or everybody.
 4. Names and descriptions in Norwegian bokmål: short, warm and plain ("ESAF-helgen ×5", "Vært på fem ESAF-helger."),
    no slang, no emoji. One colour per family, an icon that fits.
 5. After I approve, create them as drafts, then publish what I say (publishing notifies everyone who gets them).

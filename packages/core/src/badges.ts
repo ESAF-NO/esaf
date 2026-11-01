@@ -11,6 +11,17 @@ import { and, asc, desc, eq, ilike, inArray, isNull, lte, sql, type AnyColumn } 
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import {
+  cohortStandings,
+  leaderboard,
+  loadBadgeStats,
+  playerStanding,
+  type BadgeRarity,
+  type BadgeStats,
+  type CohortStanding,
+  type LeaderboardEntry,
+  type PlayerStanding,
+} from './badge-game.ts'
 import { boardRoleNames, boardRoles } from './board.ts'
 import { companySlug } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
@@ -996,6 +1007,8 @@ export type OwnBadge = {
   citation: string | null
   /** For merker med regel som ikke er nådd ennå. */
   progress: BadgeProgress | null
+  /** Hvilket nummer den innloggede var til å få merket. Bare på siden for merket. */
+  number?: number | null
 }
 
 export type BadgeOverviewItem = BadgeChip & {
@@ -1007,26 +1020,57 @@ export type BadgeOverviewItem = BadgeChip & {
   ruleText: string
   /** Aktive medlemmer som har merket og ikke har skjult det. */
   holders: number
+  /** Hvor sjeldent merket er, og hvor mye XP det gir. */
+  rarity: BadgeRarity
+  /** Trinnet i serien: «II av III». Null utenfor en serie. */
+  step: BadgeStep | null
   own: OwnBadge | null
 }
 
-/** Aktive medlemmer som ikke har skjult merket, eller den innloggede selv. */
-const shownTo = (viewerPersonId: string) =>
-  and(
-    eq(membership.status, 'active'),
-    sql`(${badgeAward.hidden} = false or ${badgeAward.personId} = ${viewerPersonId})`,
-  )
+/** Trinnet et merke er i serien sin, fra 1. */
+export type BadgeStep = { index: number; count: number }
+
+/**
+ * Trinnene i hver serie, i rekkefølgen admins har satt og så etter tallet
+ * regelen krever. Serier med bare ett merke har ingen trinn.
+ */
+function seriesSteps(
+  rows: { id: string; name: string; series: string | null; sortOrder: number; rule: BadgeRule }[],
+): Map<string, BadgeStep> {
+  const bySeries = new Map<string, typeof rows>()
+  for (const r of rows) {
+    if (!r.series) continue
+    const key = r.series.toLocaleLowerCase('nb')
+    bySeries.set(key, [...(bySeries.get(key) ?? []), r])
+  }
+  const steps = new Map<string, BadgeStep>()
+  for (const ladder of bySeries.values()) {
+    if (ladder.length < 2) continue
+    ladder
+      .sort(
+        (a, b) =>
+          a.sortOrder - b.sortOrder ||
+          ruleLevel(a.rule) - ruleLevel(b.rule) ||
+          a.name.localeCompare(b.name, 'nb'),
+      )
+      .forEach((r, i) => steps.set(r.id, { index: i + 1, count: ladder.length }))
+  }
+  return steps
+}
 
 /** Alle publiserte merker, med hvor mange som har dem og hvor langt den innloggede har kommet. */
-export async function listBadges(db: Db, viewer: Viewer): Promise<BadgeOverviewItem[]> {
+export async function listBadges(
+  db: Db,
+  viewer: Viewer,
+  options: { stats?: BadgeStats } = {},
+): Promise<BadgeOverviewItem[]> {
   assertMember(viewer)
   const rows = await db
     .select({
       ...chipColumns,
       rule: badge.rule,
       series: badge.series,
-      // Spørringen har bare én tabell, så kolonnene i underspørringen skrives med tabellnavn.
-      holders: sql<number>`(select count(*)::int from badge_award a inner join membership m on m.person_id = a.person_id where a.badge_id = "badge"."id" and m.status = 'active' and a.hidden = false)`,
+      sortOrder: badge.sortOrder,
     })
     .from(badge)
     .where(eq(badge.status, 'published'))
@@ -1035,7 +1079,7 @@ export async function listBadges(db: Db, viewer: Viewer): Promise<BadgeOverviewI
     db,
     rows.map((r) => storedRule(r.rule)),
   )
-  const [names, own, facts] = await Promise.all([
+  const [names, own, facts, stats] = await Promise.all([
     loadRuleNames(db, rules),
     db
       .select({
@@ -1047,10 +1091,12 @@ export async function listBadges(db: Db, viewer: Viewer): Promise<BadgeOverviewI
       .from(badgeAward)
       .where(eq(badgeAward.personId, viewer.personId)),
     loadBadgeFacts(db, [viewer.personId]),
+    options.stats ?? loadBadgeStats(db),
   ])
   const mine = new Map(own.map((a) => [a.badgeId, a]))
   const myFacts = facts.get(viewer.personId) ?? emptyBadgeFacts()
-  return rows.map(({ rule: _rule, series, holders, ...row }, i) => {
+  const steps = seriesSteps(rows.map((r, i) => ({ ...r, rule: rules[i]! })))
+  return rows.map(({ rule: _rule, series, sortOrder: _sortOrder, ...row }, i) => {
     const rule = rules[i]!
     const award = mine.get(row.id)
     return {
@@ -1059,7 +1105,9 @@ export async function listBadges(db: Db, viewer: Viewer): Promise<BadgeOverviewI
       kind: rule.kind,
       manual: isManualRule(rule),
       ruleText: describeBadgeRule(rule, names),
-      holders,
+      holders: stats.holders.get(row.id) ?? 0,
+      rarity: stats.rarity(row.id),
+      step: steps.get(row.id) ?? null,
       own: award
         ? {
             earned: true,
@@ -1079,6 +1127,54 @@ export async function listBadges(db: Db, viewer: Viewer): Promise<BadgeOverviewI
   })
 }
 
+export type BadgeOverview = {
+  badges: BadgeOverviewItem[]
+  /** Nivået og plassen til den innloggede. */
+  me: PlayerStanding
+  leaderboard: LeaderboardEntry[]
+  /** Kull mot kull. */
+  cohorts: CohortStanding[]
+  /** Kullene den innloggede gikk i som student, for å markere dem. */
+  ownCohorts: number[]
+}
+
+/** Merkesiden: alle merkene, nivået ditt, topplista og kull mot kull. */
+export async function getBadgeOverview(db: Db, viewer: Viewer): Promise<BadgeOverview> {
+  assertMember(viewer)
+  const stats = await loadBadgeStats(db)
+  const [badges, top, cohorts, own] = await Promise.all([
+    listBadges(db, viewer, { stats }),
+    leaderboard(db, stats),
+    cohortStandings(db, stats),
+    db
+      .select({ year: cohort.graduationYear })
+      .from(personCohort)
+      .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+      .where(and(eq(personCohort.personId, viewer.personId), eq(personCohort.relation, 'student'))),
+  ])
+  return {
+    badges,
+    me: playerStanding(stats, viewer.personId),
+    leaderboard: top,
+    cohorts,
+    ownCohorts: own.map((c) => c.year),
+  }
+}
+
+/** Hvor et kull står i kull mot kull, til kullsiden. Null når kullet er for lite. */
+export async function getCohortBadgeStanding(
+  db: Db,
+  viewer: Viewer,
+  graduationYear: number,
+): Promise<{ standing: CohortStanding | null; cohorts: number }> {
+  assertMember(viewer)
+  const standings = await cohortStandings(db, await loadBadgeStats(db))
+  return {
+    standing: standings.find((s) => s.graduationYear === graduationYear) ?? null,
+    cohorts: standings.length,
+  }
+}
+
 export type BadgeHolder = {
   personId: string
   fullName: string
@@ -1089,11 +1185,15 @@ export type BadgeHolder = {
   citation: string | null
   /** Bare den innloggede selv kan se sitt eget skjulte merke i lista. */
   hidden: boolean
+  /** Hvilket nummer personen var til å få merket: «#3». */
+  number: number
 }
 
 export type BadgeDetails = BadgeOverviewItem & {
   status: BadgeStatus
   holderList: BadgeHolder[]
+  /** Hvor mange aktive medlemmer som har fått merket, også de som har skjult det: «#3 av 41». */
+  awarded: number
 }
 
 /** Ett merke med dem som har det, eldste først. Utkast og arkiverte bare for admins. */
@@ -1104,7 +1204,7 @@ export async function getBadge(db: Db, viewer: Viewer, slug: string): Promise<Ba
     throw new NotFoundError('Fant ikke merket.')
   }
   const [rule] = (await withLiveEvents(db, [storedRule(row.rule)])) as [BadgeRule]
-  const [names, holders, facts] = await Promise.all([
+  const [names, holders, facts, stats, ladder] = await Promise.all([
     loadRuleNames(db, [rule]),
     db
       .select({
@@ -1122,15 +1222,34 @@ export async function getBadge(db: Db, viewer: Viewer, slug: string): Promise<Ba
       .from(badgeAward)
       .innerJoin(person, eq(person.id, badgeAward.personId))
       .innerJoin(membership, eq(membership.personId, person.id))
-      .where(and(eq(badgeAward.badgeId, row.id), shownTo(viewer.personId)))
+      // Alle aktive, også skjulte, så numrene er de samme for alle. De skjulte fjernes under.
+      .where(and(eq(badgeAward.badgeId, row.id), eq(membership.status, 'active')))
       .orderBy(
         sql`${badgeAward.achievedOn} asc nulls last`,
         asc(badgeAward.createdAt),
         asc(person.fullName),
       ),
     isManualRule(rule) ? null : loadBadgeFacts(db, [viewer.personId]),
+    loadBadgeStats(db),
+    row.series
+      ? db
+          .select({
+            id: badge.id,
+            name: badge.name,
+            series: badge.series,
+            sortOrder: badge.sortOrder,
+            rule: badge.rule,
+          })
+          .from(badge)
+          .where(
+            and(eq(badge.status, 'published'), sql`lower(${badge.series}) = lower(${row.series})`),
+          )
+      : Promise.resolve([]),
   ])
-  const own = holders.find((h) => h.personId === viewer.personId)
+  const numbered = holders.map((h, i) => ({ ...h, number: i + 1 }))
+  const shown = numbered.filter((h) => !h.hidden || h.personId === viewer.personId)
+  const own = numbered.find((h) => h.personId === viewer.personId)
+  const steps = seriesSteps(ladder.map((b) => ({ ...b, rule: storedRule(b.rule) })))
   return {
     ...chip(row),
     series: row.series,
@@ -1138,7 +1257,10 @@ export async function getBadge(db: Db, viewer: Viewer, slug: string): Promise<Ba
     manual: isManualRule(rule),
     ruleText: describeBadgeRule(rule, names),
     status: row.status,
-    holders: holders.filter((h) => !h.hidden).length,
+    holders: shown.filter((h) => !h.hidden).length,
+    awarded: numbered.length,
+    rarity: stats.rarity(row.id),
+    step: steps.get(row.id) ?? null,
     own: own
       ? {
           earned: true,
@@ -1146,6 +1268,7 @@ export async function getBadge(db: Db, viewer: Viewer, slug: string): Promise<Ba
           achievedOn: own.achievedOn,
           citation: own.citation,
           progress: null,
+          number: own.number,
         }
       : {
           earned: false,
@@ -1155,8 +1278,9 @@ export async function getBadge(db: Db, viewer: Viewer, slug: string): Promise<Ba
           progress: facts
             ? evaluateBadgeRule(rule, facts.get(viewer.personId) ?? emptyBadgeFacts()).progress
             : null,
+          number: null,
         },
-    holderList: holders.map(({ photoKey, userId, ...h }) => ({
+    holderList: shown.map(({ photoKey, userId, ...h }) => ({
       ...h,
       photo: photoUrls(photoKey),
       claimed: userId !== null,
@@ -1170,7 +1294,12 @@ export type ProfileBadge = BadgeChip & {
   citation: string | null
   /** Personen har skjult det; bare personen selv ser det da. */
   hidden: boolean
+  rarity: BadgeRarity
+  step: BadgeStep | null
 }
+
+/** Merkene og nivået på en profil. */
+export type ProfileBadges = { badges: ProfileBadge[]; level: PlayerStanding }
 
 /**
  * Merkene på en profil. I en serie vises bare det høyeste trinnet. Skjulte
@@ -1180,9 +1309,23 @@ export async function loadProfileBadges(
   db: Db,
   viewer: Viewer,
   personId: string,
-): Promise<ProfileBadge[]> {
+): Promise<ProfileBadges> {
   assertMember(viewer)
   const own = viewer.personId === personId
+  const [stats, published] = await Promise.all([
+    loadBadgeStats(db),
+    db
+      .select({
+        id: badge.id,
+        name: badge.name,
+        series: badge.series,
+        sortOrder: badge.sortOrder,
+        rule: badge.rule,
+      })
+      .from(badge)
+      .where(eq(badge.status, 'published')),
+  ])
+  const steps = seriesSteps(published.map((b) => ({ ...b, rule: storedRule(b.rule) })))
   const rows = await db
     .select({
       ...chipColumns,
@@ -1212,14 +1355,17 @@ export async function loadProfileBadges(
   // I en serie vises bare det høyeste trinnet: det siste.
   const top = new Map<string, string>()
   for (const r of sorted) if (r.series) top.set(r.series.toLocaleLowerCase('nb'), r.id)
-  return sorted
+  const badges = sorted
     .filter((r) => !r.series || top.get(r.series.toLocaleLowerCase('nb')) === r.id)
     .map(({ achievedOn, citation, hidden, id, slug, name, description, icon, color }) => ({
       ...chip({ id, slug, name, description, icon, color }),
       achievedOn,
       citation,
       hidden,
+      rarity: stats.rarity(id),
+      step: steps.get(id) ?? null,
     }))
+  return { badges, level: playerStanding(stats, personId) }
 }
 
 /** Skjuler eller viser et av ens egne merker. */
@@ -1238,28 +1384,50 @@ export async function setOwnBadgeHidden(
   if (!updated.length) throw new NotFoundError('Du har ikke dette merket.')
 }
 
+/** Et nytt merke, med hvor sjeldent det er og XP-en det gir, til feiringen. */
+export type EarnedBadge = BadgeChip & { rarity: BadgeRarity }
+
 /** Merkene som ble delt ut, slik de vises når den innloggede har fått nye. */
-export async function badgeChips(db: Db | Tx, badgeIds: string[]): Promise<BadgeChip[]> {
+export async function badgeChips(db: Db | Tx, badgeIds: string[]): Promise<EarnedBadge[]> {
   if (!badgeIds.length) return []
-  const rows = await db
-    .select(chipColumns)
-    .from(badge)
-    .where(inArray(badge.id, [...new Set(badgeIds)]))
-    .orderBy(asc(badge.sortOrder), asc(badge.name))
-  return rows.map(chip)
+  const [rows, stats] = await inOrder([
+    () =>
+      db
+        .select(chipColumns)
+        .from(badge)
+        .where(inArray(badge.id, [...new Set(badgeIds)]))
+        .orderBy(asc(badge.sortOrder), asc(badge.name)),
+    () => loadBadgeStats(db),
+  ] as const)
+  return rows.map((row) => ({ ...chip(row), rarity: stats.rarity(row.id) }))
+}
+
+/** Merkene den innloggede nettopp fikk, og nivået etterpå. */
+export type OwnBadgeUpdate = {
+  badges: EarnedBadge[]
+  level: PlayerStanding
+  /** Nivået før, når det ble høyere nå. Null ellers. */
+  previousLevel: number | null
 }
 
 /**
  * Oppdaterer merkene til den innloggede rett etter at hen har endret noe selv
- * (arrangementer, profilen), og gir tilbake merkene hen fikk nå.
+ * (arrangementer, profilen), og gir tilbake merkene hen fikk nå og om nivået
+ * gikk opp.
  */
-export async function refreshOwnBadges(db: Db, viewer: Viewer): Promise<BadgeChip[]> {
+export async function refreshOwnBadges(db: Db, viewer: Viewer): Promise<OwnBadgeUpdate> {
   assertMember(viewer)
+  const before = playerStanding(await loadBadgeStats(db), viewer.personId)
   const { awarded } = await syncBadges(db, { personIds: [viewer.personId] })
-  return badgeChips(
-    db,
-    awarded.map((a) => a.badgeId),
-  )
+  const [badges, stats] = await Promise.all([
+    badgeChips(
+      db,
+      awarded.map((a) => a.badgeId),
+    ),
+    loadBadgeStats(db),
+  ])
+  const level = playerStanding(stats, viewer.personId)
+  return { badges, level, previousLevel: level.level > before.level ? before.level : null }
 }
 
 // ---------------------------------------------------------------------------
@@ -1348,7 +1516,7 @@ export async function addOwnParticipations(
   db: Db,
   viewer: Viewer,
   input: { eventIds: string[] },
-): Promise<{ added: number; badges: BadgeChip[] }> {
+): Promise<{ added: number } & OwnBadgeUpdate> {
   assertMember(viewer)
   const eventIds = z
     .array(z.uuid())
@@ -1373,7 +1541,7 @@ export async function addOwnParticipations(
       .returning({ eventId: eventParticipation.eventId })
     return rows.length
   })
-  return { added, badges: await refreshOwnBadges(db, viewer) }
+  return { added, ...(await refreshOwnBadges(db, viewer)) }
 }
 
 // ---------------------------------------------------------------------------

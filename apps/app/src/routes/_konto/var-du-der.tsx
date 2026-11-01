@@ -1,4 +1,4 @@
-import type { BadgeChip, MissedEventGroup } from '@esaf/core'
+import type { MissedEventGroup, OwnBadgeUpdate } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, Check, MapPin, PartyPopper } from 'lucide-react'
 import { useState } from 'react'
@@ -28,7 +28,7 @@ function MissedEventsPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState<{ added: number; badges: BadgeChip[] } | null>(null)
+  const [saved, setSaved] = useState<({ added: number } & OwnBadgeUpdate) | null>(null)
 
   const toggle = (ids: string[], on: boolean) =>
     setPicked((current) => {
@@ -115,7 +115,7 @@ function MissedEventsPage() {
       )}
 
       {saved && saved.badges.length > 0 && (
-        <NewBadgesDialog badges={saved.badges} onClose={() => setSaved(null)} />
+        <NewBadgesDialog update={saved} onClose={() => setSaved(null)} />
       )}
     </div>
   )

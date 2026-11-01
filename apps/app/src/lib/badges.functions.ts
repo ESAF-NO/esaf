@@ -7,10 +7,7 @@ import {
   createBadge,
   deleteBadge,
   findBadgeCandidates,
-  getBadge,
   getBadgeForAdmin,
-  getBadgeOverview,
-  getCohortBadgeStanding,
   listBadgesForAdmin,
   listMissedEvents,
   previewBadgeRule,
@@ -25,21 +22,9 @@ import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
 
-// Merker. Oversikten, et merke, egne merker og «Var du der?» er for alle
-// medlemmer; resten er Admin og krever badges.manage. Rettigheter og full
+// Merker. Egne merker og «Var du der?» er for alle medlemmer (merkene
+// vises på profilene); resten er Admin og krever badges.manage. Rettigheter og full
 // validering i @esaf/core.
-
-export const fetchBadges = createServerFn({ method: 'GET' }).handler(() =>
-  run((viewer) => getBadgeOverview(db, viewer)),
-)
-
-export const fetchCohortStanding = createServerFn({ method: 'GET' })
-  .validator(z.object({ year: z.number().int() }))
-  .handler(({ data }) => run((viewer) => getCohortBadgeStanding(db, viewer, data.year)))
-
-export const fetchBadge = createServerFn({ method: 'GET' })
-  .validator(z.object({ slug: z.string().max(80) }))
-  .handler(({ data }) => run((viewer) => getBadge(db, viewer, data.slug)))
 
 export const hideOwnBadge = createServerFn({ method: 'POST' })
   .validator(z.object({ badgeId: z.uuid(), hidden: z.boolean() }))

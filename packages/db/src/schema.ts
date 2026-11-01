@@ -1489,8 +1489,6 @@ export const notificationType = pgEnum('notification_type', [
   'company_link_request',
   /** Personen mottakeren la til i et selskap, bekreftet det. */
   'company_link_confirmed',
-  /** Mottakeren fikk et merke. */
-  'badge_awarded',
 ])
 
 export type NotificationPayload = {
@@ -1524,8 +1522,6 @@ export const notification = pgTable(
     commentId: uuid().references(() => comment.id, { onDelete: 'cascade' }),
     /** Selskapet varselet gjelder, for forslag og tilknytninger. Navnet hentes ved visning. */
     companyId: uuid().references(() => company.id, { onDelete: 'cascade' }),
-    /** Merket varselet gjelder. Navnet hentes ved visning. */
-    badgeId: uuid().references(() => badge.id, { onDelete: 'cascade' }),
     /**
      * Hendelsen varselet gjelder, for eksempel `comment:<id>`. Unik per mottaker:
      * én hendelse gir aldri mer enn ett varsel til samme person, heller ikke når

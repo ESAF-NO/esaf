@@ -286,20 +286,9 @@ function EventLink({ details }: { details: Entry['details'] }) {
   )
 }
 
-/** Merket i en setning, med lenke. */
+/** Merket i en setning. Merker har ingen egen side; de vises på profilene. */
 function BadgeLink({ details }: { details: Entry['details'] }) {
-  const name = text(details.name) ?? 'et merke'
-  const slug = text(details.slug)
-  if (!slug) return <>«{name}»</>
-  return (
-    <Link
-      to="/merker/$slug"
-      params={{ slug }}
-      className="font-medium text-stone-900 hover:text-brand-600"
-    >
-      {name}
-    </Link>
-  )
+  return <span className="font-medium text-stone-900">«{text(details.name) ?? 'et merke'}»</span>
 }
 
 /** Typen i en setning, med lenke. */

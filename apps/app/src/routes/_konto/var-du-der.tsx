@@ -24,6 +24,7 @@ export const Route = createFileRoute('/_konto/var-du-der')({
  */
 function MissedEventsPage() {
   const groups = Route.useLoaderData()
+  const { viewer } = Route.useRouteContext()
   const router = useRouter()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -57,12 +58,15 @@ function MissedEventsPage() {
 
   return (
     <div className="mx-auto max-w-3xl pb-24">
-      <Link
-        to="/merker"
-        className="mb-5 inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900"
-      >
-        <ArrowLeft className="size-4" aria-hidden /> Merker
-      </Link>
+      {viewer.personId && (
+        <Link
+          to="/medlemmer/$personId"
+          params={{ personId: viewer.personId }}
+          className="mb-5 inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900"
+        >
+          <ArrowLeft className="size-4" aria-hidden /> Profilen din
+        </Link>
+      )}
       <PageHeader
         title="Var du der?"
         description="Arrangementene fra din tid som ikke har deg på lista. Kryss av for dem du var på. Det vises på profilen din, og merkene som hører til kommer med en gang."
@@ -77,11 +81,7 @@ function MissedEventsPage() {
 
       {groups.length === 0 ? (
         <EmptyState icon={PartyPopper} title="Alt er fylt inn">
-          Du står på alle arrangementene fra din tid som er lagt inn. Se{' '}
-          <Link to="/merker" className="font-medium text-stone-700 hover:text-brand-600">
-            merkene dine
-          </Link>
-          .
+          Du står på alle arrangementene fra din tid som er lagt inn.
         </EmptyState>
       ) : (
         <div className="space-y-6">

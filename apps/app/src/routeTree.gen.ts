@@ -49,8 +49,6 @@ import { Route as KontoFeedNyRouteImport } from './routes/_konto/feed/ny'
 import { Route as KontoKullIndexRouteImport } from './routes/_konto/kull/index'
 import { Route as KontoKullYearRouteImport } from './routes/_konto/kull/$year'
 import { Route as KontoMedlemmerIndexRouteImport } from './routes/_konto/medlemmer/index'
-import { Route as KontoMerkerIndexRouteImport } from './routes/_konto/merker/index'
-import { Route as KontoMerkerSlugRouteImport } from './routes/_konto/merker/$slug'
 import { Route as KontoSelskaperIndexRouteImport } from './routes/_konto/selskaper/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiBilderKeyRouteImport } from './routes/api/bilder/$key'
@@ -275,16 +273,6 @@ const KontoMedlemmerIndexRoute = KontoMedlemmerIndexRouteImport.update({
   path: '/medlemmer/',
   getParentRoute: () => KontoRoute,
 } as any)
-const KontoMerkerIndexRoute = KontoMerkerIndexRouteImport.update({
-  id: '/merker/',
-  path: '/merker/',
-  getParentRoute: () => KontoRoute,
-} as any)
-const KontoMerkerSlugRoute = KontoMerkerSlugRouteImport.update({
-  id: '/merker/$slug',
-  path: '/merker/$slug',
-  getParentRoute: () => KontoRoute,
-} as any)
 const KontoSelskaperIndexRoute = KontoSelskaperIndexRouteImport.update({
   id: '/selskaper/',
   path: '/selskaper/',
@@ -441,7 +429,6 @@ export interface FileRoutesByFullPath {
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/kull/$year': typeof KontoKullYearRoute
-  '/merker/$slug': typeof KontoMerkerSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
@@ -456,7 +443,6 @@ export interface FileRoutesByFullPath {
   '/feed/': typeof KontoFeedIndexRoute
   '/kull/': typeof KontoKullIndexRoute
   '/medlemmer/': typeof KontoMedlemmerIndexRoute
-  '/merker/': typeof KontoMerkerIndexRoute
   '/selskaper/': typeof KontoSelskaperIndexRoute
   '/api/vedlegg/': typeof ApiVedleggIndexRoute
   '/admin/arrangementer/import': typeof KontoAdminArrangementerImportRoute
@@ -505,7 +491,6 @@ export interface FileRoutesByTo {
   '/feed/$postId': typeof KontoFeedPostIdRoute
   '/feed/ny': typeof KontoFeedNyRoute
   '/kull/$year': typeof KontoKullYearRoute
-  '/merker/$slug': typeof KontoMerkerSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
@@ -520,7 +505,6 @@ export interface FileRoutesByTo {
   '/feed': typeof KontoFeedIndexRoute
   '/kull': typeof KontoKullIndexRoute
   '/medlemmer': typeof KontoMedlemmerIndexRoute
-  '/merker': typeof KontoMerkerIndexRoute
   '/selskaper': typeof KontoSelskaperIndexRoute
   '/api/vedlegg': typeof ApiVedleggIndexRoute
   '/admin/arrangementer/import': typeof KontoAdminArrangementerImportRoute
@@ -572,7 +556,6 @@ export interface FileRoutesById {
   '/_konto/feed/$postId': typeof KontoFeedPostIdRoute
   '/_konto/feed/ny': typeof KontoFeedNyRoute
   '/_konto/kull/$year': typeof KontoKullYearRoute
-  '/_konto/merker/$slug': typeof KontoMerkerSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/bilder/$key': typeof ApiBilderKeyRoute
   '/api/import/deltakelse': typeof ApiImportDeltakelseRoute
@@ -587,7 +570,6 @@ export interface FileRoutesById {
   '/_konto/feed/': typeof KontoFeedIndexRoute
   '/_konto/kull/': typeof KontoKullIndexRoute
   '/_konto/medlemmer/': typeof KontoMedlemmerIndexRoute
-  '/_konto/merker/': typeof KontoMerkerIndexRoute
   '/_konto/selskaper/': typeof KontoSelskaperIndexRoute
   '/api/vedlegg/': typeof ApiVedleggIndexRoute
   '/_konto/admin/arrangementer_/import': typeof KontoAdminArrangementerImportRoute
@@ -639,7 +621,6 @@ export interface FileRouteTypes {
     | '/feed/$postId'
     | '/feed/ny'
     | '/kull/$year'
-    | '/merker/$slug'
     | '/api/auth/$'
     | '/api/bilder/$key'
     | '/api/import/deltakelse'
@@ -654,7 +635,6 @@ export interface FileRouteTypes {
     | '/feed/'
     | '/kull/'
     | '/medlemmer/'
-    | '/merker/'
     | '/selskaper/'
     | '/api/vedlegg/'
     | '/admin/arrangementer/import'
@@ -703,7 +683,6 @@ export interface FileRouteTypes {
     | '/feed/$postId'
     | '/feed/ny'
     | '/kull/$year'
-    | '/merker/$slug'
     | '/api/auth/$'
     | '/api/bilder/$key'
     | '/api/import/deltakelse'
@@ -718,7 +697,6 @@ export interface FileRouteTypes {
     | '/feed'
     | '/kull'
     | '/medlemmer'
-    | '/merker'
     | '/selskaper'
     | '/api/vedlegg'
     | '/admin/arrangementer/import'
@@ -769,7 +747,6 @@ export interface FileRouteTypes {
     | '/_konto/feed/$postId'
     | '/_konto/feed/ny'
     | '/_konto/kull/$year'
-    | '/_konto/merker/$slug'
     | '/api/auth/$'
     | '/api/bilder/$key'
     | '/api/import/deltakelse'
@@ -784,7 +761,6 @@ export interface FileRouteTypes {
     | '/_konto/feed/'
     | '/_konto/kull/'
     | '/_konto/medlemmer/'
-    | '/_konto/merker/'
     | '/_konto/selskaper/'
     | '/api/vedlegg/'
     | '/_konto/admin/arrangementer_/import'
@@ -1108,20 +1084,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoMedlemmerIndexRouteImport
       parentRoute: typeof KontoRoute
     }
-    '/_konto/merker/': {
-      id: '/_konto/merker/'
-      path: '/merker'
-      fullPath: '/merker/'
-      preLoaderRoute: typeof KontoMerkerIndexRouteImport
-      parentRoute: typeof KontoRoute
-    }
-    '/_konto/merker/$slug': {
-      id: '/_konto/merker/$slug'
-      path: '/merker/$slug'
-      fullPath: '/merker/$slug'
-      preLoaderRoute: typeof KontoMerkerSlugRouteImport
-      parentRoute: typeof KontoRoute
-    }
     '/_konto/selskaper/': {
       id: '/_konto/selskaper/'
       path: '/selskaper'
@@ -1331,13 +1293,11 @@ interface KontoRouteChildren {
   KontoFeedPostIdRoute: typeof KontoFeedPostIdRoute
   KontoFeedNyRoute: typeof KontoFeedNyRoute
   KontoKullYearRoute: typeof KontoKullYearRoute
-  KontoMerkerSlugRoute: typeof KontoMerkerSlugRoute
   KontoArrangementerIndexRoute: typeof KontoArrangementerIndexRoute
   KontoEsafHelgenIndexRoute: typeof KontoEsafHelgenIndexRoute
   KontoFeedIndexRoute: typeof KontoFeedIndexRoute
   KontoKullIndexRoute: typeof KontoKullIndexRoute
   KontoMedlemmerIndexRoute: typeof KontoMedlemmerIndexRoute
-  KontoMerkerIndexRoute: typeof KontoMerkerIndexRoute
   KontoSelskaperIndexRoute: typeof KontoSelskaperIndexRoute
   KontoArrangementerTypeSlugEventIdRoute: typeof KontoArrangementerTypeSlugEventIdRoute
   KontoFeedPostIdRedigerRoute: typeof KontoFeedPostIdRedigerRoute
@@ -1362,13 +1322,11 @@ const KontoRouteChildren: KontoRouteChildren = {
   KontoFeedPostIdRoute: KontoFeedPostIdRoute,
   KontoFeedNyRoute: KontoFeedNyRoute,
   KontoKullYearRoute: KontoKullYearRoute,
-  KontoMerkerSlugRoute: KontoMerkerSlugRoute,
   KontoArrangementerIndexRoute: KontoArrangementerIndexRoute,
   KontoEsafHelgenIndexRoute: KontoEsafHelgenIndexRoute,
   KontoFeedIndexRoute: KontoFeedIndexRoute,
   KontoKullIndexRoute: KontoKullIndexRoute,
   KontoMedlemmerIndexRoute: KontoMedlemmerIndexRoute,
-  KontoMerkerIndexRoute: KontoMerkerIndexRoute,
   KontoSelskaperIndexRoute: KontoSelskaperIndexRoute,
   KontoArrangementerTypeSlugEventIdRoute:
     KontoArrangementerTypeSlugEventIdRoute,

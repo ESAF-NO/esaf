@@ -1,6 +1,5 @@
 CREATE TYPE "public"."badge_award_source" AS ENUM('rule', 'manual');--> statement-breakpoint
 CREATE TYPE "public"."badge_status" AS ENUM('draft', 'published', 'archived');--> statement-breakpoint
-ALTER TYPE "public"."notification_type" ADD VALUE 'badge_awarded';--> statement-breakpoint
 CREATE TABLE "badge" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"slug" text NOT NULL,
@@ -31,9 +30,7 @@ CREATE TABLE "badge_award" (
 	CONSTRAINT "badge_award_badge_id_person_id_pk" PRIMARY KEY("badge_id","person_id")
 );
 --> statement-breakpoint
-ALTER TABLE "notification" ADD COLUMN "badge_id" uuid;--> statement-breakpoint
 ALTER TABLE "badge_award" ADD CONSTRAINT "badge_award_badge_id_badge_id_fk" FOREIGN KEY ("badge_id") REFERENCES "public"."badge"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "badge_award" ADD CONSTRAINT "badge_award_person_id_person_id_fk" FOREIGN KEY ("person_id") REFERENCES "public"."person"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "badge_award" ADD CONSTRAINT "badge_award_awarded_by_person_id_person_id_fk" FOREIGN KEY ("awarded_by_person_id") REFERENCES "public"."person"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "badge_award_person_id_index" ON "badge_award" USING btree ("person_id");--> statement-breakpoint
-ALTER TABLE "notification" ADD CONSTRAINT "notification_badge_id_badge_id_fk" FOREIGN KEY ("badge_id") REFERENCES "public"."badge"("id") ON DELETE cascade ON UPDATE no action;
+CREATE INDEX "badge_award_person_id_index" ON "badge_award" USING btree ("person_id");

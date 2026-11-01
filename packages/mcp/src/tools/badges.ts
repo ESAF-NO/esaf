@@ -193,11 +193,10 @@ const badgeFields = {
     ),
 }
 
-function summary(ctx: ToolContext, b: AdminBadge, stats?: BadgeStats) {
+function summary(b: AdminBadge, stats?: BadgeStats) {
   return {
     badgeId: b.id,
     slug: b.slug,
-    link: `${ctx.appUrl}/merker/${b.slug}`,
     name: b.name,
     description: b.description,
     icon: b.icon,
@@ -217,7 +216,7 @@ function summary(ctx: ToolContext, b: AdminBadge, stats?: BadgeStats) {
 async function details(ctx: ToolContext, badgeIdOrSlug: string, limit = 200) {
   const b = await getBadgeForAdmin(ctx.db, ctx.viewer, badgeIdOrSlug)
   return {
-    ...summary(ctx, b),
+    ...summary(b),
     holderList: b.awards.slice(0, limit).map((a) => ({
       personId: a.personId,
       fullName: a.fullName,
@@ -279,7 +278,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     description:
       'All badges (published, drafts, archived) with the rule in words, the rule itself, how many have each, and for ' +
       'published ones the rarity (common/uncommon/rare/epic/legendary from the share of active members holding it) ' +
-      'and the XP it gives. Members level up from XP, and cohorts compete on XP per member.',
+      'and the XP it gives. Members level up from XP; badges and the level are shown on profiles.',
     input: z.object({
       status: z
         .enum(['draft', 'published', 'archived'])
@@ -292,7 +291,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
         listBadgesForAdmin(ctx.db, ctx.viewer),
         loadBadgeStats(ctx.db),
       ])
-      return badges.filter((b) => !status || b.status === status).map((b) => summary(ctx, b, stats))
+      return badges.filter((b) => !status || b.status === status).map((b) => summary(b, stats))
     },
   })
 
@@ -315,7 +314,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     title: 'Preview badge rule',
     description:
       'Who would get a badge with this rule, without saving anything: the rule in Norwegian, the total, how many are ' +
-      'active members (they are notified and shown), and the first people with the date they qualified. Use it to ' +
+      'active members (shown on their profiles), and the first people with the date they qualified. Use it to ' +
       'tune thresholds before creating badges.',
     input: z.object({
       rule: badgeRuleInput,
@@ -330,7 +329,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     title: 'Create badge',
     description:
       'Create a badge. It is a draft (invisible to members, not awarded) unless publish=true. Show the admin the ' +
-      'preview first, and publish when they agree: publishing awards it to everyone who qualifies and notifies them.',
+      'preview first, and publish when they agree: publishing awards it to everyone who qualifies, on their profiles.',
     input: z.object({
       ...badgeFields,
       rule: badgeRuleInput,
@@ -409,7 +408,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
           { publish },
         )
         const b = await getBadgeForAdmin(ctx.db, ctx.viewer, id)
-        created.push(summary(ctx, b))
+        created.push(summary(b))
       }
       return created
     },
@@ -445,7 +444,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     name: 'set_badge_status',
     title: 'Publish or archive badge',
     description:
-      'published: shown to members and awarded (automatic badges to everyone who qualifies, with a notification). ' +
+      'published: awarded and shown on profiles (automatic badges to everyone who qualifies; no notifications). ' +
       'archived: hidden from members, but who had it is kept and it can be published again. A badge never goes back ' +
       'to draft.',
     input: z.object({ badge: badgeRef, status: z.enum(['published', 'archived']) }),
@@ -462,7 +461,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     name: 'delete_badge',
     title: 'Delete badge',
     description:
-      'Delete a badge for good, with everyone who has it and the notifications about it. Prefer archiving. Confirm ' +
+      'Delete a badge for good, with everyone who has it. Prefer archiving. Confirm ' +
       'with the admin first.',
     input: z.object({ badge: badgeRef }),
     effect: 'destructive',
@@ -477,8 +476,8 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     title: 'Award badge (manual)',
     description:
       'Award a manual badge (rule kind "manual") to people, with a short Norwegian citation members see ("For ' +
-      'innsatsen med ESAF-helgen 2024"). People who already have it get the new citation. Notified if the badge is ' +
-      'published. Automatic badges cannot be awarded by hand: fix the data instead (events, board, companies).',
+      'innsatsen med ESAF-helgen 2024"). People who already have it get the new citation (none given keeps ' +
+      'theirs). It shows on their profile once the badge is published. Automatic badges cannot be awarded by hand: fix the data instead (events, board, companies).',
     input: z.object({
       badge: badgeRef,
       personIds: z.array(id('Person')).min(1).max(200),

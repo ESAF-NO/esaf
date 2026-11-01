@@ -20,6 +20,7 @@ import { Route as KontoAdminRouteRouteImport } from './routes/_konto/admin/route
 import { Route as KontoKomIGangRouteImport } from './routes/_konto/kom-i-gang'
 import { Route as KontoKontoRouteImport } from './routes/_konto/konto'
 import { Route as KontoStyretRouteImport } from './routes/_konto/styret'
+import { Route as KontoVarDuDerRouteImport } from './routes/_konto/var-du-der'
 import { Route as KontoVarslerRouteImport } from './routes/_konto/varsler'
 import { Route as KontoVelkommenRouteImport } from './routes/_konto/velkommen'
 import { Route as KontoVenterRouteImport } from './routes/_konto/venter'
@@ -36,6 +37,7 @@ import { Route as KontoAdminKullrepresentanterRouteImport } from './routes/_kont
 import { Route as KontoAdminLoggRouteImport } from './routes/_konto/admin/logg'
 import { Route as KontoAdminMcpRouteImport } from './routes/_konto/admin/mcp'
 import { Route as KontoAdminMedlemmerRouteImport } from './routes/_konto/admin/medlemmer'
+import { Route as KontoAdminMerkerRouteImport } from './routes/_konto/admin/merker'
 import { Route as KontoAdminProfilerRouteImport } from './routes/_konto/admin/profiler'
 import { Route as KontoAdminSelskaperRouteImport } from './routes/_konto/admin/selskaper'
 import { Route as KontoAdminStyretRouteImport } from './routes/_konto/admin/styret'
@@ -126,6 +128,11 @@ const KontoStyretRoute = KontoStyretRouteImport.update({
   path: '/styret',
   getParentRoute: () => KontoRoute,
 } as any)
+const KontoVarDuDerRoute = KontoVarDuDerRouteImport.update({
+  id: '/var-du-der',
+  path: '/var-du-der',
+  getParentRoute: () => KontoRoute,
+} as any)
 const KontoVarslerRoute = KontoVarslerRouteImport.update({
   id: '/varsler',
   path: '/varsler',
@@ -205,6 +212,11 @@ const KontoAdminMcpRoute = KontoAdminMcpRouteImport.update({
 const KontoAdminMedlemmerRoute = KontoAdminMedlemmerRouteImport.update({
   id: '/medlemmer',
   path: '/medlemmer',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminMerkerRoute = KontoAdminMerkerRouteImport.update({
+  id: '/merker',
+  path: '/merker',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
 const KontoAdminProfilerRoute = KontoAdminProfilerRouteImport.update({
@@ -406,6 +418,7 @@ export interface FileRoutesByFullPath {
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/styret': typeof KontoStyretRoute
+  '/var-du-der': typeof KontoVarDuDerRoute
   '/varsler': typeof KontoVarslerRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
@@ -421,6 +434,7 @@ export interface FileRoutesByFullPath {
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/mcp': typeof KontoAdminMcpRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/admin/merker': typeof KontoAdminMerkerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
   '/admin/styret': typeof KontoAdminStyretRoute
@@ -468,6 +482,7 @@ export interface FileRoutesByTo {
   '/kom-i-gang': typeof KontoKomIGangRoute
   '/konto': typeof KontoKontoRoute
   '/styret': typeof KontoStyretRoute
+  '/var-du-der': typeof KontoVarDuDerRoute
   '/varsler': typeof KontoVarslerRoute
   '/velkommen': typeof KontoVelkommenRoute
   '/venter': typeof KontoVenterRoute
@@ -483,6 +498,7 @@ export interface FileRoutesByTo {
   '/admin/logg': typeof KontoAdminLoggRoute
   '/admin/mcp': typeof KontoAdminMcpRoute
   '/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/admin/merker': typeof KontoAdminMerkerRoute
   '/admin/profiler': typeof KontoAdminProfilerRoute
   '/admin/selskaper': typeof KontoAdminSelskaperRoute
   '/admin/styret': typeof KontoAdminStyretRoute
@@ -533,6 +549,7 @@ export interface FileRoutesById {
   '/_konto/kom-i-gang': typeof KontoKomIGangRoute
   '/_konto/konto': typeof KontoKontoRoute
   '/_konto/styret': typeof KontoStyretRoute
+  '/_konto/var-du-der': typeof KontoVarDuDerRoute
   '/_konto/varsler': typeof KontoVarslerRoute
   '/_konto/velkommen': typeof KontoVelkommenRoute
   '/_konto/venter': typeof KontoVenterRoute
@@ -548,6 +565,7 @@ export interface FileRoutesById {
   '/_konto/admin/logg': typeof KontoAdminLoggRoute
   '/_konto/admin/mcp': typeof KontoAdminMcpRoute
   '/_konto/admin/medlemmer': typeof KontoAdminMedlemmerRoute
+  '/_konto/admin/merker': typeof KontoAdminMerkerRoute
   '/_konto/admin/profiler': typeof KontoAdminProfilerRoute
   '/_konto/admin/selskaper': typeof KontoAdminSelskaperRoute
   '/_konto/admin/styret': typeof KontoAdminStyretRoute
@@ -598,6 +616,7 @@ export interface FileRouteTypes {
     | '/kom-i-gang'
     | '/konto'
     | '/styret'
+    | '/var-du-der'
     | '/varsler'
     | '/velkommen'
     | '/venter'
@@ -613,6 +632,7 @@ export interface FileRouteTypes {
     | '/admin/logg'
     | '/admin/mcp'
     | '/admin/medlemmer'
+    | '/admin/merker'
     | '/admin/profiler'
     | '/admin/selskaper'
     | '/admin/styret'
@@ -660,6 +680,7 @@ export interface FileRouteTypes {
     | '/kom-i-gang'
     | '/konto'
     | '/styret'
+    | '/var-du-der'
     | '/varsler'
     | '/velkommen'
     | '/venter'
@@ -675,6 +696,7 @@ export interface FileRouteTypes {
     | '/admin/logg'
     | '/admin/mcp'
     | '/admin/medlemmer'
+    | '/admin/merker'
     | '/admin/profiler'
     | '/admin/selskaper'
     | '/admin/styret'
@@ -724,6 +746,7 @@ export interface FileRouteTypes {
     | '/_konto/kom-i-gang'
     | '/_konto/konto'
     | '/_konto/styret'
+    | '/_konto/var-du-der'
     | '/_konto/varsler'
     | '/_konto/velkommen'
     | '/_konto/venter'
@@ -739,6 +762,7 @@ export interface FileRouteTypes {
     | '/_konto/admin/logg'
     | '/_konto/admin/mcp'
     | '/_konto/admin/medlemmer'
+    | '/_konto/admin/merker'
     | '/_konto/admin/profiler'
     | '/_konto/admin/selskaper'
     | '/_konto/admin/styret'
@@ -883,6 +907,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KontoStyretRouteImport
       parentRoute: typeof KontoRoute
     }
+    '/_konto/var-du-der': {
+      id: '/_konto/var-du-der'
+      path: '/var-du-der'
+      fullPath: '/var-du-der'
+      preLoaderRoute: typeof KontoVarDuDerRouteImport
+      parentRoute: typeof KontoRoute
+    }
     '/_konto/varsler': {
       id: '/_konto/varsler'
       path: '/varsler'
@@ -993,6 +1024,13 @@ declare module '@tanstack/react-router' {
       path: '/medlemmer'
       fullPath: '/admin/medlemmer'
       preLoaderRoute: typeof KontoAdminMedlemmerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/merker': {
+      id: '/_konto/admin/merker'
+      path: '/merker'
+      fullPath: '/admin/merker'
+      preLoaderRoute: typeof KontoAdminMerkerRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
     '/_konto/admin/profiler': {
@@ -1251,6 +1289,7 @@ interface KontoAdminRouteRouteChildren {
   KontoAdminLoggRoute: typeof KontoAdminLoggRoute
   KontoAdminMcpRoute: typeof KontoAdminMcpRoute
   KontoAdminMedlemmerRoute: typeof KontoAdminMedlemmerRoute
+  KontoAdminMerkerRoute: typeof KontoAdminMerkerRoute
   KontoAdminProfilerRoute: typeof KontoAdminProfilerRoute
   KontoAdminSelskaperRoute: typeof KontoAdminSelskaperRoute
   KontoAdminStyretRoute: typeof KontoAdminStyretRoute
@@ -1267,6 +1306,7 @@ const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
   KontoAdminLoggRoute: KontoAdminLoggRoute,
   KontoAdminMcpRoute: KontoAdminMcpRoute,
   KontoAdminMedlemmerRoute: KontoAdminMedlemmerRoute,
+  KontoAdminMerkerRoute: KontoAdminMerkerRoute,
   KontoAdminProfilerRoute: KontoAdminProfilerRoute,
   KontoAdminSelskaperRoute: KontoAdminSelskaperRoute,
   KontoAdminStyretRoute: KontoAdminStyretRoute,
@@ -1285,6 +1325,7 @@ interface KontoRouteChildren {
   KontoKomIGangRoute: typeof KontoKomIGangRoute
   KontoKontoRoute: typeof KontoKontoRoute
   KontoStyretRoute: typeof KontoStyretRoute
+  KontoVarDuDerRoute: typeof KontoVarDuDerRoute
   KontoVarslerRoute: typeof KontoVarslerRoute
   KontoVelkommenRoute: typeof KontoVelkommenRoute
   KontoVenterRoute: typeof KontoVenterRoute
@@ -1313,6 +1354,7 @@ const KontoRouteChildren: KontoRouteChildren = {
   KontoKomIGangRoute: KontoKomIGangRoute,
   KontoKontoRoute: KontoKontoRoute,
   KontoStyretRoute: KontoStyretRoute,
+  KontoVarDuDerRoute: KontoVarDuDerRoute,
   KontoVarslerRoute: KontoVarslerRoute,
   KontoVelkommenRoute: KontoVelkommenRoute,
   KontoVenterRoute: KontoVenterRoute,

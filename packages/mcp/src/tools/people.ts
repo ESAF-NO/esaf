@@ -9,6 +9,7 @@ import {
   getPersonAdmin,
   listPeopleIndex,
   loadFieldSources,
+  loadPersonBadgesForAdmin,
   loadPersonEvents,
   loadQuotes,
   mergeChoiceFields,
@@ -120,11 +121,12 @@ const sourcesField = z
 
 async function personDetails(ctx: ToolContext, personId: string) {
   const { db, viewer } = ctx
-  const [admin, profile, events, quotes] = await Promise.all([
+  const [admin, profile, events, quotes, badges] = await Promise.all([
     getPersonAdmin(db, viewer, personId),
     getEditableProfile(db, viewer, personId),
     loadPersonEvents(db, personId),
     loadQuotes(db, viewer, { personId }),
+    loadPersonBadgesForAdmin(db, viewer, personId),
   ])
   const sources = await loadFieldSources(db, viewer, 'person', personId, profileSourceFields)
   return {
@@ -169,6 +171,16 @@ async function personDetails(ctx: ToolContext, personId: string) {
       type: g.type.name,
       total: g.total,
       events: g.events.map((e) => ({ eventId: e.id, name: e.name, role: e.role })),
+    })),
+    badges: badges.map((b) => ({
+      badgeId: b.badgeId,
+      slug: b.slug,
+      name: b.name,
+      badgeStatus: b.status,
+      source: b.source,
+      achievedOn: b.achievedOn,
+      citation: b.citation,
+      hiddenByPerson: b.hidden,
     })),
     quotes: quotes.map((q) => ({
       quoteId: q.id,
@@ -248,7 +260,7 @@ export function registerPeopleTools(server: McpServer, ctx: ToolContext) {
     title: 'Get person',
     description:
       'Everything an admin can see about one person: profile fields, experience (with experienceId), cohorts, ' +
-      'known e-mail addresses, membership and role, events, quotes and where imported or researched fields came from. ' +
+      'known e-mail addresses, membership and role, events, badges, quotes and where imported or researched fields came from. ' +
       'Contact details are only included for unclaimed profiles.',
     input: z.object({ personId: id('The person') }),
     effect: 'read',

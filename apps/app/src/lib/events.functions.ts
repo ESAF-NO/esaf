@@ -14,6 +14,7 @@ import {
   matchEventParticipants,
   previewEventHistory,
   removeEventParticipant,
+  refreshOwnBadges,
   setOwnParticipation,
   updateEvent,
   updateEventParticipant,
@@ -77,7 +78,11 @@ export const fetchEventTypeOf = createServerFn({ method: 'GET' })
 export const setParticipated = createServerFn({ method: 'POST' })
   .validator(z.object({ ...ev, participated: z.boolean() }))
   .handler(({ data }) =>
-    run((viewer) => setOwnParticipation(db, viewer, data.eventId, data.participated)),
+    run(async (viewer) => {
+      await setOwnParticipation(db, viewer, data.eventId, data.participated)
+      // Merkene oppdateres med en gang, så den som var der, ser dem nå.
+      return refreshOwnBadges(db, viewer)
+    }),
   )
 
 // Typer (admin)

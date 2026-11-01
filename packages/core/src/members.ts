@@ -25,6 +25,18 @@ const {
 
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
+/**
+ * Kjører spørringene etter hverandre. For spørringer som også kjører inne i en
+ * transaksjon: én tilkobling kan bare ha én spørring om gangen.
+ */
+export async function inOrder<T extends readonly (() => PromiseLike<unknown>)[]>(
+  queries: T,
+): Promise<{ -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }> {
+  const results: unknown[] = []
+  for (const query of queries) results.push(await query())
+  return results as { -readonly [K in keyof T]: Awaited<ReturnType<T[K]>> }
+}
+
 export function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
 }

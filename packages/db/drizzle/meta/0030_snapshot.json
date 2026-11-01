@@ -1,5 +1,5 @@
 {
-  "id": "a4247aec-fb43-4e39-9e5e-3411a2b7a803",
+  "id": "2ad0b8ef-c003-4fb2-9201-38e6c2539ba6",
   "prevId": "fbb7375f-e083-4f76-bed0-908bf7f7ddba",
   "version": "7",
   "dialect": "postgresql",
@@ -868,244 +868,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.badge": {
-      "name": "badge",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "icon": {
-          "name": "icon",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "color": {
-          "name": "color",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rule": {
-          "name": "rule",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "badge_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "series": {
-          "name": "series",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 100
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "badge_slug_unique": {
-          "name": "badge_slug_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "slug"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "badge_slug": {
-          "name": "badge_slug",
-          "value": "\"badge\".\"slug\" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.badge_award": {
-      "name": "badge_award",
-      "schema": "",
-      "columns": {
-        "badge_id": {
-          "name": "badge_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "badge_award_source",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "achieved_on": {
-          "name": "achieved_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "citation": {
-          "name": "citation",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "awarded_by_person_id": {
-          "name": "awarded_by_person_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hidden": {
-          "name": "hidden",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "badge_award_person_id_index": {
-          "name": "badge_award_person_id_index",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "badge_award_badge_id_badge_id_fk": {
-          "name": "badge_award_badge_id_badge_id_fk",
-          "tableFrom": "badge_award",
-          "tableTo": "badge",
-          "columnsFrom": [
-            "badge_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "badge_award_person_id_person_id_fk": {
-          "name": "badge_award_person_id_person_id_fk",
-          "tableFrom": "badge_award",
-          "tableTo": "person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "badge_award_awarded_by_person_id_person_id_fk": {
-          "name": "badge_award_awarded_by_person_id_person_id_fk",
-          "tableFrom": "badge_award",
-          "tableTo": "person",
-          "columnsFrom": [
-            "awarded_by_person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "badge_award_badge_id_person_id_pk": {
-          "name": "badge_award_badge_id_person_id_pk",
-          "columns": [
-            "badge_id",
-            "person_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -3492,6 +3254,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "notification_unsent_index": {
+          "name": "notification_unsent_index",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"notification\".\"read_at\" is null and \"notification\".\"emailed_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -3562,6 +3340,67 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.notification_email_preference": {
+      "name": "notification_email_preference",
+      "schema": "",
+      "columns": {
+        "person_id": {
+          "name": "person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "frequency": {
+          "name": "frequency",
+          "type": "notification_email_frequency",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "notification_email_preference_person_id_person_id_fk": {
+          "name": "notification_email_preference_person_id_person_id_fk",
+          "tableFrom": "notification_email_preference",
+          "tableTo": "person",
+          "columnsFrom": [
+            "person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "notification_email_preference_person_id_category_pk": {
+          "name": "notification_email_preference_person_id_category_pk",
+          "columns": [
+            "person_id",
+            "category"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -6110,23 +5949,6 @@
         "company_document"
       ]
     },
-    "public.badge_award_source": {
-      "name": "badge_award_source",
-      "schema": "public",
-      "values": [
-        "rule",
-        "manual"
-      ]
-    },
-    "public.badge_status": {
-      "name": "badge_status",
-      "schema": "public",
-      "values": [
-        "draft",
-        "published",
-        "archived"
-      ]
-    },
     "public.board_role": {
       "name": "board_role",
       "schema": "public",
@@ -6283,6 +6105,16 @@
         "pending",
         "active",
         "inactive"
+      ]
+    },
+    "public.notification_email_frequency": {
+      "name": "notification_email_frequency",
+      "schema": "public",
+      "values": [
+        "instant",
+        "daily",
+        "weekly",
+        "off"
       ]
     },
     "public.notification_type": {

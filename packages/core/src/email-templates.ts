@@ -157,3 +157,103 @@ export function verificationEmail(input: { url: string; expiresInMinutes: number
     ],
   })
 }
+
+/** Ett varsel i en e-post: setningen, lenken og eventuelt starten på teksten. */
+export type NotificationEmailItem = {
+  /** «Kari Nordmann kommenterte innlegget ditt «Lansering»». */
+  text: string
+  url: string
+  /** Starten på kommentaren eller innlegget. */
+  excerpt: string | null
+  /** Noe man kan svare på i appen (kommentarer og omtaler). */
+  reply?: boolean
+}
+
+const MAX_SUBJECT = 120
+
+/**
+ * Varsler på e-post: ett varsel med setningen som emne og en knapp, eller flere
+ * (samlet, eller i en daglig eller ukentlig oppsummering) som en liste. Under
+ * står hvordan man endrer det, og en lenke for å slutte med det.
+ */
+export function notificationEmail(input: {
+  items: NotificationEmailItem[]
+  /** Fra en daglig eller ukentlig oppsummering. */
+  summary: boolean
+  settingsUrl: string
+  unsubscribeUrl: string
+  /** Det avmeldingslenken slår av: «Kommentarer på innleggene dine» eller «alle varsler på e-post». */
+  unsubscribeLabel: string
+  /** Alle varslene i appen. */
+  allUrl: string
+}): EmailContent {
+  const { items } = input
+  const one = items.length === 1 ? items[0]! : null
+  const count = `${items.length} ${items.length === 1 ? 'varsel' : 'varsler'}`
+  const subject = input.summary
+    ? `Oppsummering fra ESAF: ${count}`
+    : one
+      ? one.text.length > MAX_SUBJECT
+        ? `${one.text.slice(0, MAX_SUBJECT - 1).trimEnd()}…`
+        : one.text
+      : `${count} fra ESAF`
+  const intro = input.summary
+    ? 'Dette har skjedd i ESAF siden sist:'
+    : one
+      ? null
+      : 'Dette har skjedd i ESAF:'
+  const action = one
+    ? { label: one.reply ? 'Svar i ESAF' : 'Åpne i ESAF', url: one.url }
+    : { label: 'Se alle varsler', url: input.allUrl }
+  const replyNote = items.some((i) => i.reply)
+    ? 'Svar på denne e-posten går til styret i ESAF, ikke til den som skrev. Svar i appen i stedet.'
+    : null
+  const unsubscribe = `Slutt å få ${input.unsubscribeLabel.toLocaleLowerCase('nb')} på e-post`
+
+  const text = [
+    ...(intro ? [intro] : []),
+    ...items.map((i) =>
+      [one ? i.text : `• ${i.text}`, i.excerpt && `  «${i.excerpt}»`, one ? null : `  ${i.url}`]
+        .filter(Boolean)
+        .join('\n'),
+    ),
+    `${action.label}:\n${action.url}`,
+    ...(replyNote ? [replyNote] : []),
+    `Endre hvilke varsler du får på e-post:\n${input.settingsUrl}`,
+    `${unsubscribe}:\n${input.unsubscribeUrl}`,
+    SIGNATURE,
+  ].join('\n\n')
+
+  const small = (value: string) =>
+    `<p style="margin:0 0 8px;font-size:13px;line-height:1.5;color:#78716c">${value}</p>`
+  const item = (
+    i: NotificationEmailItem,
+  ) => `<div style="margin:0 0 16px;padding:14px 16px;border-radius:12px;background:#ffffff;border:1px solid #e7e5e4">
+<p style="margin:0;font-size:15px;line-height:1.5;color:#0c0a09"><a href="${escapeHtml(i.url)}" style="color:#0c0a09;text-decoration:none;font-weight:600">${escapeHtml(i.text)}</a></p>
+${i.excerpt ? `<p style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#57534e">«${escapeHtml(i.excerpt)}»</p>` : ''}
+</div>`
+  const url = escapeHtml(action.url)
+  const html = `<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background:#fafaf9">
+<div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<p style="margin:0 0 24px;font-size:15px;font-weight:600;color:#0c0a09">ESAF</p>
+${intro ? `<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#292524">${escapeHtml(intro)}</p>` : ''}
+${items.map(item).join('\n')}
+<p style="margin:24px 0"><a href="${url}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#ea580c;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none">${escapeHtml(action.label)}</a></p>
+<div style="margin:32px 0 0;padding-top:16px;border-top:1px solid #e7e5e4">
+${replyNote ? small(escapeHtml(replyNote)) : ''}
+${small(`<a href="${escapeHtml(input.settingsUrl)}" style="color:#c2410c">Endre hvilke varsler du får på e-post</a> · <a href="${escapeHtml(input.unsubscribeUrl)}" style="color:#78716c">${escapeHtml(unsubscribe)}</a>`)}
+${small(escapeHtml(SIGNATURE))}
+</div>
+</div>
+</body>
+</html>
+`
+  return { subject, text, html }
+}

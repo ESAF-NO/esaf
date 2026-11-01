@@ -1,13 +1,13 @@
 import type { NotificationView } from '@esaf/core'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { CheckCheck } from 'lucide-react'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { CheckCheck, Mail } from 'lucide-react'
 import { useState } from 'react'
 import {
   NoNotifications,
   NotificationItem,
   useOpenNotification,
 } from '#/components/Notifications.tsx'
-import { Button, Card, ErrorText, PageHeader } from '#/components/ui.tsx'
+import { Button, buttonClass, Card, ErrorText, PageHeader } from '#/components/ui.tsx'
 import { fetchNotifications, readAllNotifications } from '#/lib/notifications.functions.ts'
 
 const PAGE_SIZE = 30
@@ -87,11 +87,20 @@ function NotificationList({ first }: { first: ReturnType<typeof Route.useLoaderD
         title="Varsler"
         description="Kommentarer, omtaler, forslag til selskaper du er knyttet til, og svar på dine egne forslag."
         actions={
-          first.unread > 0 && (
-            <Button variant="secondary" size="sm" onClick={markAll} disabled={busy}>
-              <CheckCheck className="size-4" aria-hidden /> Merk alle som lest
-            </Button>
-          )
+          <>
+            <Link
+              to="/konto"
+              hash="varsler"
+              className={buttonClass({ variant: 'ghost', size: 'sm' })}
+            >
+              <Mail className="size-4" aria-hidden /> Varsler på e-post
+            </Link>
+            {first.unread > 0 && (
+              <Button variant="secondary" size="sm" onClick={markAll} disabled={busy}>
+                <CheckCheck className="size-4" aria-hidden /> Merk alle som lest
+              </Button>
+            )}
+          </>
         }
       />
       {error && (

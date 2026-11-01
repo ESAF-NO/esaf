@@ -213,7 +213,7 @@ export async function listNotifications(
 ): Promise<NotificationPage> {
   assertMember(viewer)
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 50)
-  const conditions: SQL[] = [eq(notification.recipientPersonId, viewer.personId), visible()]
+  const conditions: SQL[] = [eq(notification.recipientPersonId, viewer.personId)]
   if (options.before !== undefined) {
     if (!notificationId.safeParse(options.before).success) throw new NotFoundError()
     // Rekkefølgen er tid og så id, så varsler fra samme øyeblikk ikke hoppes over.
@@ -222,9 +222,27 @@ export async function listNotifications(
     )
   }
 
+  const rows = await selectNotificationViews(db, and(...conditions)!, limit + 1)
+  return { hasMore: rows.length > limit, items: rows.slice(0, limit) }
+}
+
+/** Et varsel med mottakeren, til e-postene. */
+export type NotificationViewFor = NotificationView & { recipientPersonId: string }
+
+/**
+ * Varslene som oppfyller vilkåret, slik de vises, nyeste først. Slettede innlegg
+ * og kommentarer er alltid med i vilkåret, så de aldri vises. Brukes av lista i
+ * appen og av e-postene.
+ */
+export async function selectNotificationViews(
+  db: Db | Tx,
+  where: SQL,
+  limit: number,
+): Promise<NotificationViewFor[]> {
   const rows = await db
     .select({
       id: notification.id,
+      recipientPersonId: notification.recipientPersonId,
       type: notification.type,
       createdAt: notification.createdAt,
       readAt: notification.readAt,
@@ -248,30 +266,28 @@ export async function listNotifications(
     .leftJoin(post, eq(post.id, notification.postId))
     .leftJoin(comment, eq(comment.id, notification.commentId))
     .leftJoin(company, eq(company.id, notification.companyId))
-    .where(and(...conditions))
+    .where(and(where, visible()))
     .orderBy(desc(notification.createdAt), desc(notification.id))
-    .limit(limit + 1)
+    .limit(limit)
 
-  return {
-    hasMore: rows.length > limit,
-    items: rows.slice(0, limit).map((r) => ({
-      id: r.id,
-      type: r.type,
-      createdAt: r.createdAt,
-      read: r.readAt !== null,
-      actor:
-        r.actorId && r.actorName
-          ? { personId: r.actorId, fullName: r.actorName, claimed: r.actorUserId !== null }
-          : null,
-      post: r.postId && r.postTitle !== null ? { id: r.postId, title: r.postTitle } : null,
-      commentId: r.commentId,
-      company: r.companySlug && r.companyName ? { slug: r.companySlug, name: r.companyName } : null,
-      suggestionKind: r.payload.suggestionKind ?? null,
-      linkRole: r.payload.linkRole ?? null,
-      excerpt: excerptOf(r.commentBody ?? r.postBody),
-      graduationYear: r.payload.graduationYear ?? null,
-    })),
-  }
+  return rows.map((r) => ({
+    id: r.id,
+    recipientPersonId: r.recipientPersonId,
+    type: r.type,
+    createdAt: r.createdAt,
+    read: r.readAt !== null,
+    actor:
+      r.actorId && r.actorName
+        ? { personId: r.actorId, fullName: r.actorName, claimed: r.actorUserId !== null }
+        : null,
+    post: r.postId && r.postTitle !== null ? { id: r.postId, title: r.postTitle } : null,
+    commentId: r.commentId,
+    company: r.companySlug && r.companyName ? { slug: r.companySlug, name: r.companyName } : null,
+    suggestionKind: r.payload.suggestionKind ?? null,
+    linkRole: r.payload.linkRole ?? null,
+    excerpt: excerptOf(r.commentBody ?? r.postBody),
+    graduationYear: r.payload.graduationYear ?? null,
+  }))
 }
 
 /** Antall uleste varsler, til klokka i toppen. */

@@ -1542,10 +1542,44 @@ export const notification = pgTable(
     index('notification_unread_index')
       .on(t.recipientPersonId, t.createdAt)
       .where(sql`${t.readAt} is null`),
+    // E-postutsendingen leter etter varsler som verken er lest eller sendt.
+    index('notification_unsent_index')
+      .on(t.createdAt)
+      .where(sql`${t.readAt} is null and ${t.emailedAt} is null`),
   ],
 )
 
 export type NotificationType = (typeof notificationType.enumValues)[number]
+
+/**
+ * Hvor ofte varsler sendes på e-post: med en gang (samlet noen minutter),
+ * i en daglig eller ukentlig oppsummering, eller ikke.
+ */
+export const notificationEmailFrequency = pgEnum('notification_email_frequency', [
+  'instant',
+  'daily',
+  'weekly',
+  'off',
+])
+
+/**
+ * Hva hvert medlem vil ha på e-post, per kategori (se `notificationCategories`
+ * i @esaf/core). Uten rad gjelder standarden for kategorien.
+ */
+export const notificationEmailPreference = pgTable(
+  'notification_email_preference',
+  {
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    category: text().notNull(),
+    frequency: notificationEmailFrequency().notNull(),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [primaryKey({ columns: [t.personId, t.category] })],
+)
+
+export type NotificationEmailFrequency = (typeof notificationEmailFrequency.enumValues)[number]
 
 // ---------------------------------------------------------------------------
 // Vedlegg: bilder og dokumenter på innlegg, kommentarer, arrangementer og selskaper

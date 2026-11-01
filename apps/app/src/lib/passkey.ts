@@ -49,7 +49,12 @@ export function passkeySignInError(error: AuthError): string | null {
   if (error.code === 'USER_VERIFICATION_REQUIRED') {
     return 'Passkeyen må bekreftes med ansikt, fingeravtrykk eller PIN. Prøv igjen.'
   }
-  return 'Passkeyen kunne ikke brukes her. Prøv igjen, eller logg inn med passord.'
+  if (error.code === 'PASSKEY_NOT_FOUND') {
+    return 'Denne passkeyen er fjernet eller hører til et annet nettsted. Velg en annen, eller logg inn med passord.'
+  }
+  // Koden gjør det mulig å finne årsaken fra et skjermbilde.
+  const code = error.code ?? (error.status ? `HTTP ${error.status}` : null)
+  return `Passkeyen kunne ikke brukes her. Prøv igjen, eller logg inn med passord.${code ? ` (Feilkode: ${code})` : ''}`
 }
 
 /** Feilmelding på norsk for å legge til eller endre passkeys, eller `null` når personen avbrøt. */

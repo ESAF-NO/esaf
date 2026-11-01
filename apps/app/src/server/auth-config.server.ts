@@ -36,6 +36,19 @@ const CHANGES_SIGN_IN_METHODS = new Set([
   '/two-factor/enable',
 ])
 
+/** Der nettleseren får utfordringen for å logge inn med passkey. */
+const PASSKEY_SIGN_IN_OPTIONS = '/passkey/generate-authenticate-options'
+
+/** Private og lokale nett: cloudflared, Traefik og Docker-nettverkene mellom dem. */
+export const TRUSTED_PROXIES = [
+  '127.0.0.0/8',
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '::1/128',
+  'fc00::/7',
+]
+
 /** Godkjenningen av en MCP-klient. Bare admins i en sterk økt kommer gjennom. */
 const OAUTH_CONSENT = '/oauth2/consent'
 
@@ -130,6 +143,17 @@ export function createAuth(config: AuthConfig) {
       },
     }),
     disabledPaths: UNUSED_OAUTH_PATHS,
+    advanced: {
+      ipAddress: {
+        // I produksjon går forespørslene gjennom Cloudflare-tunnelen og Traefik,
+        // som hver legger sin adresse til i X-Forwarded-For. Uten disse som
+        // betrodde mellomledd finner Better Auth ingen klientadresse, og alle
+        // deler én grense for innloggingsforsøk. Den bakerste adressen som ikke
+        // er et privat nett, er klienten. Den kan ikke forfalskes ved å sende
+        // headeren selv, for mellomleddene legger alltid til den de så.
+        trustedProxies: TRUSTED_PROXIES,
+      },
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
@@ -238,6 +262,15 @@ export function createAuth(config: AuthConfig) {
           const scopes = String(ctx.body.scope ?? query.get('scope') ?? '').split(' ')
           await recordMcpConnect(config.db, viewer, { clientId, scopes })
           return
+        }
+        if (ctx.path === PASSKEY_SIGN_IN_OPTIONS) {
+          // Pluginen ber bare om at personen bekreftes («preferred»), men vi
+          // krever det (se `afterVerification` under). Da hopper Chrome og Google
+          // Passordlagring over PIN og fingeravtrykk, og innloggingen avvises
+          // etterpå. Med «required» spør nettleseren alltid.
+          const options = ctx.context.returned
+          if (!options || options instanceof Error || typeof options !== 'object') return
+          return ctx.json({ ...options, userVerification: 'required' })
         }
         // Den som logger inn med passkey mens de allerede er innlogget (for å
         // oppgradere økten til adminverktøyene), får en ny økt. Den gamle

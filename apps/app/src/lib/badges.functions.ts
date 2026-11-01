@@ -9,7 +9,8 @@ import {
   findBadgeCandidates,
   getBadge,
   getBadgeForAdmin,
-  listBadges,
+  getBadgeOverview,
+  getCohortBadgeStanding,
   listBadgesForAdmin,
   listMissedEvents,
   previewBadgeRule,
@@ -29,8 +30,12 @@ import { db } from '#/server/db.server.ts'
 // validering i @esaf/core.
 
 export const fetchBadges = createServerFn({ method: 'GET' }).handler(() =>
-  run((viewer) => listBadges(db, viewer)),
+  run((viewer) => getBadgeOverview(db, viewer)),
 )
+
+export const fetchCohortStanding = createServerFn({ method: 'GET' })
+  .validator(z.object({ year: z.number().int() }))
+  .handler(({ data }) => run((viewer) => getCohortBadgeStanding(db, viewer, data.year)))
 
 export const fetchBadge = createServerFn({ method: 'GET' })
   .validator(z.object({ slug: z.string().max(80) }))

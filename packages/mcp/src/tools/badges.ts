@@ -12,12 +12,14 @@ import {
   deleteBadge,
   getBadgeForAdmin,
   listBadgesForAdmin,
+  loadBadgeStats,
   previewBadgeRule,
   revokeBadge,
   setBadgeStatus,
   syncBadges,
   updateBadge,
   type AdminBadge,
+  type BadgeStats,
 } from '@esaf/core'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
@@ -191,7 +193,7 @@ const badgeFields = {
     ),
 }
 
-function summary(ctx: ToolContext, b: AdminBadge) {
+function summary(ctx: ToolContext, b: AdminBadge, stats?: BadgeStats) {
   return {
     badgeId: b.id,
     slug: b.slug,
@@ -207,6 +209,8 @@ function summary(ctx: ToolContext, b: AdminBadge) {
     rule: b.rule,
     manual: b.manual,
     holders: { total: b.awarded, activeMembers: b.visible },
+    // Sjeldenheten (andelen aktive medlemmer som har merket) og XP-en den gir. Bare publiserte.
+    ...(stats && b.status === 'published' ? { rarity: stats.rarity(b.id) } : {}),
   }
 }
 
@@ -273,7 +277,9 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     name: 'list_badges',
     title: 'List badges',
     description:
-      'All badges (published, drafts, archived) with the rule in words, the rule itself and how many have each.',
+      'All badges (published, drafts, archived) with the rule in words, the rule itself, how many have each, and for ' +
+      'published ones the rarity (common/uncommon/rare/epic/legendary from the share of active members holding it) ' +
+      'and the XP it gives. Members level up from XP, and cohorts compete on XP per member.',
     input: z.object({
       status: z
         .enum(['draft', 'published', 'archived'])
@@ -281,10 +287,13 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
         .describe('Only badges with this status.'),
     }),
     effect: 'read',
-    run: async ({ status }, ctx) =>
-      (await listBadgesForAdmin(ctx.db, ctx.viewer))
-        .filter((b) => !status || b.status === status)
-        .map((b) => summary(ctx, b)),
+    run: async ({ status }, ctx) => {
+      const [badges, stats] = await Promise.all([
+        listBadgesForAdmin(ctx.db, ctx.viewer),
+        loadBadgeStats(ctx.db),
+      ])
+      return badges.filter((b) => !status || b.status === status).map((b) => summary(ctx, b, stats))
+    },
   })
 
   defineTool(server, ctx, {

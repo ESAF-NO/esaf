@@ -24,7 +24,7 @@ import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
 import { RoleBadge } from '#/components/EventCharts.tsx'
-import { BadgePill } from '#/components/Badges.tsx'
+import { BadgePill, LevelRing } from '#/components/Badges.tsx'
 import { BoardBadge } from '#/components/Board.tsx'
 import { RepresentativeBadges } from '#/components/Representatives.tsx'
 import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
@@ -697,12 +697,26 @@ function BadgesCard({ profile: p }: { profile: Profile }) {
       <h2 className="flex items-center gap-2 text-sm font-semibold text-stone-950">
         <Award className="size-4 text-stone-400" aria-hidden /> Merker
       </h2>
+      {p.level.xp > 0 && (
+        <Link to="/merker" className="mt-3 flex items-center gap-3 rounded-xl bg-stone-50 p-2.5">
+          <LevelRing level={p.level} size="sm" />
+          <span className="min-w-0 text-sm">
+            <span className="block font-semibold text-stone-950">
+              Nivå {p.level.level} · {p.level.title}
+            </span>
+            <span className="block text-xs text-stone-500 tabular-nums">
+              {p.level.xp} XP{p.level.rank ? ` · #${p.level.rank} på topplista` : ''}
+            </span>
+          </span>
+        </Link>
+      )}
       {p.badges.length ? (
         <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Merker">
           {p.badges.map((b) => (
             <li key={b.id}>
               <BadgePill
                 badge={b}
+                rarity={b.rarity.tier}
                 hidden={b.hidden}
                 title={b.citation ? `${b.description} «${b.citation}»` : b.description}
               />

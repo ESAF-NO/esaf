@@ -81,7 +81,7 @@ export const setParticipated = createServerFn({ method: 'POST' })
     run(async (viewer) => {
       await setOwnParticipation(db, viewer, data.eventId, data.participated)
       // Merkene oppdateres med en gang, så den som var der, ser dem nå.
-      return { badges: await refreshOwnBadges(db, viewer) }
+      return refreshOwnBadges(db, viewer)
     }),
   )
 

@@ -1,4 +1,14 @@
-import type { BadgeChip, BadgeColor, BadgeIcon as BadgeIconName, BadgeProgress } from '@esaf/core'
+import type {
+  BadgeChip,
+  BadgeColor,
+  BadgeIcon as BadgeIconName,
+  BadgeProgress,
+  BadgeRarity,
+  BadgeRarityTier,
+  BadgeStep,
+  OwnBadgeUpdate,
+  PlayerLevel,
+} from '@esaf/core'
 import { Link } from '@tanstack/react-router'
 import {
   Anchor,
@@ -135,74 +145,197 @@ export const badgeColorClasses: Record<BadgeColor, { medal: string; soft: string
 }
 
 const medalSizes = {
-  sm: 'size-7 [&_svg]:size-3.5',
-  md: 'size-12 [&_svg]:size-6',
-  lg: 'size-20 [&_svg]:size-10',
+  xs: { box: 'size-5 [&_svg]:size-3', ring: 'p-[1.5px]', step: 'hidden' },
+  sm: { box: 'size-7 [&_svg]:size-3.5', ring: 'p-[2px]', step: 'hidden' },
+  md: { box: 'size-12 [&_svg]:size-6', ring: 'p-[3px]', step: 'text-[9px] px-1 -bottom-1' },
+  lg: { box: 'size-20 [&_svg]:size-10', ring: 'p-1', step: 'text-[11px] px-1.5 -bottom-1.5' },
 }
+
+/**
+ * Kanten rundt merket viser hvor sjeldent det er: grå for vanlige, sølv, gull,
+ * lilla glød for episke og en regnbuekant med glans for legendariske.
+ */
+export const rarityRings: Record<BadgeRarityTier, string> = {
+  common: 'bg-stone-200',
+  uncommon: 'bg-gradient-to-br from-slate-200 via-slate-400 to-slate-200',
+  rare: 'bg-gradient-to-br from-amber-200 via-amber-500 to-amber-200',
+  epic: 'bg-gradient-to-br from-fuchsia-300 via-violet-600 to-fuchsia-300 shadow-[0_0_14px_-2px] shadow-violet-500/60',
+  legendary:
+    'bg-[conic-gradient(from_200deg,#f59e0b,#ef4444,#d946ef,#6366f1,#06b6d4,#22c55e,#f59e0b)] shadow-[0_0_18px_-2px] shadow-amber-500/60',
+}
+
+/** Navnene, som `badgeRarityNames` i @esaf/core (som ikke kan lastes i nettleseren). */
+export const rarityNames: Record<BadgeRarityTier, string> = {
+  common: 'Vanlig',
+  uncommon: 'Uvanlig',
+  rare: 'Sjelden',
+  epic: 'Episk',
+  legendary: 'Legendarisk',
+}
+
+/** Teksten for sjeldenheten: farge per nivå. */
+export const rarityText: Record<BadgeRarityTier, string> = {
+  common: 'text-stone-500',
+  uncommon: 'text-slate-600',
+  rare: 'text-amber-700',
+  epic: 'text-violet-700',
+  legendary:
+    'bg-gradient-to-r from-amber-600 via-rose-600 to-violet-600 bg-clip-text text-transparent',
+}
+
+const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
 
 /** Fargene, også for verdier appen ikke kjenner (fra en nyere versjon). Ukjente ikoner blir `Award`. */
 const colorOf = (color: string) => badgeColorClasses[color as BadgeColor] ?? badgeColorClasses.stone
 
-/** Det runde merket. Uten `earned` er det grått, som et merke man ikke har ennå. */
+/**
+ * Merket: ikonet i fargen sin, med en kant som viser hvor sjeldent det er, og
+ * trinnet i serien (I, II, III). Uten `earned` er det grått, som et merke man
+ * ikke har ennå.
+ */
 export function BadgeMedal({
   badge,
   earned = true,
+  rarity,
+  step,
   size = 'md',
+  pop = false,
+  delay = 0,
   className,
 }: {
   badge: { icon: string; color: string }
   earned?: boolean
+  rarity?: BadgeRarityTier
+  step?: BadgeStep | null
   size?: keyof typeof medalSizes
+  /** Popper inn, til feiringen, eventuelt litt etter de andre (millisekunder). */
+  pop?: boolean
+  delay?: number
   className?: string
 }) {
   const Icon = badgeIconComponents[badge.icon as BadgeIconName] ?? Award
+  const s = medalSizes[size]
   return (
     <span
       aria-hidden
       className={cx(
-        'grid shrink-0 place-items-center rounded-full ring-4',
-        medalSizes[size],
-        earned
-          ? cx(colorOf(badge.color).medal, 'shadow-sm')
-          : 'bg-stone-100 text-stone-400 ring-stone-50 outline-1 -outline-offset-4 outline-stone-300 outline-dashed',
+        'relative inline-grid h-fit shrink-0 self-start rounded-full',
+        s.ring,
+        earned && rarity ? rarityRings[rarity] : earned ? 'bg-white/70' : 'bg-transparent',
+        pop && 'animate-pop',
         className,
       )}
+      style={pop && delay ? { animationDelay: `${delay}ms` } : undefined}
     >
-      <Icon strokeWidth={2} />
+      <span
+        className={cx(
+          'relative grid place-items-center overflow-hidden rounded-full',
+          s.box,
+          earned
+            ? cx(colorOf(badge.color).medal, 'shadow-inner ring-2 ring-white/60')
+            : 'bg-stone-100 text-stone-400 outline-1 -outline-offset-4 outline-stone-300 outline-dashed',
+        )}
+      >
+        <Icon strokeWidth={2} className="relative" />
+        {earned && rarity === 'legendary' && (
+          <span className="pointer-events-none absolute inset-y-[-50%] left-0 w-1/3 animate-shine bg-white/45 blur-[2px] motion-reduce:hidden" />
+        )}
+      </span>
+      {step && (
+        <span
+          className={cx(
+            'absolute left-1/2 -translate-x-1/2 rounded-full font-bold tracking-wide shadow-sm ring-1 tabular-nums',
+            s.step,
+            earned
+              ? 'bg-stone-900 text-white ring-white'
+              : 'bg-white text-stone-400 ring-stone-200',
+          )}
+        >
+          {roman[step.index - 1] ?? step.index}
+        </span>
+      )}
     </span>
   )
 }
 
-/** Et lite merke med navnet, til profilen og varsler. Lenker til merket. */
+/** «Episk · 4 % har det». */
+export function RarityTag({
+  rarity,
+  showShare = true,
+  showXp = false,
+  className,
+}: {
+  rarity: BadgeRarity
+  showShare?: boolean
+  showXp?: boolean
+  className?: string
+}) {
+  const percent = rarity.share > 0 && rarity.share < 0.01 ? '<1' : Math.round(rarity.share * 100)
+  return (
+    <span className={cx('text-xs font-semibold', className)}>
+      <span className={rarityText[rarity.tier]}>{rarityNames[rarity.tier]}</span>
+      {showShare && (
+        <span className="font-normal text-stone-500">
+          {' '}
+          · {rarity.share === 0 ? 'ingen har det ennå' : `${percent} % har det`}
+        </span>
+      )}
+      {showXp && <span className="font-normal text-stone-500"> · +{rarity.xp} XP</span>}
+    </span>
+  )
+}
+
+/** Nivået i en ring som fylles mot neste nivå. */
+export function LevelRing({ level, size = 'md' }: { level: PlayerLevel; size?: 'sm' | 'md' }) {
+  const share = (level.xp - level.levelXp) / (level.nextXp - level.levelXp)
+  return (
+    <span
+      className={cx(
+        'relative grid shrink-0 place-items-center rounded-full',
+        size === 'md' ? 'size-20' : 'size-10',
+      )}
+      style={{
+        background: `conic-gradient(var(--color-brand-500) ${share * 360}deg, var(--color-stone-200) 0)`,
+      }}
+      role="img"
+      aria-label={`Nivå ${level.level}`}
+    >
+      <span
+        className={cx(
+          'grid place-items-center rounded-full bg-white font-bold text-stone-950 tabular-nums',
+          size === 'md' ? 'size-16 text-2xl' : 'size-8 text-sm',
+        )}
+      >
+        {level.level}
+      </span>
+    </span>
+  )
+}
+
+/** Et lite merke med navnet, til profilen. Lenker til merket. */
 export function BadgePill({
   badge,
+  rarity,
   hidden = false,
   title,
 }: {
   badge: BadgeChip
+  rarity?: BadgeRarityTier
   /** Personen har skjult det; bare hen selv ser det, nedtonet. */
   hidden?: boolean
   title?: string
 }) {
-  const Icon = badgeIconComponents[badge.icon as BadgeIconName] ?? Award
   return (
     <Link
       to="/merker/$slug"
       params={{ slug: badge.slug }}
       title={title ?? badge.description}
       className={cx(
-        'inline-flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-1 text-xs font-medium ring-1 transition ring-inset hover:brightness-95',
+        'inline-flex items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-xs font-medium ring-1 transition ring-inset hover:brightness-95',
         hidden ? 'bg-white text-stone-400 ring-stone-200 ring-dashed' : colorOf(badge.color).soft,
       )}
     >
-      <span
-        className={cx(
-          'grid size-5 place-items-center rounded-full',
-          hidden ? 'bg-stone-100' : colorOf(badge.color).medal,
-        )}
-      >
-        <Icon className="size-3" aria-hidden />
-      </span>
+      <BadgeMedal badge={badge} rarity={rarity} earned={!hidden} size="xs" />
       {badge.name}
       {hidden && <span className="sr-only"> (skjult for andre)</span>}
     </Link>
@@ -243,31 +376,71 @@ export function BadgeProgressBar({
 }
 
 /**
- * Når den innloggede nettopp har fått merker: en liten feiring med merkene og
- * en lenke til dem. Vises etter «Jeg var der» og «Var du der?».
+ * Når den innloggede nettopp har fått merker: merkene popper inn, med hvor
+ * sjeldne de er og XP-en de gir, og et nytt nivå når det ble nådd. Vises etter
+ * «Jeg var der» og «Var du der?».
  */
-export function NewBadgesDialog({ badges, onClose }: { badges: BadgeChip[]; onClose: () => void }) {
+export function NewBadgesDialog({
+  update,
+  onClose,
+}: {
+  update: OwnBadgeUpdate
+  onClose: () => void
+}) {
+  const { badges, level, previousLevel } = update
   if (!badges.length) return null
   const one = badges.length === 1
+  const xp = badges.reduce((sum, b) => sum + b.rarity.xp, 0)
   return (
     <Dialog
-      title={one ? 'Du fikk et nytt merke!' : `Du fikk ${badges.length} nye merker!`}
+      title={
+        previousLevel
+          ? `Nivå ${level.level}: ${level.title}!`
+          : one
+            ? 'Nytt merke låst opp!'
+            : `${badges.length} nye merker låst opp!`
+      }
+      description={
+        <p className="font-semibold text-brand-700">
+          +{xp} XP
+          {previousLevel ? ` · fra nivå ${previousLevel} til ${level.level}` : ''}
+        </p>
+      }
       onClose={onClose}
     >
+      {previousLevel !== null && (
+        <div className="mb-5 flex items-center gap-4 rounded-2xl bg-gradient-to-br from-brand-50 via-white to-amber-50 p-4 ring-1 ring-brand-100">
+          <span className="animate-pop">
+            <LevelRing level={level} />
+          </span>
+          <p className="text-sm text-stone-700">
+            Du er nå <strong className="font-semibold text-stone-950">{level.title}</strong>, med{' '}
+            {level.xp} XP{level.rank ? ` og plass #${level.rank} på topplista` : ''}.
+          </p>
+        </div>
+      )}
       <ul className="space-y-4">
-        {badges.map((b) => (
+        {badges.map((b, i) => (
           <li key={b.id} className="flex items-center gap-4">
-            <BadgeMedal badge={b} size="md" className="animate-in" />
+            <BadgeMedal
+              badge={b}
+              rarity={b.rarity.tier}
+              size="md"
+              pop
+              // Merkene popper inn etter hverandre.
+              delay={(i + (previousLevel ? 1 : 0)) * 160}
+            />
             <div className="min-w-0">
               <p className="font-semibold text-stone-950">{b.name}</p>
               <p className="text-sm text-stone-600">{b.description}</p>
+              <RarityTag rarity={b.rarity} showXp />
             </div>
           </li>
         ))}
       </ul>
       <DialogActions>
         <Link to="/merker" className={buttonClass({ variant: 'secondary' })}>
-          Se alle merker
+          Se nivået ditt
         </Link>
         <button
           type="button"

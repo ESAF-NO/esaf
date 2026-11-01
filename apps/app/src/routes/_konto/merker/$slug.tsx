@@ -2,8 +2,8 @@ import type { BadgeDetails } from '@esaf/core'
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, Eye, EyeOff, Pencil } from 'lucide-react'
 import { useState } from 'react'
-import { BadgeMedal, BadgeProgressBar } from '#/components/Badges.tsx'
-import { Avatar, Button, buttonClass, Card, ErrorText, Verified } from '#/components/ui.tsx'
+import { BadgeMedal, BadgeProgressBar, RarityTag } from '#/components/Badges.tsx'
+import { Avatar, Button, buttonClass, Card, cx, ErrorText, Verified } from '#/components/ui.tsx'
 import { fetchBadge, hideOwnBadge } from '#/lib/badges.functions.ts'
 import { kull, plural } from '#/lib/format.ts'
 
@@ -51,9 +51,23 @@ function BadgePage() {
 
       <Card className="p-6 sm:p-8">
         <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
-          <BadgeMedal badge={b} earned={own?.earned ?? false} size="lg" />
+          <BadgeMedal
+            badge={b}
+            earned={own?.earned ?? false}
+            rarity={b.rarity.tier}
+            step={b.step}
+            size="lg"
+          />
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-stone-950">{b.name}</h1>
+            <RarityTag rarity={b.rarity} showXp className="text-sm" />
+            <h1 className="text-2xl font-semibold tracking-tight text-stone-950">
+              {b.name}
+              {b.step && (
+                <span className="ml-2 align-middle text-sm font-medium text-stone-500">
+                  Trinn {b.step.index} av {b.step.count}
+                </span>
+              )}
+            </h1>
             <p className="mt-1 text-[15px] text-stone-700">{b.description}</p>
             <p className="mt-2 text-sm text-stone-500">
               {b.manual
@@ -90,11 +104,24 @@ function BadgePage() {
                   params={{ personId: h.personId }}
                   className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-card ring-1 ring-stone-200/70 transition hover:ring-stone-300"
                 >
+                  <span
+                    className={cx(
+                      'w-8 shrink-0 text-center text-xs font-bold tabular-nums',
+                      h.number === 1 ? 'text-amber-500' : 'text-stone-400',
+                    )}
+                  >
+                    #{h.number}
+                  </span>
                   <Avatar name={h.fullName} photo={h.photo} size="md" muted={!h.claimed} />
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1 text-sm font-medium text-stone-950">
                       <span className="truncate">{h.fullName}</span>
                       <Verified claimed={h.claimed} />
+                      {h.number === 1 && (
+                        <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-semibold text-amber-800">
+                          Først ute
+                        </span>
+                      )}
                     </p>
                     <p className="truncate text-xs text-stone-500">
                       {[
@@ -146,7 +173,9 @@ function OwnStatus({ badge: b }: { badge: BadgeDetails }) {
     return (
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 pt-5">
         <p className="text-sm text-stone-700">
-          <span className="font-medium text-stone-950">Du har dette merket</span>
+          <span className="font-medium text-stone-950">
+            Du har dette merket{own.number ? `, som nr. ${own.number} av ${b.awarded}` : ''}
+          </span>
           {own.achievedOn && ` siden ${own.achievedOn.slice(0, 4)}`}.
           {own.citation && (
             <span className="mt-1 block text-stone-600 italic">«{own.citation}»</span>

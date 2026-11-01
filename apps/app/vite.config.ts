@@ -7,6 +7,15 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   server: { port: 3000 },
+  ssr: {
+    // better-auth bakes Vite inn i serverbundelen, men pluginene ville ellers
+    // blitt pakket av Nitro etterpå, med sin egen kopi av @better-auth/core. Da
+    // finnes `APIError` to ganger, og pluginenes `instanceof APIError` slår feil
+    // på våre feil: en passkey uten biometri ga «AUTHENTICATION_FAILED» i stedet
+    // for riktig melding. Alt fra better-auth pakkes derfor i samme omgang.
+    // `scripts/check-server-bundle.ts` passer på at det forblir slik.
+    noExternal: [/^better-auth(\/|$)/, /^@better-auth\//],
+  },
   plugins: [
     nitro({
       plugins: [

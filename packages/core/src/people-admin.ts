@@ -9,7 +9,7 @@ import {
 } from '@esaf/db'
 import { and, asc, eq, ilike, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { moveManualBadges, syncBadges } from './badges.ts'
+import { moveBadgeAwards, syncBadges } from './badges.ts'
 import { assertCan, type Viewer } from './access.ts'
 import { deleteOrphanCompanies } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
@@ -999,8 +999,8 @@ export async function mergePeople(
       sql`insert into ${eventParticipation} (event_id, person_id, role, source, note, created_at) select event_id, ${into}, role, source, note, created_at from ${eventParticipation} where person_id = ${from} on conflict (event_id, person_id) do update set role = coalesce(${eventParticipation}.role, excluded.role), note = coalesce(${eventParticipation}.note, excluded.note) returning (xmax = 0) as inserted`,
     )
 
-    // Merker delt ut for hånd flyttes; merker med regel regnes ut på nytt etterpå.
-    const movedBadges = await moveManualBadges(tx, from, into)
+    // Merkene flyttes; de med regel regnes ut på nytt etterpå.
+    const movedBadges = await moveBadgeAwards(tx, from, into)
 
     const emails = await tx
       .update(personEmail)

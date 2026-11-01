@@ -6,7 +6,7 @@ import {
   type ParticipationRole,
   type ParticipationSource,
 } from '@esaf/db'
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import {
@@ -735,6 +735,17 @@ export async function deleteEventType(db: Db, viewer: Viewer, typeId: string): P
     if (events) {
       throw new DomainError(
         `${type.name} har ${events} ${events === 1 ? 'arrangement' : 'arrangementer'}. Slett eller flytt dem først.`,
+      )
+    }
+    // Et merke med regel for typen ville ellers aldri kunne deles ut eller rettes.
+    const [usedBy] = await tx
+      .select({ name: schema.badge.name })
+      .from(schema.badge)
+      .where(sql`${schema.badge.rule}->>'eventTypeId' = ${typeId}`)
+      .limit(1)
+    if (usedBy) {
+      throw new DomainError(
+        `Merket «${usedBy.name}» bruker ${type.name}. Endre eller slett merket først.`,
       )
     }
     await tx.delete(eventType).where(eq(eventType.id, typeId))

@@ -423,6 +423,8 @@ export function evaluateBadgeRule(rule: BadgeRule, f: BadgeFacts): BadgeResult {
     }
     case 'event_attended': {
       const wanted = new Set(rule.eventIds)
+      // Alle arrangementene er slettet: da kan ingen få merket.
+      if (!wanted.size) return { earned: false, achievedOn: null, progress: null }
       const hits = f.participations.filter((p) => wanted.has(p.eventId))
       const distinct = new Set(hits.map((p) => p.eventId)).size
       if (rule.match === 'any') {
@@ -776,6 +778,47 @@ function storedRule(value: unknown): BadgeRule {
 // Utdeling etter regel
 // ---------------------------------------------------------------------------
 
+/**
+ * Synkroniseringen og endringer admins gjør på merker, går etter hverandre. Ellers
+ * kunne en synkronisering som leste et merke før det ble gjort om til et merke for
+ * hånd (eller arkivert), skrive merker etter den gamle regelen etterpå.
+ */
+const lockBadgeWork = (tx: Tx) =>
+  tx.execute(sql`select pg_advisory_xact_lock(hashtext('badge_sync'))`)
+
+/**
+ * Reglene uten arrangementer som er slettet etterpå. Et slettet arrangement
+ * teller ikke, så «alle disse» betyr alle som fortsatt finnes.
+ */
+async function withLiveEvents(db: Db | Tx, rules: BadgeRule[]): Promise<BadgeRule[]> {
+  const ids = [...new Set(rules.flatMap((r) => (r.kind === 'event_attended' ? r.eventIds : [])))]
+  if (!ids.length) return rules
+  const live = new Set(
+    (await db.select({ id: event.id }).from(event).where(inArray(event.id, ids))).map((r) => r.id),
+  )
+  return rules.map((r) =>
+    r.kind === 'event_attended' ? { ...r, eventIds: r.eventIds.filter((id) => live.has(id)) } : r,
+  )
+}
+
+/** Hvor høyt et trinn er i en serie: tallet regelen krever. Avgjør når rekkefølgen er lik. */
+function ruleLevel(rule: BadgeRule): number {
+  switch (rule.kind) {
+    case 'event_count':
+    case 'company':
+    case 'community':
+      return rule.count
+    case 'event_streak':
+      return rule.years
+    case 'event_attended':
+      return rule.match === 'all' ? rule.eventIds.length : 1
+    case 'profile':
+      return rule.fields.length
+    default:
+      return 0
+  }
+}
+
 export type BadgeAwardChange = { badgeId: string; personId: string }
 
 /**
@@ -791,7 +834,7 @@ export async function syncBadges(
 ): Promise<{ awarded: BadgeAwardChange[]; removed: number; updated: number }> {
   return db.transaction(async (tx) => {
     // To synkroniseringer samtidig ville sett de samme manglende radene.
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('badge_sync'))`)
+    await lockBadgeWork(tx)
     const badges = (
       await tx
         .select({ id: badge.id, name: badge.name, rule: badge.rule })
@@ -806,6 +849,11 @@ export async function syncBadges(
       .map((b) => ({ ...b, rule: storedRule(b.rule) }))
       .filter((b) => !isManualRule(b.rule))
     if (!badges.length) return { awarded: [], removed: 0, updated: 0 }
+    const rules = await withLiveEvents(
+      tx,
+      badges.map((b) => b.rule),
+    )
+    badges.forEach((b, i) => (b.rule = rules[i]!))
 
     const facts = await loadBadgeFacts(tx, scope.personIds ?? null)
     const existing = await tx
@@ -983,7 +1031,10 @@ export async function listBadges(db: Db, viewer: Viewer): Promise<BadgeOverviewI
     .from(badge)
     .where(eq(badge.status, 'published'))
     .orderBy(asc(badge.sortOrder), asc(badge.name))
-  const rules = rows.map((r) => storedRule(r.rule))
+  const rules = await withLiveEvents(
+    db,
+    rows.map((r) => storedRule(r.rule)),
+  )
   const [names, own, facts] = await Promise.all([
     loadRuleNames(db, rules),
     db
@@ -1052,7 +1103,7 @@ export async function getBadge(db: Db, viewer: Viewer, slug: string): Promise<Ba
   if (!row || (row.status !== 'published' && !can(viewer, 'badges.manage'))) {
     throw new NotFoundError('Fant ikke merket.')
   }
-  const rule = storedRule(row.rule)
+  const [rule] = (await withLiveEvents(db, [storedRule(row.rule)])) as [BadgeRule]
   const [names, holders, facts] = await Promise.all([
     loadRuleNames(db, [rule]),
     db
@@ -1136,6 +1187,8 @@ export async function loadProfileBadges(
     .select({
       ...chipColumns,
       series: badge.series,
+      sortOrder: badge.sortOrder,
+      rule: badge.rule,
       achievedOn: badgeAward.achievedOn,
       citation: badgeAward.citation,
       hidden: badgeAward.hidden,
@@ -1149,22 +1202,24 @@ export async function loadProfileBadges(
         own ? undefined : eq(badgeAward.hidden, false),
       ),
     )
-    .orderBy(desc(badge.sortOrder), asc(badge.name))
-  // Sortert med høyeste trinn først: det første i hver serie er det som vises.
-  const seen = new Set<string>()
-  const shown = rows.filter((r) => {
-    if (!r.series) return true
-    const key = r.series.toLocaleLowerCase('nb')
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-  return shown.reverse().map(({ series: _series, achievedOn, citation, hidden, ...row }) => ({
-    ...chip(row),
-    achievedOn,
-    citation,
-    hidden,
-  }))
+  // Laveste først: rekkefølgen admins har satt, så tallet regelen krever, så navnet.
+  const sorted = rows
+    .map((r) => ({ ...r, level: ruleLevel(storedRule(r.rule)) }))
+    .sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder || a.level - b.level || a.name.localeCompare(b.name, 'nb'),
+    )
+  // I en serie vises bare det høyeste trinnet: det siste.
+  const top = new Map<string, string>()
+  for (const r of sorted) if (r.series) top.set(r.series.toLocaleLowerCase('nb'), r.id)
+  return sorted
+    .filter((r) => !r.series || top.get(r.series.toLocaleLowerCase('nb')) === r.id)
+    .map(({ achievedOn, citation, hidden, id, slug, name, description, icon, color }) => ({
+      ...chip({ id, slug, name, description, icon, color }),
+      achievedOn,
+      citation,
+      hidden,
+    }))
 }
 
 /** Skjuler eller viser et av ens egne merker. */
@@ -1414,7 +1469,10 @@ export async function listBadgesForAdmin(db: Db, viewer: Viewer): Promise<AdminB
       asc(badge.sortOrder),
       asc(badge.name),
     )
-  const rules = rows.map((r) => storedRule(r.rule))
+  const rules = await withLiveEvents(
+    db,
+    rows.map((r) => storedRule(r.rule)),
+  )
   const names = await loadRuleNames(db, rules)
   return rows.map((row, i) => ({
     ...row,
@@ -1551,8 +1609,8 @@ export async function badgeOptions(db: Db, viewer: Viewer) {
         typeId: event.typeId,
       })
       .from(event)
-      .orderBy(desc(event.startDate))
-      .limit(1000),
+      // Alle, så arrangementer en regel viser til, alltid kan velges bort i skjemaet.
+      .orderBy(desc(event.startDate)),
   ])
   return {
     eventTypes: types,
@@ -1639,13 +1697,16 @@ export async function updateBadge(
 ): Promise<void> {
   assertCan(viewer, 'badges.manage')
   const published = await db.transaction(async (tx) => {
+    await lockBadgeWork(tx)
     const current = await lockBadge(tx, badgeId)
+    // Arrangementer som er slettet siden, tas ut, så merket kan rettes.
+    const [stored] = (await withLiveEvents(tx, [current.rule])) as [BadgeRule]
     const values = parse(badgeInput, {
       name: current.name,
       description: current.description,
       icon: current.icon,
       color: current.color,
-      rule: current.rule,
+      rule: stored,
       series: current.series,
       sortOrder: current.sortOrder,
       ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)),
@@ -1692,6 +1753,7 @@ export async function setBadgeStatus(
   assertCan(viewer, 'badges.manage')
   if (status !== 'published' && status !== 'archived') throw new DomainError('Ugyldig status.')
   const result = await db.transaction(async (tx) => {
+    await lockBadgeWork(tx)
     const current = await lockBadge(tx, badgeId)
     if (current.status === status) return null
     await tx
@@ -1728,6 +1790,7 @@ export async function setBadgeStatus(
 export async function deleteBadge(db: Db, viewer: Viewer, badgeId: string): Promise<void> {
   assertCan(viewer, 'badges.manage')
   await db.transaction(async (tx) => {
+    await lockBadgeWork(tx)
     const current = await lockBadge(tx, badgeId)
     const holders = await awardCount(tx, badgeId)
     await tx.delete(badge).where(eq(badge.id, badgeId))
@@ -1759,7 +1822,8 @@ function assertManual(current: { rule: BadgeRule; status: BadgeStatus }) {
 
 /**
  * Deler ut et merke for hånd til personene, med en begrunnelse som vises. Har
- * noen det allerede, oppdateres begrunnelsen. Varsel når merket er publisert.
+ * noen det allerede, får de den nye begrunnelsen; uten begrunnelse beholdes
+ * den gamle. Varsel når merket er publisert.
  */
 export async function awardBadge(
   db: Db,
@@ -1770,6 +1834,7 @@ export async function awardBadge(
   assertCan(viewer, 'badges.manage')
   const values = parse(awardInput, input)
   return db.transaction(async (tx) => {
+    await lockBadgeWork(tx)
     const current = await lockBadge(tx, badgeId)
     assertManual(current)
     const ids = [...new Set(values.personIds)]
@@ -1778,18 +1843,23 @@ export async function awardBadge(
       .from(person)
       .where(inArray(person.id, ids))
     if (people.length !== ids.length) throw new NotFoundError('Fant ikke alle personene.')
-    const before = new Set(
+    const before = new Map(
       (
         await tx
-          .select({ personId: badgeAward.personId })
+          .select({ personId: badgeAward.personId, citation: badgeAward.citation })
           .from(badgeAward)
           .where(and(eq(badgeAward.badgeId, badgeId), inArray(badgeAward.personId, ids)))
-      ).map((r) => r.personId),
+      ).map((r) => [r.personId, r.citation]),
     )
-    await tx
-      .insert(badgeAward)
-      .values(
-        ids.map((personId) => ({
+    const fresh = ids.filter((id) => !before.has(id))
+    // Har noen merket fra før, endres begrunnelsen bare når det er skrevet en ny.
+    const recited =
+      values.citation === null
+        ? []
+        : ids.filter((id) => before.has(id) && before.get(id) !== values.citation)
+    if (fresh.length) {
+      await tx.insert(badgeAward).values(
+        fresh.map((personId) => ({
           badgeId,
           personId,
           source: 'manual' as const,
@@ -1797,26 +1867,35 @@ export async function awardBadge(
           awardedByPersonId: viewer.personId,
         })),
       )
-      .onConflictDoUpdate({
-        target: [badgeAward.badgeId, badgeAward.personId],
-        set: { citation: values.citation },
-      })
-    await tx.insert(auditEvent).values(
-      people.map((p) => ({
-        actorPersonId: viewer.personId,
-        subjectPersonId: p.id,
-        action: before.has(p.id) ? 'badge.citation' : 'badge.award',
-        details: { badgeId, slug: current.slug, name: current.name, citation: values.citation },
-      })),
-    )
+    }
+    if (recited.length) {
+      await tx
+        .update(badgeAward)
+        .set({ citation: values.citation })
+        .where(and(eq(badgeAward.badgeId, badgeId), inArray(badgeAward.personId, recited)))
+    }
+    const changed = [
+      ...fresh.map((id) => [id, 'badge.award'] as const),
+      ...recited.map((id) => [id, 'badge.citation'] as const),
+    ]
+    if (changed.length) {
+      await tx.insert(auditEvent).values(
+        changed.map(([personId, action]) => ({
+          actorPersonId: viewer.personId,
+          subjectPersonId: personId,
+          action,
+          details: { badgeId, slug: current.slug, name: current.name, citation: values.citation },
+        })),
+      )
+    }
     if (current.status === 'published') {
       await notifyAwards(
         tx,
-        ids.filter((id) => !before.has(id)).map((personId) => ({ badgeId, personId })),
+        fresh.map((personId) => ({ badgeId, personId })),
         viewer.personId,
       )
     }
-    return { awarded: ids.length - before.size, updated: before.size }
+    return { awarded: fresh.length, updated: recited.length }
   })
 }
 
@@ -1830,6 +1909,7 @@ export async function revokeBadge(
   assertCan(viewer, 'badges.manage')
   const { personIds } = parse(awardInput.pick({ personIds: true }), input)
   return db.transaction(async (tx) => {
+    await lockBadgeWork(tx)
     const current = await lockBadge(tx, badgeId)
     if (!isManualRule(current.rule)) {
       throw new DomainError(
@@ -1900,12 +1980,16 @@ export async function findBadgeCandidates(
   return rows
 }
 
-/** Flytter merkene som er delt ut for hånd, når to personer slås sammen. Merker med regel regnes ut på nytt. */
-export async function moveManualBadges(tx: Tx, from: string, into: string): Promise<number> {
+/**
+ * Flytter merkene når to personer slås sammen. Alle flyttes, også etter regel,
+ * så merker på arkiverte merker blir stående og ingen får varsel om et merke
+ * duplikatet allerede hadde. Merker med regel regnes ut på nytt etterpå.
+ */
+export async function moveBadgeAwards(tx: Tx, from: string, into: string): Promise<number> {
   const moved = await tx.execute(sql`
     insert into ${badgeAward} (badge_id, person_id, source, achieved_on, citation, awarded_by_person_id, hidden, created_at)
     select badge_id, ${into}, source, achieved_on, citation, awarded_by_person_id, hidden, created_at
-    from ${badgeAward} where person_id = ${from} and source = 'manual'
+    from ${badgeAward} where person_id = ${from}
     on conflict do nothing`)
   await tx.delete(badgeAward).where(eq(badgeAward.personId, from))
   return moved.rowCount ?? 0

@@ -149,7 +149,21 @@ Klokka i toppen viser antall uleste varsler og de siste varslene. Et klikk åpne
 - **Lest:** å åpne et varsel om et innlegg merker alle varslene om det innlegget som lest, siden siden viser alle kommentarene. Man ser og endrer bare sine egne varsler.
 - **Antall uleste** kommer med fra serveren ved hver navigering, og hentes på nytt hvert minutt mens fanen er synlig og når den blir synlig igjen. Ingen websockets.
 - **Omtaler:** skriv @ i et innlegg eller en kommentar for å få forslag. Lista styres med piltastene, Enter eller Tab velger, Esc lukker. Teksten lagres med `@[Kari Nordmann](<personId>)`, og vises som en lenke til profilen (bygget med React, aldri som HTML). Serveren skriver om alle omtaler før lagring: aktive medlemmer med konto får navnet fra profilen, alle andre blir vanlig tekst uten lenke og uten varsel. Maks 20 personer per tekst.
-- **E-post:** `notification.emailed_at` er klar for en senere e-postoppsummering av uleste varsler.
+- **På e-post** (migrering `0030_email_notifications`, reglene i `packages/core/src/notification-email.ts`): varslene kan også komme på e-post, til adressen man logger inn med. Hvert medlem velger under Konto og sikkerhet → «Varsler på e-post» (`/konto#varsler`, også lenket fra `/varsler`), per kategori: med en gang, daglig eller ukentlig oppsummering, eller av. Lagres med en gang, og «Slå av all e-post» slår av alt. Valgene ligger i `notification_email_preference`; uten valg gjelder standarden:
+
+  | Kategori                        | Varslene                                | Standard    |
+  | ------------------------------- | --------------------------------------- | ----------- |
+  | Kommentarer på innleggene dine  | `comment_on_post`                       | med en gang |
+  | Når noen nevner deg             | `mention`                               | med en gang |
+  | Nye svar i samtaler du er med i | `comment_on_thread`                     | daglig      |
+  | Selskapene dine                 | forslag, svar på forslag, tilknytninger | med en gang |
+  | Nye fra kullet ditt             | `cohort_joined`                         | ukentlig    |
+  - **Når:** «med en gang» venter tre minutter, så flere varsler samles i én e-post og den som er i appen og leser varselet der, ikke får e-post. Oppsummeringene går kl. 07 norsk tid, daglig hver morgen og ukentlig mandag. Varsler som er lest i appen, varsler om slettet innhold og varsler eldre enn åtte dager sendes ikke, og hvert varsel sendes høyst én gang (`notification.emailed_at`). Slås e-post på igjen, sendes ikke det som kom mens det var av. Velkomsten sendes aldri på e-post.
+  - **Hvem:** bare aktive medlemmer med egen konto og bekreftet e-postadresse.
+  - **E-posten:** ett varsel får setningen som emne («Kari Nordmann kommenterte innlegget ditt «Lansering»»), utdraget og «Svar i ESAF»; flere blir en liste med «Se alle varsler». Under står at svar på e-posten går til styret, ikke til den som skrev, en lenke til valgene og en lenke for å slutte (`email-templates.ts`).
+  - **Avmelding:** lenken (`/avmeld?t=…`) virker uten innlogging. Den er signert med `BETTER_AUTH_SECRET` (HMAC), gjelder én person og én kategori (eller alle, for e-poster med flere), og kan ikke endres. Siden sier hva som slås av, og gjør det først når man trykker, så lenkesjekkere ikke melder noen av. E-postene har også `List-Unsubscribe` og `List-Unsubscribe-Post` (RFC 8058), så Gmail og andre kan tilby avmelding med ett klikk; programmet sender da en POST til `/api/varsler/avmeld`.
+  - **Utsendingen:** Nitro-pluginen `notification-emails.ts` kjører hvert minutt (`sendNotificationEmails`), bare når e-post er slått på. En lås i databasen gjør at to servere (under en deploy) aldri sender det samme. Et varsel merkes som sendt først når Cloudflare har tatt imot e-posten; er leverandøren nede, prøves det igjen neste runde, og en adresse som avviser permanent, prøves ikke igjen. Høyst 50 mottakere per runde.
+  - **Testene:** `notification-email.test.ts` dekker tidspunktene (også rundt sommertid), at lenken ikke kan forfalskes og e-posten. `notification-email.integration.test.ts` dekker sending etter noen minutter og én gang, lest, av og slettet innhold, oppsummeringen, valgene, avmeldingen uten innlogging, feil hos leverandøren, samtidige runder og at bare aktive medlemmer får e-post.
 
 ## Profiler og katalog
 
@@ -297,7 +311,7 @@ Arrangementene matches mot dem som finnes: navn, så dato (innenfor fra–til), 
 
 ## Merker
 
-Migrering `0030_badges` la til `badge` og `badge_award`. Reglene ligger i `packages/core/src/badges.ts` og `badge-game.ts`.
+Migrering `0031_badges` la til `badge` og `badge_award`. Reglene ligger i `packages/core/src/badges.ts` og `badge-game.ts`.
 
 Merker vises på profilene, som achievements på GitHub: det folk har vært med på i ESAF og på ES. Det finnes ingen egen side for merkene og ingen varsler; de dukker bare opp på profilen. Admins lager dem, og de deles ut av seg selv ut fra data som allerede finnes.
 
@@ -688,7 +702,7 @@ Lokalt kan bildet bygges og prøves med `docker build -f apps/app/Dockerfile .`.
 
 ### E-post
 
-Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) (REST-API-et, uten egne avhengigheter): invitasjoner, lenker for nytt passord, «Glemt passord?» og bekreftelse av e-postadressen ved registrering. Leverandøren velges med `EMAIL_PROVIDER`; reglene for variablene står i `emailEnvIssues` i `packages/core/src/email.ts`, og e-postene i `packages/core/src/email-templates.ts`. Appen starter ikke med en ufullstendig konfigurasjon.
+Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) (REST-API-et, uten egne avhengigheter): invitasjoner, lenker for nytt passord, «Glemt passord?», bekreftelse av e-postadressen ved registrering og varsler (se «Varsler og omtaler»). Leverandøren velges med `EMAIL_PROVIDER`; reglene for variablene står i `emailEnvIssues` i `packages/core/src/email.ts`, og e-postene i `packages/core/src/email-templates.ts`. Appen starter ikke med en ufullstendig konfigurasjon.
 
 | `EMAIL_PROVIDER` | Hva skjer                                                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -9,6 +9,7 @@ import { QrCode } from '#/components/QrCode.tsx'
 import { Button, buttonClass, Card, ErrorText, Field, Input, PageHeader } from '#/components/ui.tsx'
 import { authClient } from '#/lib/auth-client.ts'
 import { fetchSignInMethods, setFirstPassword } from '#/lib/invitations.functions.ts'
+import { fetchEmailPreferences, saveEmailPreference } from '#/lib/notifications.functions.ts'
 import { longDay } from '#/lib/format.ts'
 import { passkeyManageError, usePasskeySupport } from '#/lib/passkey.ts'
 import { needsStrongAuth, roleNames } from '#/lib/roles.ts'
@@ -18,7 +19,10 @@ export const Route = createFileRoute('/_konto/konto')({
     krav: z.enum(['sterk-innlogging']).optional().catch(undefined),
   }),
   // Kontoer fra en invitasjon kan ha bare passkey, uten passord.
-  loader: () => fetchSignInMethods(),
+  loader: async () => {
+    const [methods, email] = await Promise.all([fetchSignInMethods(), fetchEmailPreferences()])
+    return { ...methods, email }
+  },
   head: () => ({ meta: [{ title: 'Konto og sikkerhet – ESAF' }] }),
   component: Account,
 })
@@ -64,7 +68,7 @@ function message(error: { code?: string; message?: string } | null, fallback: st
 function Account() {
   const { viewer } = Route.useRouteContext()
   const { krav } = Route.useSearch()
-  const { hasPassword } = Route.useLoaderData()
+  const { hasPassword, email } = Route.useLoaderData()
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
@@ -95,6 +99,7 @@ function Account() {
         ) : (
           <SetPassword mayChange={viewer.mayChangeSignInMethods} />
         )}
+        <EmailNotifications preferences={email} />
         <Sessions />
         {viewer.permissions.includes('mcp.access') && <McpPointer />}
       </div>
@@ -788,6 +793,127 @@ function Sessions() {
         </Button>
         {done && <span className="text-sm text-emerald-700">Ferdig.</span>}
       </div>
+    </Section>
+  )
+}
+
+type EmailPreferenceData = Awaited<ReturnType<typeof fetchEmailPreferences>>
+type Frequency = EmailPreferenceData['categories'][number]['frequency']
+
+/** Valgene, kortest mulig, i rekkefølgen de vises. */
+const frequencyOptions: { value: Frequency; label: string }[] = [
+  { value: 'instant', label: 'Med en gang' },
+  { value: 'daily', label: 'Daglig' },
+  { value: 'weekly', label: 'Ukentlig' },
+  { value: 'off', label: 'Av' },
+]
+
+/**
+ * Hvilke varsler som kommer på e-post, og hvor ofte, per kategori. Lagres med en
+ * gang. Daglig og ukentlig er en oppsummering kl. 07; «med en gang» venter noen
+ * minutter, og det man har lest i appen, sendes ikke.
+ */
+function EmailNotifications({ preferences }: { preferences: EmailPreferenceData }) {
+  const router = useRouter()
+  const save = useServerFn(saveEmailPreference)
+  const [choices, setChoices] = useState(
+    () => new Map(preferences.categories.map((c) => [c.id as string, c.frequency])),
+  )
+  const [saved, setSaved] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const allOff = [...choices.values()].every((f) => f === 'off')
+
+  async function choose(category: string, frequency: Frequency) {
+    const before = new Map(choices)
+    setChoices((current) => {
+      const next = new Map(current)
+      if (category === 'all') for (const key of next.keys()) next.set(key, frequency)
+      else next.set(category, frequency)
+      return next
+    })
+    setError(null)
+    try {
+      await save({ data: { category, frequency } })
+      setSaved(category)
+      await router.invalidate()
+    } catch (e) {
+      setChoices(before)
+      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
+    }
+  }
+
+  return (
+    <Section
+      id="varsler"
+      title="Varsler på e-post"
+      description={
+        <>
+          Sendes til {preferences.email}. Det du har lest i appen, sendes ikke. Oppsummeringene
+          kommer kl. 07, daglig eller på mandager.
+        </>
+      }
+    >
+      {!preferences.sending && (
+        <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
+          E-post er ikke slått på for appen ennå. Valgene gjelder når den er det.
+        </p>
+      )}
+      <ul className="divide-y divide-stone-100">
+        {preferences.categories.map((c) => {
+          const current = choices.get(c.id) ?? c.frequency
+          return (
+            <li
+              key={c.id}
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 first:pt-0"
+            >
+              <div className="min-w-0 flex-1 basis-56">
+                <p className="text-sm font-medium text-stone-900">{c.label}</p>
+                <p className="text-xs text-stone-500">{c.help}</p>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label={c.label}
+                className="inline-flex rounded-lg bg-stone-100 p-0.5"
+              >
+                {frequencyOptions.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={current === o.value}
+                    onClick={() => current !== o.value && choose(c.id, o.value)}
+                    className={
+                      current === o.value
+                        ? 'rounded-md bg-white px-2.5 py-1 text-xs font-medium text-stone-950 shadow-sm'
+                        : 'rounded-md px-2.5 py-1 text-xs font-medium text-stone-500 hover:text-stone-900'
+                    }
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3">
+        {allOff ? (
+          <p className="text-sm text-stone-500">Du får ingen varsler på e-post.</p>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={() => choose('all', 'off')}>
+            Slå av all e-post
+          </Button>
+        )}
+        {saved && !error && (
+          <span
+            className="inline-flex items-center gap-1 text-sm text-emerald-700"
+            aria-live="polite"
+          >
+            <Check className="size-4" aria-hidden /> Lagret
+          </span>
+        )}
+      </div>
+      {error && <ErrorText>{error}</ErrorText>}
     </Section>
   )
 }

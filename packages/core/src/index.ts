@@ -105,10 +105,12 @@ export {
   escapeHtml,
   formatExpiry,
   invitationEmail,
+  notificationEmail,
   passwordLinkEmail,
   passwordResetEmail,
   verificationEmail,
   type EmailContent,
+  type NotificationEmailItem,
 } from './email-templates.ts'
 export {
   applyProfileImport,
@@ -261,8 +263,10 @@ export {
   markAllNotificationsRead,
   markNotificationRead,
   notificationTypes,
+  selectNotificationViews,
   type NotificationPage,
   type NotificationView,
+  type NotificationViewFor,
 } from './notifications.ts'
 export {
   companyForEdit,
@@ -700,3 +704,25 @@ export {
   type UniverseLink,
   type UniversePerson,
 } from './universe.ts'
+export {
+  describeNotification,
+  describeUnsubscribe,
+  DIGEST_HOUR,
+  digestBoundary,
+  EMAIL_WINDOW_MS,
+  getEmailPreferences,
+  INSTANT_DELAY_MS,
+  isDue,
+  notificationCategories,
+  notificationEmailFrequencies,
+  notificationEmailFrequencyNames,
+  sendNotificationEmails,
+  setEmailPreference,
+  unsubscribe,
+  unsubscribeToken,
+  type EmailPreferences,
+  type NotificationCategory,
+  type NotificationCategoryId,
+  type NotificationEmailRun,
+  type UnsubscribeTarget,
+} from './notification-email.ts'

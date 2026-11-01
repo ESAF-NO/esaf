@@ -6,6 +6,7 @@ import type { ToolContext } from './context.ts'
 import { fetchPublicImage, type ImageFetcher } from './images.ts'
 import { registerAccountTools } from './tools/accounts.ts'
 import { registerAdminTools } from './tools/admin.ts'
+import { registerBadgeTools } from './tools/badges.ts'
 import { registerCompanyTools } from './tools/companies.ts'
 import { registerContentTools } from './tools/content.ts'
 import { registerDiscoveryTools } from './tools/discovery.ts'
@@ -37,6 +38,12 @@ Data model:
 - company: unique slug from the name; renames and merges keep old slugs as aliases. Status active/acquired/closed/
   unknown. People are linked through experience (job title, years, founder) or as their ES company ("ES-selskap").
 - events (ESAF-helgen etc.) with participants and roles; cohort representatives with terms; quotes; feed posts.
+- badges ("merker"): achievements shown on profiles and at /merker. Each has a rule that reads data already in the
+  app (events and roles, years in a row, cohort, board, cohort representative, companies founded/at ES/acquired,
+  profile fields, feed activity) and is awarded and removed automatically, or is manual and awarded by hand with a
+  citation. Badges are shown on profiles only (like GitHub achievements); there is no badge page and no
+  notifications. Drafts are invisible until published. Rarer badges (by the share of active members holding them)
+  give more XP, which gives a level shown on the profile.
 - field sources: where a field on a profile or company came from. Members see "Fra <source> · ikke bekreftet"
   until the person confirms. Confidence (high/medium/low) is only visible to admins.
 
@@ -116,6 +123,7 @@ export function createAdminMcpServer(options: AdminMcpOptions): McpServer {
   registerContentTools(server, ctx)
   registerAccountTools(server, ctx)
   registerDiscoveryTools(server, ctx)
+  registerBadgeTools(server, ctx)
   registerPrompts(server)
   return server
 }
@@ -217,6 +225,38 @@ Write search topics for ESAF profiles${cohort ? ` in ES ${cohort}` : ''}, so peo
 3. Save with set_search_topics (up to 200 people per call). Saved people leave the "todo" list, so call
    list_people_for_tagging again with offset 0 until it is empty.
 4. Finish with a few find_people checks (e.g. "space", "fintech") and report what you tagged.
+`),
+  )
+
+  server.registerPrompt(
+    'design_badges',
+    {
+      title: 'Design badges',
+      description: 'Propose a set of badges from the data, preview who gets each, and create them.',
+      argsSchema: z.object({
+        theme: z
+          .string()
+          .optional()
+          .describe(
+            'What to focus on, e.g. "ESAF-helgen", "gründere", "engasjement". Default: a full set.',
+          ),
+      }),
+    },
+    ({ theme }) =>
+      prompt(`
+Design badges ("merker") for the ESAF member app${theme ? `, focused on: ${theme}` : ''}.
+
+1. Call overview, badge_options and list_badges to see the data, the rule kinds and what already exists.
+2. Propose a set that rewards what matters in an alumni network and nudges people to fill in their history:
+   ladders (create_badge_series) like ESAF-helgen ×1/×3/×5/×10 and years in a row, roles (arranged, spoke,
+   volunteered), firsts and specific historic events, started a company at ES, founder, exit (acquired), mentor,
+   board, cohort representative, a complete profile, and a few manual ones for special effort.
+3. Run preview_badge for each and show me one table: name, rule in words, how many would get it now. Rarity (and
+   XP) follows the share of active members who have a badge, so aim for a ladder from common to legendary: a few
+   easy ones everyone gets, and some that only a handful reach. Adjust thresholds that give nobody or everybody.
+4. Names and descriptions in Norwegian bokmål: short, warm and plain ("ESAF-helgen ×5", "Vært på fem ESAF-helger."),
+   no slang, no emoji. One colour per family, an icon that fits.
+5. After I approve, create them as drafts, then publish what I say (published badges appear on profiles right away).
 `),
   )
 

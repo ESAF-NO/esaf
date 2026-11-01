@@ -2,6 +2,8 @@ import { schema, type Db } from '@esaf/db'
 import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import type { PlayerStanding } from './badge-game.ts'
+import { loadProfileBadges, type ProfileBadge } from './badges.ts'
 import { boardBadge, loadBoardTerms, type BoardBadge } from './board.ts'
 import {
   loadRepresentativeTerms,
@@ -174,6 +176,10 @@ export type Profile = {
   board: BoardBadge | null
   /** Arrangementene personen har vært på, per type (ESAF-helgen først). */
   events: PersonEventGroup[]
+  /** Merkene personen har, laveste først. Skjulte bare på egen profil. */
+  badges: ProfileBadge[]
+  /** Nivået, XP-en og plassen på topplista. */
+  level: PlayerStanding
   /** Sitater fra personen. */
   quotes: Quote[]
   /**
@@ -224,7 +230,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     city: row.city,
     linkedinUrl: row.linkedinUrl,
   }
-  const [quotes, sources, terms, events, boardTerms] = await Promise.all([
+  const [quotes, sources, terms, events, boardTerms, game] = await Promise.all([
     loadQuotes(db, viewer, { personId }),
     loadFieldSources(
       db,
@@ -236,6 +242,7 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     loadRepresentativeTerms(db, [personId]),
     loadPersonEvents(db, personId),
     loadBoardTerms(db, [personId]),
+    loadProfileBadges(db, viewer, personId),
   ])
 
   const claimed = row.userId !== null
@@ -261,6 +268,8 @@ export async function getProfile(db: Db, viewer: Viewer, personId: string): Prom
     representative: representativeBadges(terms.get(personId) ?? []),
     board: boardBadge(boardTerms.get(personId)),
     events,
+    badges: game.badges,
+    level: game.level,
     quotes,
     sources,
     isOwn,

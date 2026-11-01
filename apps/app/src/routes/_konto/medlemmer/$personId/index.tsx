@@ -17,12 +17,14 @@ import {
   Rocket,
   Tent,
   GitMerge,
+  Award,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { LinkRequestCard } from '#/components/Contributions.tsx'
 import { PostCard } from '#/components/PostCard.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
 import { RoleBadge } from '#/components/EventCharts.tsx'
+import { LevelRing, ProfileBadgeGrid } from '#/components/Badges.tsx'
 import { BoardBadge } from '#/components/Board.tsx'
 import { RepresentativeBadges } from '#/components/Representatives.tsx'
 import { SourceNames, SourceNote } from '#/components/SourceNote.tsx'
@@ -490,6 +492,7 @@ function ProfilePage() {
           </Card>
 
           <EventsCard profile={p} />
+          <BadgesCard profile={p} />
 
           <Card className="p-5">
             <h2 className="mb-3 text-sm font-semibold text-stone-950">Kontakt</h2>
@@ -673,15 +676,53 @@ function EventsCard({ profile: p }: { profile: Profile }) {
       ) : (
         <p className="mt-1 text-sm text-stone-500">
           Har du vært på ESAF-helgen?{' '}
-          <Link
-            to="/arrangementer/$typeSlug"
-            params={{ typeSlug: 'esaf-helgen' }}
-            className="font-medium text-stone-700 hover:text-brand-600"
-          >
-            Finn helgene du var på
+          <Link to="/var-du-der" className="font-medium text-stone-700 hover:text-brand-600">
+            Kryss av for helgene du var på
           </Link>
           .
         </p>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Merkene personen har, som på GitHub: nivået og medaljene. På egen profil
+ * vises også skjulte merker (nedtonet), og en lenke for å fylle inn
+ * arrangementene, som gir flere.
+ */
+function BadgesCard({ profile: p }: { profile: Profile }) {
+  if (!p.badges.length && !p.isOwn) return null
+  return (
+    <Card className="p-5">
+      <h2 className="flex items-center justify-between gap-2 text-sm font-semibold text-stone-950">
+        <span className="flex items-center gap-2">
+          <Award className="size-4 text-stone-400" aria-hidden /> Merker
+        </span>
+        {p.level.xp > 0 && (
+          <span
+            className="flex items-center gap-1.5 text-xs font-medium text-stone-500"
+            title={`${p.level.xp} XP`}
+          >
+            <LevelRing level={p.level} size="xs" />
+            Nivå {p.level.level} · {p.level.title}
+          </span>
+        )}
+      </h2>
+      {p.badges.length ? (
+        <div className="mt-3">
+          <ProfileBadgeGrid badges={p.badges} isOwn={p.isOwn} />
+        </div>
+      ) : (
+        <p className="mt-1 text-sm text-stone-500">Du har ingen merker ennå.</p>
+      )}
+      {p.isOwn && (
+        <Link
+          to="/var-du-der"
+          className="mt-3 inline-block text-xs font-medium text-stone-500 hover:text-stone-900"
+        >
+          Mangler noe? Kryss av for arrangementene du var på
+        </Link>
       )}
     </Card>
   )

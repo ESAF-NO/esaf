@@ -6,6 +6,8 @@ export type {
   AccessRequestStatus,
   AssetKind,
   AssetPurpose,
+  BadgeAwardSource,
+  BadgeStatus,
   BoardRole,
   CohortRelation,
   CompanyArticleSource,

@@ -27,6 +27,7 @@ import {
   type ProcessedPhoto,
 } from './photos.ts'
 import { planProfileImport, type ProfileRow } from './profile-import.ts'
+import { sourceKeyFor } from './sources.ts'
 import { safeHttpUrl } from './validation.ts'
 import type { ObjectStorage } from './storage.ts'
 
@@ -252,6 +253,7 @@ class Sources {
           field,
           sourceLabel: s.label,
           sourceUrl: s.url,
+          sourceKey: sourceKeyFor(field, s.url),
           fetchedAt: s.fetchedAt,
           confidence,
         })),

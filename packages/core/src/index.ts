@@ -44,6 +44,7 @@ export {
 export {
   accessRequestInput,
   decideAccessRequest,
+  sendWelcomeEmail,
   finishOnboarding,
   getAccessState,
   grantRoleAsOperator,

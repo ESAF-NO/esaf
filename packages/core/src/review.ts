@@ -21,7 +21,7 @@ import {
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { normalizeLinkedinUrl } from './profiles.ts'
-import { emailKey, type Tx } from './members.ts'
+import { emailKey } from './members.ts'
 import { normalizePersonName } from './people-admin.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import { companySourceFields, profileSourceFields } from './sources.ts'
@@ -1058,81 +1058,23 @@ export async function listReview(
 // Godta alle
 // ---------------------------------------------------------------------------
 
-/** Det «Godta alle» kan gjelde: det usikre fra importen. Duplikater og forslag tas ett og ett. */
-export const bulkReviewKinds = ['events', 'quotes', 'sources'] as const
+/**
+ * Det «Godta alle» kan gjelde: bare importerte felt, som medlemmene allerede ser.
+ * Hendelser og sitater fra importen er hentet automatisk fra artikler og er ofte
+ * feil (avkuttede navn, tilfeldige setninger, feil taler); de må tas ett og ett.
+ */
+export const bulkReviewKinds = ['sources'] as const
 export type BulkReviewKind = (typeof bulkReviewKinds)[number]
 
 export type BulkReviewResult = {
-  /** Godtatt (hendelser og sitater) eller sett over (felt). */
+  /** Felt som ble satt som sett over. */
   accepted: number
-  /** Hendelser som var like en annen og ble slått sammen med den. */
-  merged: number
-}
-
-type EventSource = { url: string | null; label: string | null }
-
-/**
- * Like hendelser (samme selskap, dato og type) der minst én er usikker, blir én:
- * den bekreftede om det finnes en, ellers den med lengst tekst. Kildene til de
- * andre legges til den (`moreSources`), og de andre slettes. Gir hvor mange som
- * ble slettet.
- */
-async function mergeSimilarEvents(tx: Tx): Promise<number> {
-  const rows = await tx
-    .select()
-    .from(companyEvent)
-    .where(
-      sql`exists (select 1 from ${companyEvent} as low where low.confidence = 'low' and low.company_id = ${companyEvent.companyId} and low.date = ${companyEvent.date} and low.type = ${companyEvent.type})`,
-    )
-    .orderBy(asc(companyEvent.createdAt), asc(companyEvent.id))
-    .for('update')
-  const groups = new Map<string, typeof rows>()
-  for (const r of rows) {
-    const key = `${r.companyId}|${r.date}|${r.type}`
-    groups.set(key, [...(groups.get(key) ?? []), r])
-  }
-  let removed = 0
-  for (const group of groups.values()) {
-    if (group.length < 2) continue
-    const keeper = [...group].sort(
-      (a, b) =>
-        Number(b.confidence !== 'low') - Number(a.confidence !== 'low') ||
-        b.text.length - a.text.length,
-    )[0]!
-    const others = group.filter((r) => r.id !== keeper.id)
-    const seen = new Set(
-      [keeper.sourceUrl, ...keeper.moreSources.map((m) => m.url)].filter(Boolean) as string[],
-    )
-    const more: EventSource[] = [...keeper.moreSources]
-    for (const o of others) {
-      for (const source of [{ url: o.sourceUrl, label: o.sourceLabel }, ...o.moreSources]) {
-        if (!source.url && !source.label) continue
-        const key = source.url ?? `label:${source.label}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        more.push({ url: source.url, label: source.label ?? hostLabel(source.url) })
-      }
-    }
-    await tx.update(companyEvent).set({ moreSources: more }).where(eq(companyEvent.id, keeper.id))
-    await tx.delete(companyEvent).where(
-      inArray(
-        companyEvent.id,
-        others.map((o) => o.id),
-      ),
-    )
-    removed += others.length
-  }
-  return removed
 }
 
 /**
- * «Godta alle» for én del av køen, i én transaksjon og med én linje i loggen:
- *
- * - **Hendelser:** like hendelser slås først sammen (se `mergeSimilarEvents`),
- *   så vises resten for alle.
- * - **Sitater:** vises for alle.
- * - **Importerte felt:** tas ut av køen, som «Ser riktig ut». Medlemmene så dem
- *   allerede, og profilen viser fortsatt «ikke bekreftet» til eieren bekrefter.
+ * «Godta alle» for importerte felt, i én transaksjon og med én linje i loggen:
+ * feltene tas ut av køen, som «Ser riktig ut». Medlemmene så dem allerede, og
+ * profilen viser fortsatt «ikke bekreftet» til eieren bekrefter.
  */
 export async function acceptAllReview(
   db: Db,
@@ -1141,31 +1083,13 @@ export async function acceptAllReview(
 ): Promise<BulkReviewResult> {
   assertCan(viewer, 'profiles.edit')
   return db.transaction(async (tx) => {
-    let result: BulkReviewResult
-    if (kind === 'events') {
-      const merged = await mergeSimilarEvents(tx)
-      const accepted = await tx
-        .update(companyEvent)
-        .set({ confidence: 'high' })
-        .where(lowEvent)
-        .returning({ id: companyEvent.id })
-      result = { accepted: accepted.length, merged }
-    } else if (kind === 'quotes') {
-      const accepted = await tx
-        .update(quote)
-        .set({ confidence: 'high' })
-        .where(lowQuote)
-        .returning({ id: quote.id })
-      result = { accepted: accepted.length, merged: 0 }
-    } else {
-      const reviewed = await tx
-        .update(fieldSource)
-        .set({ reviewedAt: new Date() })
-        .where(openSource)
-        .returning({ id: fieldSource.id })
-      result = { accepted: reviewed.length, merged: 0 }
-    }
-    if (result.accepted || result.merged) {
+    const reviewed = await tx
+      .update(fieldSource)
+      .set({ reviewedAt: new Date() })
+      .where(openSource)
+      .returning({ id: fieldSource.id })
+    const result: BulkReviewResult = { accepted: reviewed.length }
+    if (result.accepted) {
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'review.accept_all',

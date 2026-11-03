@@ -162,12 +162,11 @@ export function registerAdminTools(server: McpServer, ctx: ToolContext) {
 
   defineTool(server, ctx, {
     name: 'accept_all_review',
-    title: 'Accept everything of one kind in review',
+    title: 'Mark all imported fields in review as looked over',
     description:
-      'Bulk accept in review: "events" first merges similar uncertain events (same company, date and type) into ' +
-      'one with all their sources, then shows the rest to members; "quotes" shows all uncertain quotes; ' +
-      '"sources" marks all imported fields as looked over. Duplicates and member suggestions are never bulk ' +
-      'accepted. Ask the admin first.',
+      'Bulk accept in review, only for "sources": marks all imported fields as looked over (members already see ' +
+      'them). Uncertain events and quotes are never bulk accepted: they were extracted automatically from articles ' +
+      'and are often wrong, so confirm, fix or delete them one by one. Ask the admin first.',
     input: z.object({ kind: z.enum(bulkReviewKinds) }),
     effect: 'write',
     idempotent: true,

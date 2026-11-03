@@ -129,6 +129,7 @@ export {
   emailStatuses,
   emailStatusNames,
   listEmailLog,
+  nameForAddress,
   pruneEmailLog,
   sendTestEmail,
   withEmailLog,
@@ -136,10 +137,12 @@ export {
   type EmailLogEntry,
   type EmailOverview,
   type EmailTemplate,
+  type SampleRecipient,
 } from './email-log.ts'
 export {
   escapeHtml,
   formatExpiry,
+  greeting,
   invitationEmail,
   notificationEmail,
   passwordLinkEmail,

@@ -389,6 +389,7 @@ export async function sendWelcomeEmail(
       email: user.email,
       verified: user.emailVerified,
       personId: person.id,
+      fullName: person.fullName,
       membership: membership.status,
     })
     .from(accessRequest)
@@ -414,6 +415,7 @@ export async function sendWelcomeEmail(
     await mailer.send({
       to: row.email,
       ...welcomeEmail({
+        name: row.fullName,
         url: new URL('/', input.appUrl).href,
         graduationYear: cohortRow?.year ?? null,
       }),

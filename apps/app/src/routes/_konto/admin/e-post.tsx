@@ -431,7 +431,9 @@ function Templates({
           E-postene og når de sendes
         </h2>
         <p className="mt-1 text-sm text-stone-500">
-          Eksemplene bruker oppdiktede personer, og lenkene i dem virker ikke.
+          Forhåndsvisningene bruker oppdiktede personer, og lenkene i dem virker ikke. «Send test
+          til meg» bruker navnet og kullet ditt. Ekte e-poster hilser med fornavnet når vi vet hvem
+          de går til.
         </p>
       </div>
       <Card className="divide-y divide-stone-100">

@@ -2,6 +2,7 @@ import {
   createMailer,
   EmailError,
   invitationEmail,
+  nameForAddress,
   passwordLinkEmail,
   passwordResetEmail,
   emailKindAvailable,
@@ -62,17 +63,25 @@ function requireMailer(): Mailer {
  */
 export async function sendLinkEmail(link: CreatedLink): Promise<void> {
   const url = linkUrl(link)
+  // Hilsenen bruker navnet når adressen er kjent (konto, eller profil fra kullisten).
+  const name = await nameForAddress(db, link.email)
   const content =
     link.kind === 'invite'
       ? invitationEmail({
+          name,
           url,
           invitedBy: link.createdByName,
           role: link.role,
           expiresAt: link.expiresAt,
         })
       : link.requestedBySelf
-        ? passwordResetEmail({ url, expiresAt: link.expiresAt })
-        : passwordLinkEmail({ url, createdBy: link.createdByName, expiresAt: link.expiresAt })
+        ? passwordResetEmail({ name, url, expiresAt: link.expiresAt })
+        : passwordLinkEmail({
+            name,
+            url,
+            createdBy: link.createdByName,
+            expiresAt: link.expiresAt,
+          })
   const kind =
     link.kind === 'invite'
       ? 'invitation'
@@ -87,9 +96,14 @@ export async function sendVerificationEmail({
   user,
   url,
 }: {
-  user: { email: string }
+  user: { email: string; name?: string | null }
   url: string
 }): Promise<void> {
-  const content = verificationEmail({ url, expiresInMinutes: VERIFICATION_TTL_SECONDS / 60 })
+  const name = (await nameForAddress(db, user.email)) ?? user.name ?? null
+  const content = verificationEmail({
+    name,
+    url,
+    expiresInMinutes: VERIFICATION_TTL_SECONDS / 60,
+  })
   await requireMailer().send({ to: user.email, ...content, log: { kind: 'verification' } })
 }

@@ -507,9 +507,15 @@ export const fieldSource = pgTable(
      * som gjorde det, står i revisjonsloggen.
      */
     reviewedAt: timestamp({ withTimezone: true }),
+    /**
+     * Skiller kilder med samme navn. Tom for enkeltfelt (én kilde per navn, en ny
+     * lenke erstatter den gamle); lenken for lister som erfaring, der samme kilde
+     * kan dekke flere oppføringer (Brønnøysundregistrene for to selskaper).
+     */
+    sourceKey: text().notNull().default(''),
     createdAt: timestamps.createdAt,
   },
-  (t) => [uniqueIndex().on(t.entityType, t.entityId, t.field, t.sourceLabel)],
+  (t) => [uniqueIndex().on(t.entityType, t.entityId, t.field, t.sourceLabel, t.sourceKey)],
 )
 
 // ---------------------------------------------------------------------------

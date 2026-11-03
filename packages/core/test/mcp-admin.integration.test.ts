@@ -353,6 +353,43 @@ describe.skipIf(!url)('MCP: nøkler og adminverktøy i @esaf/core', () => {
         .from(schema.fieldSource)
         .where(eq(schema.fieldSource.entityId, ada))
       expect(after.map((s) => [s.field, s.reviewedAt !== null])).toEqual([['experience', true]])
+
+      // Samme kilde for to jobber blir to kilder; for et enkeltfelt erstatter en ny lenke den gamle.
+      const brreg = (url: string, field = 'experience') => ({
+        field,
+        label: 'Brønnøysundregistrene',
+        url,
+        confidence: 'high' as const,
+      })
+      await addFieldSources(db, admin, {
+        entityType: 'person',
+        entityId: ada,
+        sources: [brreg('https://virksomhet.brreg.no/1'), brreg('https://virksomhet.brreg.no/2')],
+      })
+      await addFieldSources(db, admin, {
+        entityType: 'person',
+        entityId: ada,
+        sources: [brreg('https://virksomhet.brreg.no/1', 'city')],
+      })
+      await addFieldSources(db, admin, {
+        entityType: 'person',
+        entityId: ada,
+        sources: [brreg('https://virksomhet.brreg.no/3', 'city')],
+      })
+      const all = await db
+        .select()
+        .from(schema.fieldSource)
+        .where(eq(schema.fieldSource.entityId, ada))
+      expect(
+        all
+          .filter((s) => s.sourceLabel === 'Brønnøysundregistrene')
+          .map((s) => [s.field, s.sourceUrl])
+          .sort(),
+      ).toEqual([
+        ['city', 'https://virksomhet.brreg.no/3'],
+        ['experience', 'https://virksomhet.brreg.no/1'],
+        ['experience', 'https://virksomhet.brreg.no/2'],
+      ])
       const [company] = await db.select().from(schema.company)
       expect(company!.status).toBe('unknown')
       expect(

@@ -30,7 +30,8 @@
     "verify:site": "node scripts/verify-site-build.mjs",
     "search:download-model": "pnpm --filter @esaf/core search:download-model",
     "search:reindex": "pnpm --filter @esaf/core search:reindex",
-    "search:query": "pnpm --filter @esaf/core search:query"
+    "search:query": "pnpm --filter @esaf/core search:query",
+    "search:eval": "pnpm --filter @esaf/core search:eval"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

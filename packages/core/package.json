@@ -16,7 +16,8 @@
     "data:import": "tsx scripts/import-dataset.ts",
     "search:download-model": "tsx scripts/search-index.ts download",
     "search:reindex": "tsx scripts/search-index.ts reindex",
-    "search:query": "tsx scripts/search-index.ts query"
+    "search:query": "tsx scripts/search-index.ts query",
+    "search:eval": "tsx scripts/search-eval.ts"
   },
   "dependencies": {
     "@esaf/db": "workspace:*",

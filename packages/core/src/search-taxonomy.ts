@@ -23,6 +23,8 @@ export const SEARCH_TAXONOMY: readonly (readonly string[])[] = [
     'orbit',
     'romindustri',
     'space industry',
+    'verdensrom',
+    'romteknologi',
   ],
   [
     'kunstig intelligens',

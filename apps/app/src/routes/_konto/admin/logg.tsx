@@ -843,6 +843,11 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {text(details.reason) ? `: «${text(details.reason)}»` : ''}.
     </>
   ),
+  'email.welcome': ({ actor, subject }) => (
+    <>
+      {actor} sendte velkomsten på e-post til {subject}.
+    </>
+  ),
   'email.kind_off': ({ actor, details }) => (
     <>
       {actor} slo av e-posten «{emailKindName(details.kind)}»

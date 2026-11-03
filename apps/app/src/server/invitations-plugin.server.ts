@@ -69,9 +69,13 @@ function rethrow(error: unknown): never {
  */
 export function invitations(
   db: Db,
-  options: { sendPasswordReset?: (link: CreatedLink) => Promise<void> } = {},
+  options: {
+    sendPasswordReset?: (link: CreatedLink) => Promise<void>
+    /** Om e-posten kan sendes nå. Uten den finnes ikke «Glemt passord?», som uten leverandør. */
+    emailAvailable?: (kind: 'password_reset') => Promise<boolean>
+  } = {},
 ) {
-  const { sendPasswordReset } = options
+  const { sendPasswordReset, emailAvailable } = options
   return {
     id: 'esaf-invitations',
     endpoints: {
@@ -125,7 +129,7 @@ export function invitations(
         INVITATION_PATHS.requestPasswordReset,
         { method: 'POST', body: z.object({ email: z.string().max(254) }) },
         async (ctx) => {
-          if (!sendPasswordReset) {
+          if (!sendPasswordReset || (emailAvailable && !(await emailAvailable('password_reset')))) {
             throw APIError.from('NOT_FOUND', { code: 'NOT_FOUND', message: 'Not found' })
           }
           const link = await requestPasswordReset(db, { email: ctx.body.email })

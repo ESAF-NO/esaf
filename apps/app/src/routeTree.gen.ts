@@ -31,6 +31,7 @@ import { Route as McpGodkjennRouteImport } from './routes/mcp/godkjenn'
 import { Route as NyttPassordTokenRouteImport } from './routes/nytt-passord/$token'
 import { Route as KontoAdminIndexRouteImport } from './routes/_konto/admin/index'
 import { Route as KontoAdminArrangementerRouteImport } from './routes/_konto/admin/arrangementer'
+import { Route as KontoAdminEPostRouteImport } from './routes/_konto/admin/e-post'
 import { Route as KontoAdminGjennomgangRouteImport } from './routes/_konto/admin/gjennomgang'
 import { Route as KontoAdminInvitasjonerRouteImport } from './routes/_konto/admin/invitasjoner'
 import { Route as KontoAdminKullrepresentanterRouteImport } from './routes/_konto/admin/kullrepresentanter'
@@ -181,6 +182,11 @@ const KontoAdminIndexRoute = KontoAdminIndexRouteImport.update({
 const KontoAdminArrangementerRoute = KontoAdminArrangementerRouteImport.update({
   id: '/arrangementer',
   path: '/arrangementer',
+  getParentRoute: () => KontoAdminRouteRoute,
+} as any)
+const KontoAdminEPostRoute = KontoAdminEPostRouteImport.update({
+  id: '/e-post',
+  path: '/e-post',
   getParentRoute: () => KontoAdminRouteRoute,
 } as any)
 const KontoAdminGjennomgangRoute = KontoAdminGjennomgangRouteImport.update({
@@ -428,6 +434,7 @@ export interface FileRoutesByFullPath {
   '/mcp/godkjenn': typeof McpGodkjennRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
+  '/admin/e-post': typeof KontoAdminEPostRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
   '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
@@ -492,6 +499,7 @@ export interface FileRoutesByTo {
   '/mcp/godkjenn': typeof McpGodkjennRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/admin/arrangementer': typeof KontoAdminArrangementerRoute
+  '/admin/e-post': typeof KontoAdminEPostRoute
   '/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
   '/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
@@ -559,6 +567,7 @@ export interface FileRoutesById {
   '/mcp/godkjenn': typeof McpGodkjennRoute
   '/nytt-passord/$token': typeof NyttPassordTokenRoute
   '/_konto/admin/arrangementer': typeof KontoAdminArrangementerRoute
+  '/_konto/admin/e-post': typeof KontoAdminEPostRoute
   '/_konto/admin/gjennomgang': typeof KontoAdminGjennomgangRoute
   '/_konto/admin/invitasjoner': typeof KontoAdminInvitasjonerRoute
   '/_konto/admin/kullrepresentanter': typeof KontoAdminKullrepresentanterRoute
@@ -626,6 +635,7 @@ export interface FileRouteTypes {
     | '/mcp/godkjenn'
     | '/nytt-passord/$token'
     | '/admin/arrangementer'
+    | '/admin/e-post'
     | '/admin/gjennomgang'
     | '/admin/invitasjoner'
     | '/admin/kullrepresentanter'
@@ -690,6 +700,7 @@ export interface FileRouteTypes {
     | '/mcp/godkjenn'
     | '/nytt-passord/$token'
     | '/admin/arrangementer'
+    | '/admin/e-post'
     | '/admin/gjennomgang'
     | '/admin/invitasjoner'
     | '/admin/kullrepresentanter'
@@ -756,6 +767,7 @@ export interface FileRouteTypes {
     | '/mcp/godkjenn'
     | '/nytt-passord/$token'
     | '/_konto/admin/arrangementer'
+    | '/_konto/admin/e-post'
     | '/_konto/admin/gjennomgang'
     | '/_konto/admin/invitasjoner'
     | '/_konto/admin/kullrepresentanter'
@@ -982,6 +994,13 @@ declare module '@tanstack/react-router' {
       path: '/arrangementer'
       fullPath: '/admin/arrangementer'
       preLoaderRoute: typeof KontoAdminArrangementerRouteImport
+      parentRoute: typeof KontoAdminRouteRoute
+    }
+    '/_konto/admin/e-post': {
+      id: '/_konto/admin/e-post'
+      path: '/e-post'
+      fullPath: '/admin/e-post'
+      preLoaderRoute: typeof KontoAdminEPostRouteImport
       parentRoute: typeof KontoAdminRouteRoute
     }
     '/_konto/admin/gjennomgang': {
@@ -1283,6 +1302,7 @@ declare module '@tanstack/react-router' {
 
 interface KontoAdminRouteRouteChildren {
   KontoAdminArrangementerRoute: typeof KontoAdminArrangementerRoute
+  KontoAdminEPostRoute: typeof KontoAdminEPostRoute
   KontoAdminGjennomgangRoute: typeof KontoAdminGjennomgangRoute
   KontoAdminInvitasjonerRoute: typeof KontoAdminInvitasjonerRoute
   KontoAdminKullrepresentanterRoute: typeof KontoAdminKullrepresentanterRoute
@@ -1300,6 +1320,7 @@ interface KontoAdminRouteRouteChildren {
 
 const KontoAdminRouteRouteChildren: KontoAdminRouteRouteChildren = {
   KontoAdminArrangementerRoute: KontoAdminArrangementerRoute,
+  KontoAdminEPostRoute: KontoAdminEPostRoute,
   KontoAdminGjennomgangRoute: KontoAdminGjennomgangRoute,
   KontoAdminInvitasjonerRoute: KontoAdminInvitasjonerRoute,
   KontoAdminKullrepresentanterRoute: KontoAdminKullrepresentanterRoute,

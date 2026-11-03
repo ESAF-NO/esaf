@@ -33,6 +33,7 @@ const {
   boardMember,
   cohortRepresentative,
   comment,
+  emailLog,
   eventParticipation,
   companyLinkRequest,
   companySuggestion,
@@ -1007,6 +1008,7 @@ export async function mergePeople(
       .set({ personId: into })
       .where(eq(personEmail.personId, from))
       .returning({ email: personEmail.email })
+    await tx.update(emailLog).set({ personId: into }).where(eq(emailLog.personId, from))
     const quotes = await tx
       .update(quote)
       .set({ personId: into })

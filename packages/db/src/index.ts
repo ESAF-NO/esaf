@@ -18,6 +18,8 @@ export type {
   CompanyStatus,
   ContributionStatus,
   DatePrecision,
+  EmailKind,
+  EmailStatus,
   EventDatePrecision,
   FieldSourceEntity,
   ImportRecordKind,

@@ -97,6 +97,12 @@ export type AuthConfig = {
    * Uten den (ingen e-postleverandør) finnes ikke endepunktet.
    */
   sendPasswordReset?: (link: CreatedLink) => Promise<void>
+  /**
+   * Om appen kan sende e-posten nå (Admin → E-post: ikke på pause, og typen er
+   * på). Uten bekreftelsen er registrering stengt, og uten lenken for nytt
+   * passord finnes ikke «Glemt passord?», som uten e-postleverandør.
+   */
+  emailAvailable?: (kind: 'verification' | 'password_reset') => Promise<boolean>
 }
 
 /**
@@ -210,6 +216,16 @@ export function createAuth(config: AuthConfig) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        if (
+          ctx.path === '/sign-up/email' &&
+          config.emailAvailable &&
+          !(await config.emailAvailable('verification'))
+        ) {
+          throw APIError.from('FORBIDDEN', {
+            code: 'EMAIL_OFF',
+            message: 'Sign-up is closed while verification e-mails are off',
+          })
+        }
         if (ctx.path === OAUTH_CONSENT && ctx.body?.accept === true) {
           // Godkjenningssiden sjekker det samme, men her avgjøres det.
           const current = await getSessionFromCtx(ctx)
@@ -288,7 +304,10 @@ export function createAuth(config: AuthConfig) {
       }),
     },
     plugins: [
-      invitations(config.db, { sendPasswordReset: config.sendPasswordReset }),
+      invitations(config.db, {
+        sendPasswordReset: config.sendPasswordReset,
+        emailAvailable: config.emailAvailable,
+      }),
       twoFactor({
         issuer: 'ESAF',
         // Ti feil koder på rad låser tofaktor i et kvarter.

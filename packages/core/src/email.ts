@@ -1,3 +1,4 @@
+import type { EmailKind } from '@esaf/db'
 import { z } from 'zod'
 
 /**
@@ -174,9 +175,23 @@ export type EmailMessage = {
    * sin liste og `X-…`; et ukjent hode stopper hele sendingen.
    */
   headers?: Record<string, string>
+  /** Til e-postloggen (`withEmailLog`): hva slags e-post, og for hvem. Sendes ikke. */
+  log?: EmailLogInfo
 }
 
-export type EmailErrorReason = 'bounced' | 'rejected' | 'throttled' | 'unavailable'
+/** Det e-postloggen trenger utover selve e-posten. */
+export type EmailLogInfo = {
+  kind: EmailKind
+  /** Profilen e-posten gjelder. Uten den finnes profilen fra adressen. */
+  personId?: string | null
+  /** For varsler: kategorien, eller `all`. */
+  category?: string | null
+  /** For varsler: hvor mange varsler e-posten har. */
+  items?: number
+}
+
+export type EmailErrorReason =
+  'bounced' | 'rejected' | 'throttled' | 'unavailable' | 'paused' | 'disabled' | 'blocked'
 
 /**
  * E-posten ble ikke sendt. Meldingen kan vises til en admin: den sier hva som
@@ -199,6 +214,9 @@ export class EmailError extends Error {
         rejected: 'E-posttjenesten avviste sendingen. Det er en feil i oppsettet; se serverloggen.',
         throttled: 'E-posttjenesten har nådd grensen for utsending. Prøv igjen om litt.',
         unavailable: 'E-posttjenesten svarte ikke. Prøv igjen om litt.',
+        paused: 'E-post er satt på pause av en admin (Admin → E-post).',
+        disabled: 'Denne e-posten er slått av av en admin (Admin → E-post).',
+        blocked: 'E-post til denne adressen er stoppet av en admin (Admin → E-post).',
       }[reason],
       { cause: details.cause },
     )

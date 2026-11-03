@@ -79,6 +79,8 @@ export const permissions = {
   'mcp.access': 'admin',
   /** Lage, publisere og dele ut merker. */
   'badges.manage': 'admin',
+  /** Sette all e-post fra appen på pause, og slå den på igjen. */
+  'email.manage': 'admin',
   /** Gi og fjerne roller. */
   'roles.manage': 'owner',
 } as const satisfies Record<string, MemberRole>

@@ -239,6 +239,13 @@
       "when": 1793700770767,
       "tag": "0033_email_switches",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793704090488,
+      "tag": "0034_event_more_sources",
+      "breakpoints": true
     }
   ]
 }

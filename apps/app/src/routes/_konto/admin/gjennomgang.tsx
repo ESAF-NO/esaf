@@ -158,9 +158,7 @@ function Review() {
               {plural(page.total, 'sak', 'saker')}
               {pages > 1 && ` · side ${side} av ${pages}`}
             </p>
-            {(page.kind === 'events' || page.kind === 'quotes' || page.kind === 'sources') && (
-              <AcceptAllButton kind={page.kind} total={page.total} />
-            )}
+            {page.kind === 'sources' && <AcceptAllButton kind={page.kind} total={page.total} />}
           </div>
           <ul className="space-y-3">
             {page.kind === 'suggestions' &&
@@ -727,21 +725,6 @@ function PersonPair({ pair }: { pair: ReviewPersonPair }) {
 
 /** Hva «Godta alle» gjør, for hver del av køen den finnes i. */
 const acceptAllText = {
-  events: {
-    button: 'Slå sammen like og godta alle',
-    title: 'Godta alle hendelsene?',
-    body: [
-      'Like hendelser (samme selskap, dag og type) blir først én, med kildene fra alle. Er en av dem allerede bekreftet, er det den som blir stående.',
-      'Så vises alle hendelsene på selskapssidene. Du kan fortsatt rette og slette dem der.',
-    ],
-  },
-  quotes: {
-    button: 'Godta alle',
-    title: 'Godta alle sitatene?',
-    body: [
-      'Alle sitatene vises for medlemmene, hos personen og selskapet de er koblet til. Du kan fortsatt rette og slette dem der.',
-    ],
-  },
   sources: {
     button: 'Godta alle',
     title: 'Sette alle importerte felt som sett over?',
@@ -752,13 +735,7 @@ const acceptAllText = {
   },
 } as const
 
-function AcceptAllButton({
-  kind,
-  total,
-}: {
-  kind: 'events' | 'quotes' | 'sources'
-  total: number
-}) {
+function AcceptAllButton({ kind, total }: { kind: 'sources'; total: number }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -771,13 +748,7 @@ function AcceptAllButton({
     setError(null)
     try {
       const result = await acceptAll({ data: { kind } })
-      setDone(
-        kind === 'events'
-          ? `${plural(result.accepted, 'hendelse', 'hendelser')} godtatt${result.merged ? `, ${result.merged} like slått sammen` : ''}.`
-          : kind === 'quotes'
-            ? `${plural(result.accepted, 'sitat', 'sitater')} godtatt.`
-            : `${plural(result.accepted, 'felt', 'felt')} satt som sett over.`,
-      )
+      setDone(`${plural(result.accepted, 'felt', 'felt')} satt som sett over.`)
       setOpen(false)
       await router.invalidate()
     } catch (e) {

@@ -3,6 +3,7 @@ import { createDb, loadRootEnv, runMigrations, schema, type Db } from '@esaf/db'
 import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
+  acceptAllReview,
   AccessDeniedError,
   addPersonEmail,
   clearImportedField,
@@ -36,6 +37,7 @@ import {
   type CompanyInput,
   type ObjectStorage,
   type ProfileInput,
+  type CompanyDetails,
   type ReviewPage,
   type Viewer,
 } from '../src/index.ts'
@@ -111,7 +113,7 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
   beforeEach(async () => {
     deleted.length = 0
     await db.execute(
-      sql`truncate ${schema.fieldSource}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user}, ${schema.company}, ${schema.reviewDismissal} cascade`,
+      sql`truncate ${schema.fieldSource}, ${schema.quote}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user}, ${schema.company}, ${schema.reviewDismissal} cascade`,
     )
     await account('Admin')
     await grantRoleAsOperator(db, { email: 'admin@example.test', reason: 'test', role: 'admin' })
@@ -217,6 +219,113 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       const [logged] = await audit('quote.confirm')
       expect(logged!.subjectPersonId).toBe(kari!.personId)
       expect((await reviewCounts(db, admin)).quotes).toBe(0)
+    })
+
+    it('godta alle hendelser: like slås sammen med kildene, resten vises for alle', async () => {
+      const alva = await company('Alva')
+      const other = await company('Syrlig')
+      const funding = (text: string, url: string | null, confidence: 'low' | 'high' = 'low') => ({
+        companyId: alva,
+        date: '2026-07-02',
+        type: 'funding' as const,
+        text,
+        sourceUrl: url,
+        sourceLabel: url ? new URL(url).hostname : null,
+        confidence,
+      })
+      await db.insert(schema.companyEvent).values([
+        funding('Hentet 16 millioner euro.', 'https://thenextweb.com/a'),
+        funding('Alva hentet 16 millioner euro for å skalere produksjonen.', 'https://tech.eu/b'),
+        funding('Samme sak igjen.', 'https://thenextweb.com/a'),
+        { companyId: alva, date: '2020-01-01', type: 'award', text: 'Pris', confidence: 'low' },
+        {
+          companyId: other,
+          date: '2026-07-02',
+          type: 'funding',
+          text: 'Annet',
+          confidence: 'low',
+        },
+      ])
+
+      expect(await denial(acceptAllReview(db, ola, 'events'))).toBe('forbidden')
+      expect(await acceptAllReview(db, admin, 'events')).toEqual({ accepted: 3, merged: 2 })
+
+      const details = (await getCompany(db, admin, 'alva')) as CompanyDetails
+      const july = details.events.filter((e) => e.date === '2026-07-02')
+      expect(july).toHaveLength(1)
+      // Den lengste teksten blir stående, med de andre kildene (uten dobbel tnw).
+      expect(july[0]).toMatchObject({
+        text: 'Alva hentet 16 millioner euro for å skalere produksjonen.',
+        source: { label: 'tech.eu', url: 'https://tech.eu/b' },
+        moreSources: [{ label: 'thenextweb.com', url: 'https://thenextweb.com/a' }],
+        review: false,
+      })
+      expect((await reviewCounts(db, admin)).events).toBe(0)
+      expect((await audit('review.accept_all'))[0]!.details).toEqual({
+        kind: 'events',
+        accepted: 3,
+        merged: 2,
+      })
+    })
+
+    it('en bekreftet hendelse blir stående når en usikker lik slås sammen med den', async () => {
+      const alva = await company('Alva')
+      await db.insert(schema.companyEvent).values([
+        {
+          companyId: alva,
+          date: '2026-07-02',
+          type: 'funding',
+          text: 'Bekreftet.',
+          confidence: 'high',
+        },
+        {
+          companyId: alva,
+          date: '2026-07-02',
+          type: 'funding',
+          text: 'En mye lengre usikker tekst om det samme.',
+          sourceUrl: 'https://tech.eu/b',
+          confidence: 'low',
+        },
+      ])
+      expect(await acceptAllReview(db, admin, 'events')).toEqual({ accepted: 0, merged: 1 })
+      const [only] = ((await getCompany(db, admin, 'alva')) as CompanyDetails).events
+      expect(only).toMatchObject({
+        text: 'Bekreftet.',
+        moreSources: [{ url: 'https://tech.eu/b' }],
+      })
+    })
+
+    it('godta alle sitater og importerte felt, og menyen teller bare det som venter på svar', async () => {
+      await db.insert(schema.quote).values([
+        { text: 'Ett', speakerName: 'Kari', personId: kari!.personId, confidence: 'low' },
+        { text: 'To', speakerName: 'Kari', personId: kari!.personId, confidence: 'low' },
+      ])
+      await db.insert(schema.fieldSource).values([
+        {
+          entityType: 'person',
+          entityId: kari!.personId!,
+          field: 'bio',
+          sourceLabel: 'es.no',
+          confidence: 'low',
+        },
+        {
+          entityType: 'person',
+          entityId: ola!.personId!,
+          field: 'city',
+          sourceLabel: 'es.no',
+          confidence: 'low',
+        },
+      ])
+      const before = await reviewCounts(db, admin)
+      expect(before).toMatchObject({ quotes: 2, sources: 2, attention: 0 })
+      expect(before.total).toBe(4)
+
+      expect(await acceptAllReview(db, admin, 'quotes')).toEqual({ accepted: 2, merged: 0 })
+      expect(await acceptAllReview(db, admin, 'sources')).toEqual({ accepted: 2, merged: 0 })
+      expect(await reviewCounts(db, admin)).toMatchObject({ quotes: 0, sources: 0, total: 0 })
+      // Ingenting igjen: ingen ny linje i loggen.
+      expect(await acceptAllReview(db, admin, 'quotes')).toEqual({ accepted: 0, merged: 0 })
+      expect(await audit('review.accept_all')).toHaveLength(2)
     })
 
     it('importerte felt per person og selskap: sett over, eller fjern', async () => {

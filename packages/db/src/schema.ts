@@ -396,6 +396,14 @@ export const companyEvent = pgTable(
     sourceUrl: text(),
     /** Kilden slik den vises, f.eks. «Brønnøysundregistrene» eller «tu.no». */
     sourceLabel: text(),
+    /**
+     * Flere kilder for samme hendelse, når like hendelser fra flere saker er slått
+     * sammen til én (Gjennomgang → «Slå sammen like og godta alle»).
+     */
+    moreSources: jsonb()
+      .$type<{ url: string | null; label: string | null }[]>()
+      .notNull()
+      .default([]),
     /** Hendelser lagt inn eller bekreftet i appen er `high`. */
     confidence: sourceConfidence().notNull().default('high'),
     ...timestamps,

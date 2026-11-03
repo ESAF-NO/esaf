@@ -112,7 +112,11 @@ export async function loadFieldSources<F extends string>(
  * Felt som er lister (flere jobber, emner, bransjer). Kilden gjelder hele lista,
  * så når en admin endrer én oppføring, gjelder den fortsatt resten.
  */
-const listFields: ReadonlySet<string> = new Set(['experience', 'expertise', 'industries'])
+export const listFields: ReadonlySet<string> = new Set(['experience', 'expertise', 'industries'])
+
+/** Se `sourceKey` i skjemaet: lenken skiller kilder med samme navn bare for lister. */
+export const sourceKeyFor = (field: string, url: string | null) =>
+  listFields.has(field) ? (url ?? '') : ''
 
 /**
  * Etter en redigering. `confirm`: eieren (eller noen knyttet til selskapet) har
@@ -200,15 +204,26 @@ export async function moveFieldSources(
   if (fields.length) {
     // Kilder målet allerede har for samme felt og kilde, beholdes.
     const existing = await tx
-      .select({ field: fieldSource.field, label: fieldSource.sourceLabel })
+      .select({
+        field: fieldSource.field,
+        label: fieldSource.sourceLabel,
+        key: fieldSource.sourceKey,
+      })
       .from(fieldSource)
       .where(and(eq(fieldSource.entityType, entityType), eq(fieldSource.entityId, targetId)))
-    const taken = new Set(existing.map((r) => `${r.field}\n${r.label}`))
+    const id = (r: { field: string; label: string; key: string }) =>
+      `${r.field}\n${r.label}\n${r.key}`
+    const taken = new Set(existing.map(id))
     const moving = await tx
-      .select({ id: fieldSource.id, field: fieldSource.field, label: fieldSource.sourceLabel })
+      .select({
+        id: fieldSource.id,
+        field: fieldSource.field,
+        label: fieldSource.sourceLabel,
+        key: fieldSource.sourceKey,
+      })
       .from(fieldSource)
       .where(and(fromSource, inArray(fieldSource.field, [...fields])))
-    const ids = moving.filter((r) => !taken.has(`${r.field}\n${r.label}`)).map((r) => r.id)
+    const ids = moving.filter((r) => !taken.has(id(r))).map((r) => r.id)
     if (ids.length) {
       await tx.update(fieldSource).set({ entityId: targetId }).where(inArray(fieldSource.id, ids))
     }
@@ -304,6 +319,7 @@ export async function writeFieldSources(
         field: s.field,
         sourceLabel: label,
         sourceUrl: s.url,
+        sourceKey: sourceKeyFor(s.field, s.url),
         fetchedAt: s.fetchedAt ?? now,
         confidence: s.confidence,
         reviewedAt: reviewed ? now : null,
@@ -314,6 +330,7 @@ export async function writeFieldSources(
           fieldSource.entityId,
           fieldSource.field,
           fieldSource.sourceLabel,
+          fieldSource.sourceKey,
         ],
         set: {
           sourceUrl: s.url,

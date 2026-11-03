@@ -246,6 +246,13 @@
       "when": 1793704090488,
       "tag": "0034_event_more_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793716010225,
+      "tag": "0035_kilder_per_lenke",
+      "breakpoints": true
     }
   ]
 }

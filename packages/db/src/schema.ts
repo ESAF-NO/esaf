@@ -1629,6 +1629,17 @@ export const emailLog = pgTable(
   (t) => [index().on(t.createdAt), index().on(t.personId, t.createdAt), index().on(t.toEmail)],
 )
 
+/**
+ * Innstillinger admins endrer i appen, uten deploy, som at e-post er satt på
+ * pause. Én rad per innstilling; verdien er JSON med typen fra @esaf/core.
+ */
+export const appSetting = pgTable('app_setting', {
+  key: text().primaryKey(),
+  value: jsonb().notNull(),
+  updatedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+  updatedAt: timestamps.updatedAt,
+})
+
 export type EmailKind = (typeof emailKind.enumValues)[number]
 export type EmailStatus = (typeof emailStatus.enumValues)[number]
 

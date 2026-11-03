@@ -4,6 +4,7 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from 'dri
 import { z } from 'zod'
 import { assertMember, type Viewer } from './access.ts'
 import { EmailError, type Mailer } from './email.ts'
+import { getEmailSwitch } from './email-switch.ts'
 import { notificationEmail, welcomeEmail, type NotificationEmailItem } from './email-templates.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
@@ -27,6 +28,8 @@ const { membership, notification, notificationEmailPreference, person, user } = 
  * - Hver e-post har en lenke for å slutte med den slags e-post, som virker uten
  *   innlogging (signert, se `unsubscribeToken`), og `List-Unsubscribe` med ett
  *   klikk (RFC 8058), så e-postprogrammet kan tilby det selv.
+ * - Er e-post satt på pause (`email-switch.ts`), sendes ingenting, og det som
+ *   kom mens den var av, sendes ikke når den slås på igjen (unntatt velkomsten).
  * - Velkomsten etter at en admin godkjente en forespørsel, sendes med en gang
  *   (neste runde), til alle: personen venter på svaret og er ikke i appen. Den
  *   er ikke et varsel man kan melde seg av, og har ingen avmelding. Velkomsten
@@ -395,8 +398,10 @@ export function describeNotification(
 // ---------------------------------------------------------------------------
 
 export type NotificationEmailRun = {
-  /** En annen utsending kjørte allerede. */
+  /** En annen utsending kjørte allerede, eller e-post er på pause. */
   skipped: boolean
+  /** E-post er satt på pause av en admin. */
+  paused: boolean
   /** E-poster sendt. */
   emails: number
   /** Varsler sendt i dem. */
@@ -429,7 +434,13 @@ export async function sendNotificationEmails(
 ): Promise<NotificationEmailRun> {
   const now = options.now ?? new Date()
   const log = options.log ?? console
-  const run: NotificationEmailRun = { skipped: false, emails: 0, notifications: 0, failed: 0 }
+  const run: NotificationEmailRun = {
+    skipped: false,
+    paused: false,
+    emails: 0,
+    notifications: 0,
+    failed: 0,
+  }
   return db.transaction(async (tx) => {
     const [{ locked }] = (
       await tx.execute<{ locked: boolean }>(
@@ -437,6 +448,10 @@ export async function sendNotificationEmails(
       )
     ).rows as [{ locked: boolean }]
     if (!locked) return { ...run, skipped: true }
+    const toggle = await getEmailSwitch(tx)
+    if (toggle.paused) return { ...run, skipped: true, paused: true }
+    // Varslene som kom mens e-post var på pause, sendes ikke. Velkomsten sendes.
+    const resumedAt = toggle.changedAt
 
     // Uleste, ikke sendte varsler innenfor vinduet, til aktive medlemmer med bekreftet konto.
     const candidates = await tx
@@ -455,6 +470,9 @@ export async function sendNotificationEmails(
         and(
           isNull(notification.readAt),
           isNull(notification.emailedAt),
+          resumedAt
+            ? or(eq(notification.type, 'welcome'), gte(notification.createdAt, resumedAt))
+            : undefined,
           gte(notification.createdAt, new Date(now.getTime() - EMAIL_WINDOW_MS)),
           or(
             eq(notification.type, 'welcome'),

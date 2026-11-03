@@ -97,6 +97,11 @@ export type AuthConfig = {
    * Uten den (ingen e-postleverandør) finnes ikke endepunktet.
    */
   sendPasswordReset?: (link: CreatedLink) => Promise<void>
+  /**
+   * Om en admin har satt e-post på pause. Da er registrering og «Glemt passord?»
+   * stengt på serveren, som uten e-postleverandør, fordi de ikke virker uten.
+   */
+  emailPaused?: () => Promise<boolean>
 }
 
 /**
@@ -210,6 +215,12 @@ export function createAuth(config: AuthConfig) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === '/sign-up/email' && (await config.emailPaused?.())) {
+          throw APIError.from('FORBIDDEN', {
+            code: 'EMAIL_PAUSED',
+            message: 'Sign-up is closed while e-mail is paused',
+          })
+        }
         if (ctx.path === OAUTH_CONSENT && ctx.body?.accept === true) {
           // Godkjenningssiden sjekker det samme, men her avgjøres det.
           const current = await getSessionFromCtx(ctx)
@@ -288,7 +299,10 @@ export function createAuth(config: AuthConfig) {
       }),
     },
     plugins: [
-      invitations(config.db, { sendPasswordReset: config.sendPasswordReset }),
+      invitations(config.db, {
+        sendPasswordReset: config.sendPasswordReset,
+        emailPaused: config.emailPaused,
+      }),
       twoFactor({
         issuer: 'ESAF',
         // Ti feil koder på rad låser tofaktor i et kvarter.

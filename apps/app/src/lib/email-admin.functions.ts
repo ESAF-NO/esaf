@@ -4,8 +4,10 @@ import {
   emailKinds,
   emailOverview,
   emailStatuses,
+  getEmailSwitch,
   listEmailLog,
   sendTestEmail,
+  setEmailPaused,
 } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
@@ -32,6 +34,7 @@ export const fetchEmailAdmin = createServerFn({ method: 'GET' }).handler(() =>
     const overview = await emailOverview(db, viewer)
     return {
       overview,
+      toggle: await getEmailSwitch(db),
       templates: emailCatalog(env.BETTER_AUTH_URL),
       sending: mailer !== null,
       setup: describeEmail(emailConfig),
@@ -53,3 +56,8 @@ export const sendEmailTest = createServerFn({ method: 'POST' })
       sendTestEmail(db, viewer, mailer, { kind: data.kind, appUrl: env.BETTER_AUTH_URL }),
     ),
   )
+
+/** Setter all e-post på pause, eller slår den på igjen (`email.manage`). */
+export const updateEmailPaused = createServerFn({ method: 'POST' })
+  .validator(z.object({ paused: z.boolean(), reason: z.string().max(500).optional() }))
+  .handler(({ data }) => run((viewer) => setEmailPaused(db, viewer, data)))

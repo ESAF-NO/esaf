@@ -4,8 +4,10 @@ import {
   emailKinds,
   emailOverview,
   emailStatuses,
+  getEmailSwitch,
   listEmailLog,
   sendTestEmail,
+  setEmailPaused,
 } from '@esaf/core'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
@@ -74,6 +76,7 @@ export function registerEmailTools(server: McpServer, ctx: ToolContext) {
     run: async (_args, ctx) => ({
       sending: ctx.mailer !== null,
       ...(await emailOverview(ctx.db, ctx.viewer)),
+      paused: await getEmailSwitch(ctx.db),
       adminPage: `${ctx.appUrl}/admin/e-post`,
     }),
   })
@@ -113,5 +116,21 @@ export function registerEmailTools(server: McpServer, ctx: ToolContext) {
     effect: 'write',
     run: async ({ kind }, ctx) =>
       sendTestEmail(ctx.db, ctx.viewer, ctx.mailer, { kind, appUrl: ctx.appUrl }),
+  })
+
+  defineTool(server, ctx, {
+    name: 'set_email_paused',
+    title: 'Pause or resume all e-mail',
+    description:
+      'Pauses all e-mail from the app at once, or turns it back on. While paused nothing is sent: invitations ' +
+      'and password links are still created (the admin shares them), and sign-up and "forgot password" are ' +
+      'closed. On resume, notifications from the pause are not sent; welcomes are. Ask the admin first.',
+    input: z.object({
+      paused: z.boolean(),
+      reason: z.string().max(500).optional().describe('Why, shown in the audit log (Norwegian).'),
+    }),
+    effect: 'write',
+    idempotent: true,
+    run: async (args, ctx) => setEmailPaused(ctx.db, ctx.viewer, args),
   })
 }

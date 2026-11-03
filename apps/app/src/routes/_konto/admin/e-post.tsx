@@ -1,17 +1,18 @@
-import type { EmailLogEntry, EmailOverview, EmailTemplate } from '@esaf/core'
+import type { EmailLogEntry, EmailOverview, EmailSwitch, EmailTemplate } from '@esaf/core'
 import type { EmailKind, EmailStatus, NotificationEmailFrequency } from '@esaf/db'
-import { createFileRoute, isNotFound, Link, notFound } from '@tanstack/react-router'
+import { createFileRoute, isNotFound, Link, notFound, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { AlertTriangle, Check, Eye, Mail, MailX, Send } from 'lucide-react'
+import { AlertTriangle, Check, Eye, Mail, MailX, PauseCircle, PlayCircle, Send } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Dialog } from '#/components/Dialog.tsx'
+import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import { SearchInput } from '#/components/SearchInput.tsx'
-import { Button, Card, cx, EmptyState, ErrorText, Select } from '#/components/ui.tsx'
+import { Button, Card, cx, EmptyState, ErrorText, Field, Input, Select } from '#/components/ui.tsx'
 import {
   emailLogPageSize,
   fetchEmailAdmin,
   fetchEmailLog,
   sendEmailTest,
+  updateEmailPaused,
 } from '#/lib/email-admin.functions.ts'
 import { plural, timestamp } from '#/lib/format.ts'
 
@@ -61,6 +62,7 @@ const errorNames: Record<string, string> = {
   rejected: 'avvist av Cloudflare (oppsettet)',
   throttled: 'for mange på kort tid',
   unavailable: 'Cloudflare svarte ikke',
+  paused: 'e-post var på pause',
   error: 'ukjent feil',
 }
 
@@ -79,29 +81,159 @@ function EmailAdmin() {
         det har gått. Bare emnet lagres, ikke innholdet, fordi lenkene i e-postene er hemmelige.
         Loggen slettes etter ett år.
       </p>
-      <Setup sending={data.sending} setup={data.setup} />
+      <Setup sending={data.sending} setup={data.setup} toggle={data.toggle} />
       <Numbers overview={data.overview} />
-      <Templates templates={data.templates} sending={data.sending} />
+      <Templates templates={data.templates} sending={data.sending && !data.toggle.paused} />
       <Preferences overview={data.overview} />
       <SentLog first={data.log} kindNames={kindNames} />
     </div>
   )
 }
 
-function Setup({ sending, setup }: { sending: boolean; setup: string }) {
-  return sending ? (
-    <p className="flex items-center gap-2 text-sm text-stone-600">
-      <Check className="size-4 shrink-0 text-emerald-600" aria-hidden />
-      <span>
-        E-post sendes med <span className="font-medium text-stone-900">{setup}</span>.
-      </span>
-    </p>
-  ) : (
-    <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200 ring-inset">
-      <AlertTriangle className="size-4 shrink-0" aria-hidden />
-      E-post er ikke satt opp på serveren (EMAIL_PROVIDER). Ingenting sendes; invitasjoner må deles
-      for hånd.
-    </p>
+function Setup({
+  sending,
+  setup,
+  toggle,
+}: {
+  sending: boolean
+  setup: string
+  toggle: EmailSwitch
+}) {
+  const { viewer } = Route.useRouteContext()
+  const canManage = viewer.permissions.includes('email.manage')
+  const [changing, setChanging] = useState(false)
+  if (!sending) {
+    return (
+      <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200 ring-inset">
+        <AlertTriangle className="size-4 shrink-0" aria-hidden />
+        E-post er ikke satt opp på serveren (EMAIL_PROVIDER). Ingenting sendes; invitasjoner må
+        deles for hånd.
+      </p>
+    )
+  }
+  const changed = toggle.changedAt
+    ? ` ${toggle.changedBy ? `av ${toggle.changedBy.fullName} ` : ''}${timestamp(toggle.changedAt)}`
+    : ''
+  return (
+    <section aria-labelledby="bryter">
+      <h2 id="bryter" className="sr-only">
+        Av og på
+      </h2>
+      <Card
+        className={cx(
+          'flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5',
+          toggle.paused && 'bg-amber-50 ring-amber-200',
+        )}
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          {toggle.paused ? (
+            <PauseCircle className="mt-0.5 size-5 shrink-0 text-amber-700" aria-hidden />
+          ) : (
+            <Check className="mt-0.5 size-5 shrink-0 text-emerald-600" aria-hidden />
+          )}
+          <div className="min-w-0 text-sm">
+            <p className="font-medium text-stone-950">
+              {toggle.paused ? 'E-post er på pause' : 'E-post er på'}
+            </p>
+            <p className="mt-0.5 text-stone-600">
+              {toggle.paused
+                ? `Ingenting sendes. Satt på pause${changed}${toggle.reason ? `: «${toggle.reason}»` : ''}.`
+                : `Sendes med ${setup}.${toggle.changedAt ? ` Slått på igjen${changed}.` : ''}`}
+            </p>
+          </div>
+        </div>
+        {canManage && (
+          <Button
+            variant={toggle.paused ? 'primary' : 'secondary'}
+            onClick={() => setChanging(true)}
+          >
+            {toggle.paused ? (
+              <>
+                <PlayCircle className="size-4" aria-hidden /> Slå på igjen
+              </>
+            ) : (
+              <>
+                <PauseCircle className="size-4" aria-hidden /> Sett på pause
+              </>
+            )}
+          </Button>
+        )}
+      </Card>
+      {changing && <SwitchDialog pause={!toggle.paused} onClose={() => setChanging(false)} />}
+    </section>
+  )
+}
+
+function SwitchDialog({ pause, onClose }: { pause: boolean; onClose: () => void }) {
+  const router = useRouter()
+  const update = useServerFn(updateEmailPaused)
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function confirm() {
+    setBusy(true)
+    setError(null)
+    try {
+      await update({ data: { paused: pause, reason: reason.trim() || undefined } })
+      await router.invalidate()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke endre det.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog
+      title={pause ? 'Sette all e-post på pause?' : 'Slå på e-post igjen?'}
+      description={
+        pause
+          ? 'Gjelder med en gang, for alle e-postene appen sender.'
+          : 'E-post sendes som før med en gang.'
+      }
+      onClose={onClose}
+      busy={busy}
+    >
+      <ul className="mb-4 list-disc space-y-1 pl-5 text-sm text-stone-600">
+        {pause ? (
+          <>
+            <li>Varsler, oppsummeringer og velkomster sendes ikke.</li>
+            <li>Invitasjoner og lenker for nytt passord lages, men du må dele lenken selv.</li>
+            <li>Registrering og «Glemt passord?» er stengt så lenge.</li>
+          </>
+        ) : (
+          <>
+            <li>Registrering og «Glemt passord?» åpner igjen.</li>
+            <li>
+              Varslene som kom mens e-post var på pause, sendes ikke, så ingen får en bunke gamle
+              varsler. Velkomster til nye medlemmer sendes.
+            </li>
+          </>
+        )}
+      </ul>
+      <Field label="Hvorfor? (valgfritt)" hint="Står i loggen og på denne siden.">
+        <Input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={500}
+          data-autofocus
+        />
+      </Field>
+      {error && (
+        <div className="mt-3">
+          <ErrorText>{error}</ErrorText>
+        </div>
+      )}
+      <DialogActions>
+        <Button variant="secondary" onClick={onClose} disabled={busy}>
+          Avbryt
+        </Button>
+        <Button variant={pause ? 'destructive' : 'primary'} onClick={confirm} disabled={busy}>
+          {busy ? 'Lagrer …' : pause ? 'Sett på pause' : 'Slå på igjen'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   )
 }
 
@@ -316,7 +448,9 @@ function TestButton({ kind, sending }: { kind: EmailTemplate['kind']; sending: b
         disabled={!sending || state.busy}
         onClick={run}
         title={
-          sending ? 'Sender eksempelet til adressen du logger inn med' : 'E-post er ikke satt opp'
+          sending
+            ? 'Sender eksempelet til adressen du logger inn med'
+            : 'E-post er av eller på pause'
         }
         className="w-full"
       >

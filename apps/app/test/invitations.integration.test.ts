@@ -84,6 +84,36 @@ describe.skipIf(!url)('invitasjoner uten e-post', () => {
     expect(sent).toHaveLength(2)
   })
 
+  it('med e-post på pause er registrering og «Glemt passord?» stengt på serveren', async () => {
+    let paused = true
+    const sent: string[] = []
+    const instance = createAuth({
+      db,
+      baseURL: origin,
+      secret,
+      sendVerificationEmail: async ({ user }) => {
+        sent.push(user.email)
+      },
+      sendPasswordReset: async (link) => {
+        sent.push(link.email)
+      },
+      emailPaused: async () => paused,
+    })
+    const body = { email: 'ny@example.test', password, name: 'Ny' }
+    const closed = await browser(instance).call('/sign-up/email', { body })
+    expect(closed.status).toBe(403)
+    expect(closed.body.code).toBe('EMAIL_PAUSED')
+    const reset = await browser(instance).call('/invitation/request-password-reset', {
+      body: { email: 'ny@example.test' },
+    })
+    expect(reset.status).toBe(404)
+    expect(await db.select().from(schema.user)).toEqual([])
+
+    paused = false
+    expect((await browser(instance).call('/sign-up/email', { body })).status).toBe(200)
+    expect(sent).toEqual(['ny@example.test'])
+  })
+
   it('en invitasjon med passord lager en bekreftet konto, logger inn og gir medlemskap', async () => {
     const token = await invite('ny@example.test', 'owner')
     const b = browser(auth)

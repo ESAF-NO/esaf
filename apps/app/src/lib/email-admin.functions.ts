@@ -1,13 +1,18 @@
 import {
+  blockEmailAddress,
   describeEmail,
   emailCatalog,
   emailKinds,
   emailOverview,
   emailStatuses,
   getEmailSwitch,
+  listEmailBlocks,
   listEmailLog,
   sendTestEmail,
+  setEmailKindEnabled,
   setEmailPaused,
+  switchableEmailKinds,
+  unblockEmailAddress,
 } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
@@ -35,6 +40,7 @@ export const fetchEmailAdmin = createServerFn({ method: 'GET' }).handler(() =>
     return {
       overview,
       toggle: await getEmailSwitch(db),
+      blocks: await listEmailBlocks(db, viewer),
       templates: emailCatalog(env.BETTER_AUTH_URL),
       sending: mailer !== null,
       setup: describeEmail(emailConfig),
@@ -61,3 +67,24 @@ export const sendEmailTest = createServerFn({ method: 'POST' })
 export const updateEmailPaused = createServerFn({ method: 'POST' })
   .validator(z.object({ paused: z.boolean(), reason: z.string().max(500).optional() }))
   .handler(({ data }) => run((viewer) => setEmailPaused(db, viewer, data)))
+
+/** Slår én type e-post av eller på (`email.manage`). */
+export const updateEmailKind = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      kind: z.enum(switchableEmailKinds),
+      enabled: z.boolean(),
+      reason: z.string().max(500).optional(),
+    }),
+  )
+  .handler(({ data }) => run((viewer) => setEmailKindEnabled(db, viewer, data)))
+
+/** Stopper all e-post til en adresse (`email.manage`). */
+export const blockAddress = createServerFn({ method: 'POST' })
+  .validator(z.object({ email: z.string().max(254), reason: z.string().max(500).optional() }))
+  .handler(({ data }) => run((viewer) => blockEmailAddress(db, viewer, data)))
+
+/** Sender til adressen igjen (`email.manage`). */
+export const unblockAddress = createServerFn({ method: 'POST' })
+  .validator(z.object({ email: z.string().max(254) }))
+  .handler(({ data }) => run((viewer) => unblockEmailAddress(db, viewer, data)))

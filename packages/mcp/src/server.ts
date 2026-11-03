@@ -54,6 +54,7 @@ Data model:
 - e-mail: every e-mail the app sends is logged (kind, recipient, profile, subject, outcome; never the body, the
   links in it are secrets). \`email_templates\` explains each e-mail and when it is sent, \`email_stats\` and
   \`list_sent_emails\` show what was sent. Addresses are personal: show them only to the admin.
+  Admins can pause all e-mail, turn one kind off, or stop all e-mail to one address; ask before changing.
 - field sources: where a field on a profile or company came from. Members see "Fra <source> · ikke bekreftet"
   until the person confirms. Confidence (high/medium/low) is only visible to admins.
 

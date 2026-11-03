@@ -34,7 +34,7 @@ export const Route = createFileRoute('/_konto/admin/invitasjoner')({
     if (!viewer.permissions.includes('members.review')) throw notFound()
   },
   loader: async () => {
-    const [invitations, { emailEnabled }] = await Promise.all([
+    const [invitations, { invitationEmail: emailEnabled }] = await Promise.all([
       fetchInvitations(),
       fetchAuthOptions(),
     ])

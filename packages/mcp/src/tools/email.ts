@@ -1,13 +1,18 @@
 import {
   assertCan,
+  blockEmailAddress,
   emailCatalog,
   emailKinds,
   emailOverview,
   emailStatuses,
   getEmailSwitch,
+  listEmailBlocks,
   listEmailLog,
   sendTestEmail,
+  setEmailKindEnabled,
   setEmailPaused,
+  switchableEmailKinds,
+  unblockEmailAddress,
 } from '@esaf/core'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
@@ -76,7 +81,8 @@ export function registerEmailTools(server: McpServer, ctx: ToolContext) {
     run: async (_args, ctx) => ({
       sending: ctx.mailer !== null,
       ...(await emailOverview(ctx.db, ctx.viewer)),
-      paused: await getEmailSwitch(ctx.db),
+      switches: await getEmailSwitch(ctx.db),
+      blockedAddresses: await listEmailBlocks(ctx.db, ctx.viewer),
       adminPage: `${ctx.appUrl}/admin/e-post`,
     }),
   })
@@ -132,5 +138,53 @@ export function registerEmailTools(server: McpServer, ctx: ToolContext) {
     effect: 'write',
     idempotent: true,
     run: async (args, ctx) => setEmailPaused(ctx.db, ctx.viewer, args),
+  })
+
+  defineTool(server, ctx, {
+    name: 'set_email_kind_enabled',
+    title: 'Turn one kind of e-mail on or off',
+    description:
+      'Turns one kind of e-mail (see email_templates) off or back on, at once. Off: invitation and password ' +
+      'links are still created (the admin shares them); verification off closes sign-up, password_reset off ' +
+      'closes "forgot password". Notifications that arrive while off are not sent later. Ask the admin first.',
+    input: z.object({
+      kind: z.enum(switchableEmailKinds),
+      enabled: z.boolean(),
+      reason: z.string().max(500).optional().describe('Why, shown in the audit log (Norwegian).'),
+    }),
+    effect: 'write',
+    idempotent: true,
+    run: async (args, ctx) => setEmailKindEnabled(ctx.db, ctx.viewer, args),
+  })
+
+  defineTool(server, ctx, {
+    name: 'block_email_address',
+    title: 'Stop all e-mail to an address',
+    description:
+      'The app never sends anything to this address again (notifications, invitations, password links) until ' +
+      'unblocked. Use when someone asks not to get e-mail, or an address keeps bouncing. Ask the admin first.',
+    input: z.object({
+      email: z.string().max(254),
+      reason: z.string().max(500).optional().describe('Why, shown in the audit log (Norwegian).'),
+    }),
+    effect: 'write',
+    idempotent: true,
+    run: async (args, ctx) => {
+      await blockEmailAddress(ctx.db, ctx.viewer, args)
+      return listEmailBlocks(ctx.db, ctx.viewer)
+    },
+  })
+
+  defineTool(server, ctx, {
+    name: 'unblock_email_address',
+    title: 'Send e-mail to an address again',
+    description: 'Removes an address from the stopped list, so the app sends to it again.',
+    input: z.object({ email: z.string().max(254) }),
+    effect: 'write',
+    idempotent: true,
+    run: async (args, ctx) => {
+      await unblockEmailAddress(ctx.db, ctx.viewer, args)
+      return listEmailBlocks(ctx.db, ctx.viewer)
+    },
   })
 }

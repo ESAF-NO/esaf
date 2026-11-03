@@ -98,10 +98,11 @@ export type AuthConfig = {
    */
   sendPasswordReset?: (link: CreatedLink) => Promise<void>
   /**
-   * Om en admin har satt e-post på pause. Da er registrering og «Glemt passord?»
-   * stengt på serveren, som uten e-postleverandør, fordi de ikke virker uten.
+   * Om appen kan sende e-posten nå (Admin → E-post: ikke på pause, og typen er
+   * på). Uten bekreftelsen er registrering stengt, og uten lenken for nytt
+   * passord finnes ikke «Glemt passord?», som uten e-postleverandør.
    */
-  emailPaused?: () => Promise<boolean>
+  emailAvailable?: (kind: 'verification' | 'password_reset') => Promise<boolean>
 }
 
 /**
@@ -215,10 +216,14 @@ export function createAuth(config: AuthConfig) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path === '/sign-up/email' && (await config.emailPaused?.())) {
+        if (
+          ctx.path === '/sign-up/email' &&
+          config.emailAvailable &&
+          !(await config.emailAvailable('verification'))
+        ) {
           throw APIError.from('FORBIDDEN', {
-            code: 'EMAIL_PAUSED',
-            message: 'Sign-up is closed while e-mail is paused',
+            code: 'EMAIL_OFF',
+            message: 'Sign-up is closed while verification e-mails are off',
           })
         }
         if (ctx.path === OAUTH_CONSENT && ctx.body?.accept === true) {
@@ -301,7 +306,7 @@ export function createAuth(config: AuthConfig) {
     plugins: [
       invitations(config.db, {
         sendPasswordReset: config.sendPasswordReset,
-        emailPaused: config.emailPaused,
+        emailAvailable: config.emailAvailable,
       }),
       twoFactor({
         issuer: 'ESAF',

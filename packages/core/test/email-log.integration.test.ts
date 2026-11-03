@@ -4,6 +4,13 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   addComment,
+  blockEmailAddress,
+  emailKindAvailable,
+  listEmailBlocks,
+  setEmailKindEnabled,
+  setEmailPaused,
+  unblockEmailAddress,
+  withEmailSwitch,
   createPost,
   decideMembership,
   emailCatalog,
@@ -82,7 +89,7 @@ describe.skipIf(!url)('e-postloggen', () => {
     sent = []
     failWith = null
     await db.execute(
-      sql`truncate ${schema.emailLog}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personEmail}, ${schema.person}, ${schema.user} cascade`,
+      sql`truncate ${schema.emailLog}, ${schema.emailBlock}, ${schema.appSetting}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personEmail}, ${schema.person}, ${schema.user} cascade`,
     )
     const adminId = await account('Ada Admin')
     await grantRoleAsOperator(db, {
@@ -253,5 +260,85 @@ describe.skipIf(!url)('e-postloggen', () => {
     })
     expect(await pruneEmailLog(db, now)).toBe(1)
     expect(await listEmailLog(db, admin)).toHaveLength(1)
+  })
+
+  it('bryterne: pause, én type av, og stoppede adresser, med grunnen i loggen', async () => {
+    const switched = withEmailLog(
+      db,
+      withEmailSwitch(db, {
+        provider: 'console',
+        async send(message) {
+          sent.push(message)
+        },
+      }),
+      { error() {} },
+    )
+    const to = (address: string, kind: 'invitation' | 'digest' = 'invitation') =>
+      switched.send({ to: address, subject: 'S', text: 'T', html: 'H', log: { kind } })
+
+    await setEmailKindEnabled(db, admin, { kind: 'invitation', enabled: false, reason: 'Ny mal' })
+    await expect(to('ny@example.test')).rejects.toMatchObject({ reason: 'disabled' })
+    await to('ny@example.test', 'digest')
+    expect(await emailKindAvailable(db, 'invitation')).toBe(false)
+    expect(await emailKindAvailable(db, 'verification')).toBe(true)
+    await setEmailKindEnabled(db, admin, { kind: 'invitation', enabled: true })
+
+    await blockEmailAddress(db, admin, { email: ' Kari.Nordmann@Example.test ' })
+    await blockEmailAddress(db, admin, { email: 'kari.nordmann@example.test' })
+    await expect(to('kari.nordmann@example.test')).rejects.toMatchObject({ reason: 'blocked' })
+    expect(await listEmailBlocks(db, admin)).toMatchObject([
+      {
+        email: 'kari.nordmann@example.test',
+        person: { personId: kari.personId },
+        createdBy: { personId: admin.personId },
+      },
+    ])
+    await unblockEmailAddress(db, admin, { email: 'KARI.nordmann@example.test' })
+    await to('kari.nordmann@example.test')
+
+    await setEmailPaused(db, admin, { paused: true })
+    await expect(to('ola.hansen@example.test')).rejects.toMatchObject({ reason: 'paused' })
+    expect(await emailKindAvailable(db, 'verification')).toBe(false)
+
+    expect(
+      (await listEmailLog(db, admin)).map((e) => [e.toEmail, e.status, e.errorReason]),
+    ).toEqual([
+      ['ola.hansen@example.test', 'failed', 'paused'],
+      ['kari.nordmann@example.test', 'sent', null],
+      ['kari.nordmann@example.test', 'failed', 'blocked'],
+      ['ny@example.test', 'sent', null],
+      ['ny@example.test', 'failed', 'disabled'],
+    ])
+    const actions = await db
+      .select({ action: schema.auditEvent.action })
+      .from(schema.auditEvent)
+      .where(sql`${schema.auditEvent.action} like 'email.%'`)
+      .orderBy(schema.auditEvent.createdAt)
+    expect(actions.map((a) => a.action)).toEqual([
+      'email.kind_off',
+      'email.kind_on',
+      'email.block',
+      'email.unblock',
+      'email.pause',
+    ])
+  })
+
+  it('bare admins endrer bryterne, og ugyldige adresser avvises', async () => {
+    const reason = (p: Promise<unknown>) =>
+      p.then(
+        () => 'ok',
+        (e: { reason?: string; message?: string }) => e.reason ?? e.message,
+      )
+    expect(await reason(setEmailKindEnabled(db, ola, { kind: 'digest', enabled: false }))).toBe(
+      'forbidden',
+    )
+    expect(await reason(blockEmailAddress(db, ola, { email: 'x@example.test' }))).toBe('forbidden')
+    expect(await reason(listEmailBlocks(db, ola))).toBe('forbidden')
+    expect(await reason(blockEmailAddress(db, admin, { email: 'ikke en adresse' }))).toBe(
+      'Ugyldig e-postadresse.',
+    )
+    expect(await reason(setEmailKindEnabled(db, admin, { kind: 'test', enabled: false }))).toBe(
+      'Ukjent e-post.',
+    )
   })
 })

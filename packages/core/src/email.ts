@@ -190,7 +190,8 @@ export type EmailLogInfo = {
   items?: number
 }
 
-export type EmailErrorReason = 'bounced' | 'rejected' | 'throttled' | 'unavailable' | 'paused'
+export type EmailErrorReason =
+  'bounced' | 'rejected' | 'throttled' | 'unavailable' | 'paused' | 'disabled' | 'blocked'
 
 /**
  * E-posten ble ikke sendt. Meldingen kan vises til en admin: den sier hva som
@@ -214,6 +215,8 @@ export class EmailError extends Error {
         throttled: 'E-posttjenesten har nådd grensen for utsending. Prøv igjen om litt.',
         unavailable: 'E-posttjenesten svarte ikke. Prøv igjen om litt.',
         paused: 'E-post er satt på pause av en admin (Admin → E-post).',
+        disabled: 'Denne e-posten er slått av av en admin (Admin → E-post).',
+        blocked: 'E-post til denne adressen er stoppet av en admin (Admin → E-post).',
       }[reason],
       { cause: details.cause },
     )

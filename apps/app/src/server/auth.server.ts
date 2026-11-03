@@ -1,4 +1,4 @@
-import { isEmailPaused } from '@esaf/core'
+import { emailKindAvailable } from '@esaf/core'
 import { createAuth } from './auth-config.server.ts'
 import { db } from './db.server.ts'
 import {
@@ -33,5 +33,5 @@ export const auth = createAuth({
     : undefined,
   verificationTtlSeconds: VERIFICATION_TTL_SECONDS,
   sendPasswordReset: mailer ? sendLinkEmail : undefined,
-  emailPaused: () => isEmailPaused(db),
+  emailAvailable: (kind) => emailKindAvailable(db, kind),
 })

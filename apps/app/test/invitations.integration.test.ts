@@ -97,12 +97,12 @@ describe.skipIf(!url)('invitasjoner uten e-post', () => {
       sendPasswordReset: async (link) => {
         sent.push(link.email)
       },
-      emailPaused: async () => paused,
+      emailAvailable: async () => !paused,
     })
     const body = { email: 'ny@example.test', password, name: 'Ny' }
     const closed = await browser(instance).call('/sign-up/email', { body })
     expect(closed.status).toBe(403)
-    expect(closed.body.code).toBe('EMAIL_PAUSED')
+    expect(closed.body.code).toBe('EMAIL_OFF')
     const reset = await browser(instance).call('/invitation/request-password-reset', {
       body: { email: 'ny@example.test' },
     })

@@ -109,9 +109,17 @@ export async function loadFieldSources<F extends string>(
 }
 
 /**
+ * Felt som er lister (flere jobber, emner, bransjer). Kilden gjelder hele lista,
+ * så når en admin endrer én oppføring, gjelder den fortsatt resten.
+ */
+const listFields: ReadonlySet<string> = new Set(['experience', 'expertise', 'industries'])
+
+/**
  * Etter en redigering. `confirm`: eieren (eller noen knyttet til selskapet) har
  * skrevet om feltene, og kildene merkes som bekreftet. `forget`: en admin har
  * endret feltene, eller de er tømt, så kildene gjelder ikke lenger og slettes.
+ * Unntaket er lister: der beholdes kilden for resten av oppføringene, og den
+ * regnes som sett over, siden en admin nettopp har gått gjennom lista.
  */
 export async function recordFieldEdits(
   tx: Db | Tx,
@@ -121,18 +129,27 @@ export async function recordFieldEdits(
   effect: 'confirm' | 'forget',
 ) {
   if (!fields.length) return
-  const where = and(
-    eq(fieldSource.entityType, entityType),
-    eq(fieldSource.entityId, entityId),
-    inArray(fieldSource.field, [...fields]),
-  )
+  const where = (only: readonly string[]) =>
+    and(
+      eq(fieldSource.entityType, entityType),
+      eq(fieldSource.entityId, entityId),
+      inArray(fieldSource.field, [...only]),
+    )
   if (effect === 'confirm') {
     await tx
       .update(fieldSource)
       .set({ confirmedAt: new Date() })
-      .where(and(where, isNull(fieldSource.confirmedAt)))
-  } else {
-    await tx.delete(fieldSource).where(where)
+      .where(and(where(fields), isNull(fieldSource.confirmedAt)))
+    return
+  }
+  const lists = fields.filter((f) => listFields.has(f))
+  const single = fields.filter((f) => !listFields.has(f))
+  if (single.length) await tx.delete(fieldSource).where(where(single))
+  if (lists.length) {
+    await tx
+      .update(fieldSource)
+      .set({ reviewedAt: new Date() })
+      .where(and(where(lists), isNull(fieldSource.reviewedAt)))
   }
 }
 

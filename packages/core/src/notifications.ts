@@ -113,9 +113,15 @@ export async function notifyMentions(
 /**
  * Et nytt medlem er godkjent: velkomst til personen selv, og beskjed til dem
  * som gikk i samme kull og allerede er med. Kalles etter at medlemskapet er
- * aktivt og kontoen er koblet til profilen.
+ * aktivt og kontoen er koblet til profilen. Med `emailWelcome` sendes velkomsten
+ * også på e-post (se `sendNotificationEmails`): personen ventet på en admin og
+ * er ikke i appen nå. Den som tar imot en invitasjon, er i appen og får ingen.
  */
-export async function notifyMemberApproved(tx: Tx, personId: string): Promise<void> {
+export async function notifyMemberApproved(
+  tx: Tx,
+  personId: string,
+  options: { emailWelcome?: boolean } = {},
+): Promise<void> {
   const own = await tx
     .select({ cohortId: personCohort.cohortId, year: cohort.graduationYear })
     .from(personCohort)
@@ -146,7 +152,10 @@ export async function notifyMemberApproved(tx: Tx, personId: string): Promise<vo
       type: 'welcome',
       actorPersonId: null,
       eventKey: 'welcome',
-      payload: own[0] ? { graduationYear: own[0].year } : {},
+      payload: {
+        ...(own[0] ? { graduationYear: own[0].year } : {}),
+        ...(options.emailWelcome ? { emailWelcome: true } : {}),
+      },
     },
   ]
   const seen = new Set<string>()

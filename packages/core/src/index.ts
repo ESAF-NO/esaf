@@ -109,6 +109,7 @@ export {
   passwordLinkEmail,
   passwordResetEmail,
   verificationEmail,
+  welcomeEmail,
   type EmailContent,
   type NotificationEmailItem,
 } from './email-templates.ts'

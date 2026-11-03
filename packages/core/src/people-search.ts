@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { schema, type Db } from '@esaf/db'
-import { asc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, ilike, inArray, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { DomainError, NotFoundError } from './errors.ts'
@@ -15,6 +15,7 @@ const {
   cohort,
   company,
   experience,
+  fieldSource,
   membership,
   person,
   personCohort,
@@ -35,16 +36,21 @@ const {
  *   bioen om gangen, emnene), og hver bit får en vektor fra en lokal
  *   embedding-modell. Et treff er så godt som den beste biten, og biten vises
  *   som grunnen til treffet. Hele profiler som én vektor ga dårlige treff.
- * - **Hybrid:** ord som står i teksten (også starten av ord, uten aksenter og
- *   store bokstaver) og likhet i mening slås sammen (reciprocal rank fusion).
- *   Navnetreff kommer først. Uten modell (f.eks. før den er lastet ned) virker
- *   ordsøket alene.
- * - **Søkeord:** for det modellen ikke klarer alene, setter admins emner på
- *   norsk og engelsk, også bredere begreper: NASA → romfart, space, aerospace,
- *   satellitter (`person.search_topics`). Appen kaller aldri en språkmodell
- *   selv; søkeordene skrives utenfra, typisk av Claude Code eller Codex via
- *   MCP (`listPeopleForTopics`, `setSearchTopics`). Søket utvider ord med
- *   begrepslista i `search-taxonomy.ts`.
+ * - **Ord, rangert på mening:** en person kommer med når ordene i søket (eller
+ *   et ord fra samme begrep i `search-taxonomy.ts`) står i profilen, også som
+ *   starten av et ord, uten aksenter og store bokstaver. Likhet i mening avgjør
+ *   rekkefølgen og om et usikkert ordtreff (i bioen, via et synonym) teller,
+ *   men gir aldri treff alene: målt var nesten alle slike treff feil. Med flere
+ *   ord i søket veier sjeldne ord mer enn vanlige. Navnetreff kommer først. Uten
+ *   modell (f.eks. før den er lastet ned) er det et rent ordsøk.
+ * - **Formål fra Brønnøysund:** ord som står i mange formål («salg»,
+ *   «investering», «eiendom»), teller ikke når de bare står i formålet.
+ * - **Søkeord:** admins setter emner på norsk og engelsk, også bredere begreper:
+ *   NASA → romfart, space, aerospace, satellitter (`person.search_topics`). De
+ *   er fasiten: har en person søkeord, teller et treff i bioen (metaforer,
+ *   hobbyer, drømmer) bare når søkeordene også passer til søket. Appen kaller
+ *   aldri en språkmodell selv; søkeordene skrives utenfra, typisk av Claude Code
+ *   eller Codex via MCP (`listPeopleForTopics`, `setSearchTopics`).
  * - **Indeksen** oppdateres i bakgrunnen (`reindexPeople`): bitene bygges for
  *   alle, og bare personer der bitene eller modellen er endret, får nye vektorer.
  *   Vektorene holdes i minnet og hentes på nytt når indeksen endres.
@@ -58,7 +64,18 @@ export type Embedder = {
   embed(texts: string[], as: 'query' | 'passage'): Promise<Float32Array[]>
 }
 
-export type SearchChunk = { kind: 'job' | 'es' | 'bio' | 'topics' | 'study'; text: string }
+export type SearchChunk = {
+  kind: 'job' | 'es' | 'bio' | 'topics' | 'study'
+  text: string
+  /**
+   * Formålet fra Brønnøysundregistrene, når det er det som beskriver selskapet i
+   * biten. Det er ofte standardtekst («investering i aksjer og eiendom», «kjøp
+   * og salg»), så ord som bare står der, er ikke sikre treff.
+   */
+  registry?: string
+  /** Selskapet biten handler om (stillinger). */
+  companyId?: string
+}
 
 type PersonDoc = {
   personId: string
@@ -66,6 +83,11 @@ type PersonDoc = {
   city: string | null
   status: string | null
   chunks: SearchChunk[]
+  /**
+   * Søkeordene admins har skrevet. Når de finnes, er de fasiten på hva personen
+   * kan: et treff i bioen teller bare når søkeordene sier det samme.
+   */
+  topics: string[]
 }
 
 const sentences = (text: string) =>
@@ -93,6 +115,18 @@ export function redact(text: string) {
 }
 
 /**
+ * En setning som bare var kontaktinfo («Contact info: [telefon], [e-post]»):
+ * etter `redact` sier den ingenting, og den skal ikke bli en bit som ligner på
+ * alt.
+ */
+const onlyContact = (sentence: string) =>
+  /\[(?:e-post|telefon)\]/.test(sentence) &&
+  sentence
+    .replace(/\[(?:e-post|telefon)\]/g, ' ')
+    .split(/[^\p{L}]+/u)
+    .filter((w) => w.length > 1).length < 4
+
+/**
  * Bitene for alle personer, eller noen. Rekkefølgen er fast, så hashen blir
  * stabil. `withTopics: false` gir teksten uten søkeord (det søkeordene skrives
  * fra).
@@ -103,7 +137,7 @@ export async function buildSearchDocs(
   { withTopics = true }: { withTopics?: boolean } = {},
 ): Promise<PersonDoc[]> {
   const where = personIds ? inArray(person.id, personIds) : undefined
-  const [people, jobs] = await Promise.all([
+  const [people, jobs, registry] = await Promise.all([
     db
       .select({
         id: person.id,
@@ -127,6 +161,7 @@ export async function buildSearchDocs(
     db
       .select({
         personId: experience.personId,
+        companyId: company.id,
         title: experience.title,
         founder: experience.founder,
         startYear: experience.startYear,
@@ -140,7 +175,21 @@ export async function buildSearchDocs(
       .innerJoin(company, eq(company.id, experience.companyId))
       .where(personIds ? inArray(experience.personId, personIds) : undefined)
       .orderBy(asc(experience.personId), asc(experience.position)),
+    db
+      .selectDistinct({ id: fieldSource.entityId })
+      .from(fieldSource)
+      .where(
+        and(
+          eq(fieldSource.entityType, 'company'),
+          eq(fieldSource.field, 'description'),
+          or(
+            ilike(fieldSource.sourceUrl, '%brreg.no%'),
+            ilike(fieldSource.sourceLabel, 'brønnøysund%'),
+          ),
+        ),
+      ),
   ])
+  const fromRegistry = new Set(registry.map((r) => r.id))
   const jobsOf = new Map<string, typeof jobs>()
   for (const j of jobs) jobsOf.set(j.personId, [...(jobsOf.get(j.personId) ?? []), j])
 
@@ -156,6 +205,8 @@ export async function buildSearchDocs(
           `${role} i ${j.name}${when}` +
           (about ? ` – ${about}` : '') +
           (j.industries.length ? ` (${j.industries.join(', ')})` : ''),
+        companyId: j.companyId,
+        ...(about && !j.tagline && fromRegistry.has(j.companyId) ? { registry: about } : {}),
       })
     }
     if (p.esName && p.esTagline) {
@@ -167,7 +218,7 @@ export async function buildSearchDocs(
       })
     }
     // To setninger av bioen om gangen; korte setninger henger på den forrige.
-    const bio = p.bio ? sentences(redact(p.bio)) : []
+    const bio = p.bio ? sentences(redact(p.bio)).filter((s) => !onlyContact(s)) : []
     let part = ''
     for (const sentence of bio) {
       part = part ? `${part} ${sentence}` : sentence
@@ -193,6 +244,7 @@ export async function buildSearchDocs(
       city: p.city,
       status: p.status,
       chunks,
+      topics: p.searchTopics,
     }
   })
 }
@@ -205,7 +257,7 @@ const embeddable = (c: SearchChunk) => c.kind !== 'study' && c.text.length >= 25
 
 const hashDoc = (doc: PersonDoc, model: string) =>
   createHash('sha256')
-    .update(JSON.stringify([model, doc.chunks]))
+    .update(JSON.stringify([model, doc.chunks.map(({ kind, text }) => ({ kind, text }))]))
     .digest('hex')
 
 const toBuffer = (vectors: Float32Array[]) => {
@@ -258,9 +310,10 @@ export async function reindexPeople(
 
   const todo = stale.slice(0, limit)
   for (let i = 0; i < todo.length; i += batchSize) {
-    const batch = todo
-      .slice(i, i + batchSize)
-      .map((d) => ({ doc: d, chunks: d.chunks.filter(embeddable) }))
+    const batch = todo.slice(i, i + batchSize).map((d) => ({
+      doc: d,
+      chunks: d.chunks.filter(embeddable).map(({ kind, text }) => ({ kind, text })),
+    }))
     const texts = batch.flatMap((b) => b.chunks.map((c) => c.text))
     const vectors = texts.length ? await embedder.embed(texts, 'passage') : []
     let at = 0
@@ -360,7 +413,7 @@ export type PeopleSearchHit = {
   /** Teksten som passet best, til å vise hvorfor personen kom med. */
   reason: string | null
   /** `name`: navnet, `text`: ordene står i profilen, `meaning`: lik i mening. */
-  matchedBy: 'name' | 'text' | 'meaning'
+  matchedBy: 'name' | 'text'
   score: number
 }
 
@@ -415,35 +468,52 @@ function termScore(term: string, words: string[], padded: string) {
  * Andelen innholdsord som står i teksten, direkte eller med et ord fra begrepet
  * (×0,8). `direct`: hvert ord som traff, traff selv, ikke via et synonym.
  */
-function lexicalScore(terms: ReturnType<typeof expandQuery>, text: string) {
+function lexicalScore(
+  terms: ReturnType<typeof expandQuery>,
+  text: string,
+  registry?: { text: string; common: (term: string) => boolean },
+  weights?: number[],
+) {
   if (!terms.length) return { score: 0, direct: false }
-  const joined = norm(text)
-  const words = joined.split(' ')
-  const padded = ` ${joined} `
-  let sum = 0
-  let direct = true
-  for (const { token, synonyms } of terms) {
-    const own = termScore(token, words, padded)
-    let best = own
-    for (const s of synonyms) if (best < 1) best = Math.max(best, 0.8 * termScore(s, words, padded))
-    if (best > own) direct = false
-    sum += best
+  const prep = (t: string) => {
+    const joined = norm(t)
+    return { words: joined.split(' '), padded: ` ${joined} ` }
   }
-  const fraction = sum / terms.length
+  const main = prep(registry ? text.replace(registry.text, ' ') : text)
+  const reg = registry ? prep(registry.text) : null
+  const score = (term: string) => {
+    const s = termScore(term, main.words, main.padded)
+    return reg && s < 1 && !registry!.common(term)
+      ? Math.max(s, termScore(term, reg.words, reg.padded))
+      : s
+  }
+  let sum = 0
+  let total = 0
+  let direct = true
+  for (const [i, { token, synonyms }] of terms.entries()) {
+    const w = weights?.[i] ?? 1
+    total += w
+    const own = score(token)
+    let best = own
+    for (const s of synonyms) if (best < 1) best = Math.max(best, 0.8 * score(s))
+    if (best > own) direct = false
+    sum += w * best
+  }
+  const fraction = sum / (total || 1)
   return { score: fraction >= 0.5 ? fraction : 0, direct }
 }
 
+/**
+ * Et ord som står i minst så stor andel av formålene (og i minst så mange), er
+ * standardtekst der. Målt: 2 % fjerner de fleste holdingselskapene fra «salg»,
+ * «eiendom» og «investor» og beholder «kunstig intelligens» og «skipsfart».
+ */
+const REGISTRY_COMMON = 0.02
+const REGISTRY_COMMON_MIN = 5
 /** Ordtreff veier så mye mer enn likhet i mening (målt i standardavvik). */
 const LEXICAL_WEIGHT = 6
 /** Et ordtreff teller bare når biten også ligner litt på søket (ikke metaforer som «an impatient rocket»). */
 const EVIDENCE_FLOOR = 0.5
-/** Treff bare på mening: standardavvik over snittet, når søket har et kjent begrep eller ordtreff. */
-const MEANING_CUTOFF = 2
-/** … og når det ikke har det. Rundt det tilfeldig støy når blant noen hundre personer. */
-const MEANING_CUTOFF_UNKNOWN = 3.5
-/** Høyst så mange treff bare på mening (og når søket ikke treffer noe kjent). */
-const MEANING_MAX = 10
-const MEANING_MAX_UNKNOWN = 5
 
 let embedderWarned = false
 
@@ -457,10 +527,9 @@ const spread = (xs: number[], m: number) =>
  * med ulike modeller. Uten `embedder` (eller før indeksen finnes) er det et rent
  * ordsøk, med begrepene. Medlemmer finner bare aktive medlemmer.
  *
- * Innstillingene er valgt ved å måle mot ekte profiler (673 personer): 48 søk
- * på norsk, engelsk og som setninger, mot fasit fra profilteksten og en
- * manuell vurdering av treffene. Med begreper og disse vektene: nDCG@10 0,87
- * mot 0,48 uten begreper og 0,69 med den første versjonen (e5-small).
+ * Innstillingene er valgt ved å måle mot ekte profiler (673 personer) med
+ * `pnpm search:eval`: 50 søk og rundt 1 500 vurderte treff. Tallene står i
+ * README, «Personsøk».
  */
 export async function searchPeopleByTopic(
   db: Db,
@@ -495,20 +564,73 @@ export async function searchPeopleByTopic(
   // Ord i profilen, også begrepene. Direkte treff i søkeord, stillinger og
   // selskaper er sikre; i bioen (fritekst, metaforer) og via synonymer må biten
   // også ligne på søket (se under).
-  const lexical = new Map<string, { score: number; chunk: string; trusted: boolean }>()
+  // Ord som står i mange formål fra Brønnøysundregistrene («salg», «investering»,
+  // «eiendom»), sier ikke noe om hva selskapet driver med, og teller bare der
+  // de står utenfor formålet (navnet, bransjen).
+  // Ett formål per selskap, så et selskap med mange ansatte ikke teller flere ganger.
+  const registryOf = new Map<string, string>()
+  for (const d of docs)
+    for (const c of d.chunks)
+      if (c.registry && c.companyId) registryOf.set(c.companyId, norm(c.registry))
+  const registryTexts = [...registryOf.values()].map((t) => ({
+    words: t.split(' '),
+    padded: ` ${t} `,
+  }))
+  const commonCache = new Map<string, boolean>()
+  const commonInRegistry = (term: string) => {
+    let common = commonCache.get(term)
+    if (common === undefined) {
+      const n = registryTexts.filter((t) => termScore(term, t.words, t.padded) > 0).length
+      common = n >= Math.max(REGISTRY_COMMON_MIN, REGISTRY_COMMON * registryTexts.length)
+      commonCache.set(term, common)
+    }
+    return common
+  }
+  // Med flere ord i søket veier sjeldne ord mer enn vanlige: i «health tech»
+  // sier «health» mer enn «tech», som står i hundrevis av profiler.
+  const allChunks = docs.flatMap((d) => d.chunks.map((c) => norm(c.text)))
+  const weights =
+    terms.length > 1
+      ? terms.map(({ token, synonyms }) => {
+          const n = allChunks.filter((t) => {
+            const words = t.split(' ')
+            const padded = ` ${t} `
+            return [token, ...synonyms].some((x) => termScore(x, words, padded) > 0)
+          }).length
+          return Math.log((allChunks.length + 1) / (n + 1))
+        })
+      : undefined
+  type LexicalHit = { score: number; chunk: string; trusted: boolean; bio: boolean }
+  // Beste treff, og beste utenfor bioen (se `topicsAgree`).
+  const lexical = new Map<string, { best: LexicalHit; notBio: LexicalHit | null }>()
   for (const d of docs) {
-    let best = { score: 0, chunk: '', trusted: false }
+    let best: LexicalHit = { score: 0, chunk: '', trusted: false, bio: false }
+    let notBio: LexicalHit | null = null
     for (const c of d.chunks) {
-      const hit = lexicalScore(terms, c.text)
+      const hit = lexicalScore(
+        terms,
+        c.text,
+        c.registry ? { text: c.registry, common: commonInRegistry } : undefined,
+        weights,
+      )
       const score = hit.score * (c.kind === 'topics' ? 1.2 : 1)
-      if (score > best.score)
-        best = { score, chunk: c.text, trusted: hit.direct && c.kind !== 'bio' }
+      if (score <= 0) continue
+      const candidate = {
+        score,
+        chunk: c.text,
+        trusted: hit.direct && c.kind !== 'bio',
+        bio: c.kind === 'bio',
+      }
+      if (score > best.score) best = candidate
+      if (!candidate.bio && score > (notBio?.score ?? 0)) notBio = candidate
     }
     if (d.city) {
       const hit = lexicalScore(terms, d.city)
-      if (hit.score > best.score) best = { score: hit.score, chunk: d.city, trusted: hit.direct }
+      const candidate = { score: hit.score, chunk: d.city, trusted: hit.direct, bio: false }
+      if (hit.score > best.score) best = candidate
+      if (hit.score > (notBio?.score ?? 0)) notBio = candidate
     }
-    if (best.score > 0) lexical.set(d.personId, best)
+    if (best.score > 0) lexical.set(d.personId, { best, notBio })
   }
 
   // Mening: søket alene, med begrepene, og begrepene alene; beste bit per person.
@@ -527,14 +649,16 @@ export async function searchPeopleByTopic(
           return null
         })
       : null
-  const semantic = new Map<string, { sim: number; chunk: string }>()
+  type SemanticHit = { sim: number; chunk: string }
+  const semantic = new Map<string, { best: SemanticHit; notBio: SemanticHit | null }>()
   const chunkSims = new Map<string, number>()
   const allSims: number[] = []
   if (embedder && queryVectors?.length) {
     const vectors = await loadVectors(db, embedder.model)
     for (const [personId, v] of vectors.byPerson) {
       if (!visible.has(personId) || v.dims !== queryVectors[0]!.length) continue
-      let best = { sim: -1, chunk: '' }
+      let best: SemanticHit = { sim: -1, chunk: '' }
+      let notBio: SemanticHit | null = null
       for (let c = 0; c < v.chunks.length; c++) {
         const off = c * v.dims
         let sim = -1
@@ -547,24 +671,18 @@ export async function searchPeopleByTopic(
         chunkSims.set(`${personId}\n${text}`, sim)
         allSims.push(sim)
         if (sim > best.sim) best = { sim, chunk: text }
+        if (v.chunks[c]!.kind !== 'bio' && sim > (notBio?.sim ?? -1)) notBio = { sim, chunk: text }
       }
-      semantic.set(personId, best)
+      semantic.set(personId, { best, notBio })
     }
   }
 
   // Sammenlignet innenfor søket: hvor mange standardavvik over snittet.
-  const personSims = [...semantic.values()].map((s) => s.sim)
+  const personSims = [...semantic.values()].map((s) => s.best.sim)
   const pm = mean(personSims)
   const ps = spread(personSims, pm)
   const cm = mean(allSims)
   const cs = spread(allSims, cm)
-  // Likhet i mening alene er usikker når søket verken treffer et kjent begrep
-  // eller står i noen profil («xyzzy», «origami»): da kreves mer. Blant n
-  // personer kan ingen ligge mer enn √(n−1) standardavvik over snittet, så med
-  // få personer (en ny database, testene) skaleres kravet ned.
-  const known = synonyms.length > 0 || lexical.size > 0
-  const base = known ? MEANING_CUTOFF : MEANING_CUTOFF_UNKNOWN
-  const cutoff = Math.min(base, Math.max(1, 0.6 * Math.sqrt(Math.max(personSims.length - 1, 1))))
 
   const scored: {
     id: string
@@ -572,16 +690,25 @@ export async function searchPeopleByTopic(
     matchedBy: PeopleSearchHit['matchedBy']
     reason: string | null
   }[] = []
+  const chunkZ = (id: string, text: string) => ((chunkSims.get(`${id}\n${text}`) ?? cm) - cm) / cs
+  // Har personen søkeord, er de fasiten: bioen (med metaforer, hobbyer og
+  // drømmer) teller bare når søkeordene også passer til søket.
+  const topicsAgree = (d: PersonDoc) => {
+    if (!d.topics.length) return true
+    if (lexicalScore(terms, d.topics.join(', '), undefined, weights).score > 0) return true
+    const chunk = d.chunks.find((c) => c.kind === 'topics')
+    return !!chunk && semantic.size > 0 && chunkZ(d.personId, chunk.text) >= EVIDENCE_FLOOR
+  }
   for (const d of docs) {
     const id = d.personId
-    const s = semantic.get(id)
+    const ignoreBio = !topicsAgree(d)
+    const sem = semantic.get(id)
+    const s = (ignoreBio ? sem?.notBio : sem?.best) ?? undefined
     const z = s ? (s.sim - pm) / ps : -Infinity
-    const lex = lexical.get(id)
+    const lexHit = lexical.get(id)
+    const lex = (ignoreBio ? lexHit?.notBio : lexHit?.best) ?? undefined
     const evidence =
-      lex &&
-      (lex.trusted ||
-        !semantic.size ||
-        ((chunkSims.get(`${id}\n${lex.chunk}`) ?? cm) - cm) / cs >= EVIDENCE_FLOOR)
+      lex && (lex.trusted || !semantic.size || chunkZ(id, lex.chunk) >= EVIDENCE_FLOOR)
     const lexScore = evidence ? lex!.score : 0
     if (byName.has(id)) {
       scored.push({
@@ -597,17 +724,12 @@ export async function searchPeopleByTopic(
         matchedBy: 'text',
         reason: lex!.chunk,
       })
-    } else if (s && z >= cutoff) {
-      scored.push({ id, score: z, matchedBy: 'meaning', reason: s.chunk })
     }
+    // Likhet i mening alene gir ikke treff: målt mot de ekte profilene var 87 %
+    // av slike treff feil (korte emnelister og formål som ligner på alt), og
+    // med søkeord var alle feil. Meningen rangerer og sjekker ordtreffene.
   }
-  // Høyst så mange treff bare på mening: de beste, resten er støy.
-  let meaningOnly = 0
-  const meaningMax = known ? MEANING_MAX : MEANING_MAX_UNKNOWN
-  const ranked = scored
-    .sort((a, b) => b.score - a.score)
-    .filter((r) => r.matchedBy !== 'meaning' || ++meaningOnly <= meaningMax)
-    .slice(0, Math.min(limit, 100))
+  const ranked = scored.sort((a, b) => b.score - a.score).slice(0, Math.min(limit, 100))
   if (!ranked.length) return []
 
   const ids = ranked.map((r) => r.id)

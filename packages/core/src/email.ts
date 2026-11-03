@@ -1,3 +1,4 @@
+import type { EmailKind } from '@esaf/db'
 import { z } from 'zod'
 
 /**
@@ -174,6 +175,19 @@ export type EmailMessage = {
    * sin liste og `X-…`; et ukjent hode stopper hele sendingen.
    */
   headers?: Record<string, string>
+  /** Til e-postloggen (`withEmailLog`): hva slags e-post, og for hvem. Sendes ikke. */
+  log?: EmailLogInfo
+}
+
+/** Det e-postloggen trenger utover selve e-posten. */
+export type EmailLogInfo = {
+  kind: EmailKind
+  /** Profilen e-posten gjelder. Uten den finnes profilen fra adressen. */
+  personId?: string | null
+  /** For varsler: kategorien, eller `all`. */
+  category?: string | null
+  /** For varsler: hvor mange varsler e-posten har. */
+  items?: number
 }
 
 export type EmailErrorReason = 'bounced' | 'rejected' | 'throttled' | 'unavailable'

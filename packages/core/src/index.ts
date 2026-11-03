@@ -102,6 +102,24 @@ export {
   type MailerOptions,
 } from './email.ts'
 export {
+  EMAIL_LOG_PAGE_SIZE,
+  EMAIL_LOG_RETENTION_DAYS,
+  emailCatalog,
+  emailKindNames,
+  emailKinds,
+  emailOverview,
+  emailStatuses,
+  emailStatusNames,
+  listEmailLog,
+  pruneEmailLog,
+  sendTestEmail,
+  withEmailLog,
+  type EmailCounts,
+  type EmailLogEntry,
+  type EmailOverview,
+  type EmailTemplate,
+} from './email-log.ts'
+export {
   escapeHtml,
   formatExpiry,
   invitationEmail,

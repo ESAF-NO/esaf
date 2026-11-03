@@ -5,17 +5,22 @@ import {
   passwordLinkEmail,
   passwordResetEmail,
   verificationEmail,
+  withEmailLog,
   type CreatedLink,
   type Mailer,
 } from '@esaf/core'
+import { db } from './db.server.ts'
 import { emailConfig, env } from './env.server.ts'
 
 /**
  * E-postene appen sender, med leverandøren fra miljøet (`EMAIL_PROVIDER`).
  * Innholdet står i `email-templates.ts` og sendingen i `email.ts` i @esaf/core.
- * Uten leverandør er `mailer` null, og ingenting sendes.
+ * Uten leverandør er `mailer` null, og ingenting sendes. Alt som sendes, skrives
+ * i e-postloggen (Admin → E-post).
  */
-export const mailer: Mailer | null = emailConfig ? createMailer(emailConfig) : null
+export const mailer: Mailer | null = emailConfig
+  ? withEmailLog(db, createMailer(emailConfig))
+  : null
 
 /** Hvor lenge bekreftelseslenken etter registrering virker, i sekunder (som Better Auths standard). */
 export const VERIFICATION_TTL_SECONDS = 60 * 60
@@ -55,7 +60,13 @@ export async function sendLinkEmail(link: CreatedLink): Promise<void> {
       : link.requestedBySelf
         ? passwordResetEmail({ url, expiresAt: link.expiresAt })
         : passwordLinkEmail({ url, createdBy: link.createdByName, expiresAt: link.expiresAt })
-  await requireMailer().send({ to: link.email, ...content })
+  const kind =
+    link.kind === 'invite'
+      ? 'invitation'
+      : link.requestedBySelf
+        ? 'password_reset'
+        : 'password_link'
+  await requireMailer().send({ to: link.email, ...content, log: { kind } })
 }
 
 /** Bekreftelseslenken etter registrering. Kalles av Better Auth. */
@@ -67,5 +78,5 @@ export async function sendVerificationEmail({
   url: string
 }): Promise<void> {
   const content = verificationEmail({ url, expiresInMinutes: VERIFICATION_TTL_SECONDS / 60 })
-  await requireMailer().send({ to: user.email, ...content })
+  await requireMailer().send({ to: user.email, ...content, log: { kind: 'verification' } })
 }

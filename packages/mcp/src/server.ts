@@ -1,4 +1,10 @@
-import { withMcpAudit, type Embedder, type ObjectStorage, type Viewer } from '@esaf/core'
+import {
+  withMcpAudit,
+  type Embedder,
+  type Mailer,
+  type ObjectStorage,
+  type Viewer,
+} from '@esaf/core'
 import type { Db } from '@esaf/db'
 import { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
@@ -8,6 +14,7 @@ import { registerAccountTools } from './tools/accounts.ts'
 import { registerAdminTools } from './tools/admin.ts'
 import { registerBadgeTools } from './tools/badges.ts'
 import { registerCompanyTools } from './tools/companies.ts'
+import { registerEmailTools } from './tools/email.ts'
 import { registerContentTools } from './tools/content.ts'
 import { registerDiscoveryTools } from './tools/discovery.ts'
 import { registerCohortAndEventTools } from './tools/events.ts'
@@ -44,6 +51,9 @@ Data model:
   citation. Badges are shown on profiles only (like GitHub achievements); there is no badge page and no
   notifications. Drafts are invisible until published. Rarer badges (by the share of active members holding them)
   give more XP, which gives a level shown on the profile.
+- e-mail: every e-mail the app sends is logged (kind, recipient, profile, subject, outcome; never the body, the
+  links in it are secrets). \`email_templates\` explains each e-mail and when it is sent, \`email_stats\` and
+  \`list_sent_emails\` show what was sent. Addresses are personal: show them only to the admin.
 - field sources: where a field on a profile or company came from. Members see "Fra <source> · ikke bekreftet"
   until the person confirms. Confidence (high/medium/low) is only visible to admins.
 
@@ -95,6 +105,8 @@ export type AdminMcpOptions = {
   fetchImage?: ImageFetcher
   /** Embedding-modellen for personsøket. */
   embedder?: Embedder | null
+  /** E-posten appen sender med, til testsending. Null uten leverandør. */
+  mailer?: Mailer | null
 }
 
 /** En MCP-server med adminverktøyene, for én forespørsel og én innlogget admin. */
@@ -106,6 +118,7 @@ export function createAdminMcpServer(options: AdminMcpOptions): McpServer {
     viewer,
     fetchImage: options.fetchImage ?? fetchPublicImage,
     embedder: options.embedder ?? null,
+    mailer: options.mailer ?? null,
     appUrl: options.appUrl.replace(/\/$/, ''),
   }
   const server = new McpServer(
@@ -124,6 +137,7 @@ export function createAdminMcpServer(options: AdminMcpOptions): McpServer {
   registerAccountTools(server, ctx)
   registerDiscoveryTools(server, ctx)
   registerBadgeTools(server, ctx)
+  registerEmailTools(server, ctx)
   registerPrompts(server)
   return server
 }

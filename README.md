@@ -702,7 +702,7 @@ Lokalt kan bildet bygges og prøves med `docker build -f apps/app/Dockerfile .`.
 
 ### E-post
 
-Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) (REST-API-et, uten egne avhengigheter): invitasjoner, lenker for nytt passord, «Glemt passord?», bekreftelse av e-postadressen ved registrering og varsler (se «Varsler og omtaler»). Leverandøren velges med `EMAIL_PROVIDER`; reglene for variablene står i `emailEnvIssues` i `packages/core/src/email.ts`, og e-postene i `packages/core/src/email-templates.ts`. Appen starter ikke med en ufullstendig konfigurasjon.
+Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) (REST-API-et, uten egne avhengigheter): invitasjoner, lenker for nytt passord, «Glemt passord?», bekreftelse av e-postadressen ved registrering, velkomst når en forespørsel er godkjent, og varsler (se «Varsler og omtaler»). Leverandøren velges med `EMAIL_PROVIDER`; reglene for variablene står i `emailEnvIssues` i `packages/core/src/email.ts`, og e-postene i `packages/core/src/email-templates.ts`. Appen starter ikke med en ufullstendig konfigurasjon.
 
 | `EMAIL_PROVIDER` | Hva skjer                                                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -720,6 +720,8 @@ Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare
 **Når det feiler.** Sendingen venter maks ti sekunder. Feil logges med HTTP-status og Cloudflares feilkode (for eksempel 10203 når sending er slått av for kontoen, 10004 ved for mange forespørsler, 10105 uten riktig abonnement), aldri med mottaker, nøkkel eller lenke. En mottaker som avviser e-posten permanent, regnes som feil. Admins ser feilen i dialogen og får lenken å dele selv; «Glemt passord?» viser aldri feilen, siden svaret skal være det samme for alle adresser.
 
 **Registrering.** Med e-post er registrering åpen (se «Veien inn»). Bekreftelseslenken virker i en time; prøver personen å logge inn med en ubekreftet konto, sendes en ny. Feiler sendingen ved registrering, svarer siden likevel «Sjekk e-posten din», siden den svarer likt for adresser som har konto fra før.
+
+**Oversikten for admins.** Admin → E-post (og MCP-verktøyene `email_templates`, `email_preview`, `email_stats`, `list_sent_emails` og `send_test_email`) viser alle e-postene appen sender, med eksempel og når de sendes, tall per type og dag, hva medlemmene har valgt for varsler, og loggen over hver sending: type, adresse, profil, emne og utfall. Alt går gjennom `withEmailLog` i `packages/core/src/email-log.ts`. Innholdet lagres ikke, fordi lenkene er hemmeligheter, og loggen slettes etter ett år. «Send test til meg» sender eksempelet til adressen admin logger inn med. Velkomsten («Du er med i ESAF») sendes når en admin godkjenner en forespørsel.
 
 ## Før produksjon
 

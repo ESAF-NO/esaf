@@ -161,6 +161,19 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
     ],
   },
   {
+    id: 'email',
+    title: 'E-post',
+    description:
+      'Alle e-postene appen sender, med eksempler og når de sendes, tall for hva som er sendt og feilet, loggen over hvem som har fått hva, og test til deg selv.',
+    tools: [
+      'email_templates',
+      'email_preview',
+      'email_stats',
+      'list_sent_emails',
+      'send_test_email',
+    ],
+  },
+  {
     id: 'discovery',
     title: 'Søk og ES-universet',
     description:

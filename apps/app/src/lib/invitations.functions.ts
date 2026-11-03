@@ -19,7 +19,7 @@ import { rethrowForClient, withViewer as run } from '#/server/access.server.ts'
 import { auth } from '#/server/auth.server.ts'
 import { db } from '#/server/db.server.ts'
 import {
-  emailActive,
+  emailAvailable,
   linkUrl,
   logEmailFailure,
   mailer,
@@ -81,8 +81,12 @@ async function deliver(link: CreatedLink): Promise<ShareableLink> {
  * lenker deles av admin.
  */
 export const fetchAuthOptions = createServerFn({ method: 'GET' }).handler(async () => {
-  const emailEnabled = await emailActive()
-  return { selfSignUp: emailEnabled, emailEnabled }
+  const [selfSignUp, emailEnabled, invitationEmail] = await Promise.all([
+    emailAvailable('verification'),
+    emailAvailable('password_reset'),
+    emailAvailable('invitation'),
+  ])
+  return { selfSignUp, emailEnabled, invitationEmail }
 })
 
 /** Det siden for en lenke viser. Tokenet er hemmeligheten; ingen innlogging kreves. */

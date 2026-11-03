@@ -324,6 +324,19 @@ const cohortName = (details: Entry['details']) =>
 const speaker = ({ subject, details, entry }: Parts) =>
   entry.subject ? subject : (text(details.speaker) ?? 'en ukjent')
 
+/** Som `emailKindNames` i @esaf/core, som ikke kan importeres i klienten. */
+const emailKindNames: Record<string, string> = {
+  invitation: 'Invitasjon',
+  password_link: 'Lenke for nytt passord fra admin',
+  password_reset: 'Glemt passord',
+  verification: 'Bekreft e-postadressen',
+  welcome: 'Du er med i ESAF',
+  notification: 'Varsel',
+  digest: 'Oppsummering av varsler',
+}
+const emailKindName = (kind: unknown) =>
+  (typeof kind === 'string' && emailKindNames[kind]) || 'ukjent'
+
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
 const count = (value: unknown) => (typeof value === 'number' ? value : 0)
 const list = (value: unknown) =>
@@ -828,6 +841,28 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
     <>
       {actor} slo på e-post fra appen igjen
       {text(details.reason) ? `: «${text(details.reason)}»` : ''}.
+    </>
+  ),
+  'email.kind_off': ({ actor, details }) => (
+    <>
+      {actor} slo av e-posten «{emailKindName(details.kind)}»
+      {text(details.reason) ? `: «${text(details.reason)}»` : ''}.
+    </>
+  ),
+  'email.kind_on': ({ actor, details }) => (
+    <>
+      {actor} slo på e-posten «{emailKindName(details.kind)}» igjen.
+    </>
+  ),
+  'email.block': ({ actor, details }) => (
+    <>
+      {actor} stoppet all e-post til {text(details.email) ?? 'en adresse'}
+      {text(details.reason) ? `: «${text(details.reason)}»` : ''}.
+    </>
+  ),
+  'email.unblock': ({ actor, details }) => (
+    <>
+      {actor} sendte e-post til {text(details.email) ?? 'en adresse'} igjen.
     </>
   ),
   'badge.create': ({ actor, details }) => (

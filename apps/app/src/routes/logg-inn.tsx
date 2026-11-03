@@ -36,7 +36,7 @@ export const Route = createFileRoute('/logg-inn')({
 })
 
 function SignIn() {
-  const { emailEnabled } = Route.useLoaderData()
+  const { emailEnabled, selfSignUp } = Route.useLoaderData()
   const router = useRouter()
   const { til } = Route.useSearch()
   const [error, setError] = useState<string | null>(null)
@@ -120,7 +120,7 @@ function SignIn() {
       setPending(false)
       setError(
         error.status === 403
-          ? emailEnabled
+          ? selfSignUp
             ? 'Du må bekrefte e-postadressen din før du kan logge inn. Vi har sendt deg en ny lenke; sjekk innboksen.'
             : 'Du må bekrefte e-postadressen din før du kan logge inn. Sjekk innboksen.'
           : 'Feil e-post eller passord.',

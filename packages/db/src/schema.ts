@@ -1640,6 +1640,15 @@ export const appSetting = pgTable('app_setting', {
   updatedAt: timestamps.updatedAt,
 })
 
+/** Adresser appen ikke sender til, satt av en admin (Admin → E-post). */
+export const emailBlock = pgTable('email_block', {
+  /** Normalisert til små bokstaver. */
+  email: text().primaryKey(),
+  reason: text(),
+  createdByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+  createdAt: timestamps.createdAt,
+})
+
 export type EmailKind = (typeof emailKind.enumValues)[number]
 export type EmailStatus = (typeof emailStatus.enumValues)[number]
 

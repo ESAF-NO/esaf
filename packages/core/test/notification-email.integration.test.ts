@@ -14,7 +14,9 @@ import {
   loadViewer,
   markAllNotificationsRead,
   sendNotificationEmails,
-  withEmailPause,
+  blockEmailAddress,
+  setEmailKindEnabled,
+  withEmailSwitch,
   setEmailPaused,
   setEmailPreference,
   submitAccessRequest,
@@ -85,7 +87,7 @@ describe.skipIf(!url)('varsler på e-post', () => {
     sent = []
     failWith = null
     await db.execute(
-      sql`truncate ${schema.appSetting}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
+      sql`truncate ${schema.appSetting}, ${schema.emailBlock}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
     )
     const adminId = await account('Ada Admin')
     await grantRoleAsOperator(db, {
@@ -314,7 +316,12 @@ describe.skipIf(!url)('varsler på e-post', () => {
 
     // Mens den er på pause, stopper også e-post som sendes direkte.
     await expect(
-      withEmailPause(db, mailer).send({ to: 'x@example.test', subject: 's', text: 't', html: 'h' }),
+      withEmailSwitch(db, mailer).send({
+        to: 'x@example.test',
+        subject: 's',
+        text: 't',
+        html: 'h',
+      }),
     ).rejects.toMatchObject({ reason: 'paused' })
 
     await setEmailPaused(db, admin, { paused: false })
@@ -349,5 +356,35 @@ describe.skipIf(!url)('varsler på e-post', () => {
       { action: 'email.pause', details: { reason: 'Test' } },
       { action: 'email.resume', details: { reason: null } },
     ])
+  })
+
+  it('varsler kan slås av for seg; det som kom mens de var av, sendes ikke etterpå', async () => {
+    await setEmailKindEnabled(db, admin, { kind: 'notification', enabled: false })
+    await commentOnOlasPost('Mens varsler var av')
+    await run(soon())
+    expect(sent).toEqual([])
+    await setEmailKindEnabled(db, admin, { kind: 'notification', enabled: true })
+    await run(soon())
+    expect(sent).toEqual([])
+    await commentOnOlasPost('Etter')
+    await run(new Date(Date.now() + 8 * 60 * 1000))
+    expect(sent.map((m) => m.text.includes('Etter'))).toEqual([true])
+  })
+
+  it('til en stoppet adresse sendes ingenting, og det prøves ikke igjen', async () => {
+    await blockEmailAddress(db, admin, { email: 'Ola.Hansen@example.test', reason: 'Ba om det' })
+    await commentOnOlasPost()
+    const switched = withEmailSwitch(db, mailer)
+    const result = await sendNotificationEmails(db, {
+      mailer: switched,
+      appUrl: APP,
+      secret: SECRET,
+      now: soon(),
+      log: { error() {} },
+    })
+    expect(result).toMatchObject({ emails: 0, failed: 1 })
+    expect(sent).toEqual([])
+    // Merket som ferdig, så det ikke prøves hver runde.
+    expect(await emailed()).toHaveLength(1)
   })
 })

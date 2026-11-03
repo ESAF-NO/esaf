@@ -1,5 +1,5 @@
 {
-  "id": "5b299d64-b50f-41ad-abb0-c13f295e566f",
+  "id": "e4fc3937-a001-4bca-a7c8-09ab07fc7e16",
   "prevId": "cc94f95c-c9ab-4df3-92f0-5b99762cd3c1",
   "version": "7",
   "dialect": "postgresql",
@@ -2474,6 +2474,58 @@
           "tableTo": "person",
           "columnsFrom": [
             "decided_by_person_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_block": {
+      "name": "email_block",
+      "schema": "",
+      "columns": {
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_person_id": {
+          "name": "created_by_person_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "email_block_created_by_person_id_person_id_fk": {
+          "name": "email_block_created_by_person_id_person_id_fk",
+          "tableFrom": "email_block",
+          "tableTo": "person",
+          "columnsFrom": [
+            "created_by_person_id"
           ],
           "columnsTo": [
             "id"

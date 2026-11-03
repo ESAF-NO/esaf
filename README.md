@@ -723,7 +723,13 @@ Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare
 
 **Oversikten for admins.** Admin → E-post (og MCP-verktøyene `email_templates`, `email_preview`, `email_stats`, `list_sent_emails` og `send_test_email`) viser alle e-postene appen sender, med eksempel og når de sendes, tall per type og dag, hva medlemmene har valgt for varsler, og loggen over hver sending: type, adresse, profil, emne og utfall. Alt går gjennom `withEmailLog` i `packages/core/src/email-log.ts`. Innholdet lagres ikke, fordi lenkene er hemmeligheter, og loggen slettes etter ett år. «Send test til meg» sender eksempelet til adressen admin logger inn med. Velkomsten («Du er med i ESAF») sendes når en admin godkjenner en forespørsel.
 
-**Sette e-post på pause.** Admin → E-post → «Sett på pause» (eller MCP `set_email_paused`) stopper all e-post fra appen med en gang, uten deploy. Så lenge den er på pause, lages invitasjoner og lenker for nytt passord, men admin deler dem selv; registrering og «Glemt passord?» er stengt. Når e-post slås på igjen, sendes ikke varslene som kom under pausen, men velkomster til nye medlemmer sendes. Begge deler står i revisjonsloggen, med begrunnelsen. Uten `EMAIL_PROVIDER` er e-post av uansett. Reglene står i `packages/core/src/email-switch.ts`.
+**Slå av e-post.** På Admin → E-post (eller med MCP) kan en admin, med en gang og uten deploy:
+
+- sette **all e-post** på pause («Sett på pause», `set_email_paused`)
+- slå av **én type e-post**, for eksempel oppsummeringer eller invitasjoner (bryteren på hver e-post, `set_email_kind_enabled`)
+- stoppe all e-post til **én adresse** («Stoppede adresser», «Stopp» i loggen, `block_email_address`)
+
+Det som er av, sendes ikke, og forsøket står i loggen med grunnen. Invitasjoner og lenker for nytt passord lages likevel, og admin deler dem selv. Er bekreftelsen av, er registrering stengt; er «Glemt passord» av, er «Glemt passord?» stengt, også på serveren. Når noe slås på igjen, sendes ikke varslene som kom mens det var av, men velkomster sendes. Alt står i revisjonsloggen med begrunnelse. Uten `EMAIL_PROVIDER` er e-post av uansett. Reglene står i `packages/core/src/email-switch.ts`.
 
 ## Før produksjon
 

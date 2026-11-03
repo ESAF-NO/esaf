@@ -71,11 +71,11 @@ export function invitations(
   db: Db,
   options: {
     sendPasswordReset?: (link: CreatedLink) => Promise<void>
-    /** E-post er på pause: «Glemt passord?» finnes ikke, som uten leverandør. */
-    emailPaused?: () => Promise<boolean>
+    /** Om e-posten kan sendes nå. Uten den finnes ikke «Glemt passord?», som uten leverandør. */
+    emailAvailable?: (kind: 'password_reset') => Promise<boolean>
   } = {},
 ) {
-  const { sendPasswordReset, emailPaused } = options
+  const { sendPasswordReset, emailAvailable } = options
   return {
     id: 'esaf-invitations',
     endpoints: {
@@ -129,7 +129,7 @@ export function invitations(
         INVITATION_PATHS.requestPasswordReset,
         { method: 'POST', body: z.object({ email: z.string().max(254) }) },
         async (ctx) => {
-          if (!sendPasswordReset || (await emailPaused?.())) {
+          if (!sendPasswordReset || (emailAvailable && !(await emailAvailable('password_reset')))) {
             throw APIError.from('NOT_FOUND', { code: 'NOT_FOUND', message: 'Not found' })
           }
           const link = await requestPasswordReset(db, { email: ctx.body.email })

@@ -1,4 +1,10 @@
-import type { EmailLogEntry, EmailOverview, EmailSwitch, EmailTemplate } from '@esaf/core'
+import type {
+  EmailBlock,
+  EmailLogEntry,
+  EmailOverview,
+  EmailSwitch,
+  EmailTemplate,
+} from '@esaf/core'
 import type { EmailKind, EmailStatus, NotificationEmailFrequency } from '@esaf/db'
 import { createFileRoute, isNotFound, Link, notFound, useRouter } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
@@ -11,7 +17,10 @@ import {
   emailLogPageSize,
   fetchEmailAdmin,
   fetchEmailLog,
+  blockAddress,
   sendEmailTest,
+  unblockAddress,
+  updateEmailKind,
   updateEmailPaused,
 } from '#/lib/email-admin.functions.ts'
 import { plural, timestamp } from '#/lib/format.ts'
@@ -63,6 +72,8 @@ const errorNames: Record<string, string> = {
   throttled: 'for mange på kort tid',
   unavailable: 'Cloudflare svarte ikke',
   paused: 'e-post var på pause',
+  disabled: 'denne e-posten var slått av',
+  blocked: 'adressen er stoppet',
   error: 'ukjent feil',
 }
 
@@ -83,9 +94,18 @@ function EmailAdmin() {
       </p>
       <Setup sending={data.sending} setup={data.setup} toggle={data.toggle} />
       <Numbers overview={data.overview} />
-      <Templates templates={data.templates} sending={data.sending && !data.toggle.paused} />
+      <Templates
+        templates={data.templates}
+        sending={data.sending && !data.toggle.paused}
+        toggle={data.toggle}
+      />
+      <Blocks blocks={data.blocks} />
       <Preferences overview={data.overview} />
-      <SentLog first={data.log} kindNames={kindNames} />
+      <SentLog
+        first={data.log}
+        kindNames={kindNames}
+        blocked={new Set(data.blocks.map((b) => b.email))}
+      />
     </div>
   )
 }
@@ -381,7 +401,28 @@ function KindTable({ kinds }: { kinds: Data['overview']['kinds'] }) {
 // Malene
 // ---------------------------------------------------------------------------
 
-function Templates({ templates, sending }: { templates: EmailTemplate[]; sending: boolean }) {
+/** Hva det betyr at en e-post er av, for dem som slår den av. */
+const offNotes: Record<EmailTemplate['kind'], string> = {
+  invitation: 'Invitasjonene lages, men du må dele lenken selv.',
+  verification: 'Registrering er stengt så lenge den er av.',
+  welcome: 'Velkomstene som venter, sendes når den slås på igjen (innen en uke).',
+  password_reset: '«Glemt passord?» er stengt så lenge den er av.',
+  password_link: 'Lenkene lages, men du må dele dem selv.',
+  notification: 'Varsler som kommer mens den er av, sendes ikke når den slås på igjen.',
+  digest: 'Det som kommer mens den er av, kommer ikke med når den slås på igjen.',
+}
+
+function Templates({
+  templates,
+  sending,
+  toggle,
+}: {
+  templates: EmailTemplate[]
+  sending: boolean
+  toggle: EmailSwitch
+}) {
+  const { viewer } = Route.useRouteContext()
+  const canManage = viewer.permissions.includes('email.manage')
   const [previewing, setPreviewing] = useState<EmailTemplate | null>(null)
   return (
     <section aria-labelledby="maler" className="space-y-4">
@@ -394,35 +435,103 @@ function Templates({ templates, sending }: { templates: EmailTemplate[]; sending
         </p>
       </div>
       <Card className="divide-y divide-stone-100">
-        {templates.map((t) => (
-          <article key={t.kind} className="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:p-5">
-            <div className="min-w-0">
-              <h3 className="font-medium text-stone-950">{t.name}</h3>
-              <p className="mt-0.5 text-sm text-stone-500">Emne: «{t.sample.subject}»</p>
-              <dl className="mt-3 grid gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[8rem_1fr]">
-                <dt className="text-stone-500">Når</dt>
-                <dd className="text-stone-800">{t.trigger}</dd>
-                <dt className="text-stone-500">Til</dt>
-                <dd className="text-stone-800">{t.recipient}</dd>
-                <dt className="text-stone-500">Tidspunkt</dt>
-                <dd className="text-stone-800">{t.timing}</dd>
-                <dt className="text-stone-500">Avmelding</dt>
-                <dd className="text-stone-800">
-                  {t.unsubscribe ?? 'Ingen: sendes bare når noe skjer med personen selv.'}
-                </dd>
-              </dl>
-            </div>
-            <div className="flex items-start gap-2 sm:flex-col sm:items-stretch">
-              <Button variant="secondary" size="sm" onClick={() => setPreviewing(t)}>
-                <Eye className="size-4" aria-hidden /> Forhåndsvis
-              </Button>
-              <TestButton kind={t.kind} sending={sending} />
-            </div>
-          </article>
-        ))}
+        {templates.map((t) => {
+          const state = toggle.kinds.find((k) => k.kind === t.kind)
+          const off = state ? !state.enabled : false
+          return (
+            <article
+              key={t.kind}
+              className={cx('grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:p-5', off && 'bg-stone-50')}
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-medium text-stone-950">{t.name}</h3>
+                  {off && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      Av
+                    </span>
+                  )}
+                </div>
+                {off && state && (
+                  <p className="mt-1 text-sm text-amber-800">
+                    Slått av
+                    {state.changed
+                      ? ` ${state.changed.by ? `av ${state.changed.by.fullName} ` : ''}${timestamp(state.changed.at)}`
+                      : ''}
+                    {state.reason ? `: «${state.reason}»` : ''}. {offNotes[t.kind]}
+                  </p>
+                )}
+                <p className="mt-0.5 text-sm text-stone-500">Emne: «{t.sample.subject}»</p>
+                <dl className="mt-3 grid gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[8rem_1fr]">
+                  <dt className="text-stone-500">Når</dt>
+                  <dd className="text-stone-800">{t.trigger}</dd>
+                  <dt className="text-stone-500">Til</dt>
+                  <dd className="text-stone-800">{t.recipient}</dd>
+                  <dt className="text-stone-500">Tidspunkt</dt>
+                  <dd className="text-stone-800">{t.timing}</dd>
+                  <dt className="text-stone-500">Avmelding</dt>
+                  <dd className="text-stone-800">
+                    {t.unsubscribe ?? 'Ingen: sendes bare når noe skjer med personen selv.'}
+                  </dd>
+                </dl>
+              </div>
+              <div className="flex flex-wrap items-start gap-2 sm:w-48 sm:flex-col sm:items-stretch">
+                {canManage && state && <KindSwitch kind={t.kind} enabled={state.enabled} />}
+                <Button variant="secondary" size="sm" onClick={() => setPreviewing(t)}>
+                  <Eye className="size-4" aria-hidden /> Forhåndsvis
+                </Button>
+                <TestButton kind={t.kind} sending={sending} />
+              </div>
+            </article>
+          )
+        })}
       </Card>
       {previewing && <PreviewDialog template={previewing} onClose={() => setPreviewing(null)} />}
     </section>
+  )
+}
+
+function KindSwitch({ kind, enabled }: { kind: EmailTemplate['kind']; enabled: boolean }) {
+  const router = useRouter()
+  const update = useServerFn(updateEmailKind)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function change(next: boolean) {
+    setBusy(true)
+    setError(null)
+    try {
+      await update({ data: { kind, enabled: next } })
+      await router.invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke endre det.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="space-y-1">
+      <label
+        className={cx(
+          'flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-sm ring-1 ring-stone-200 ring-inset',
+          busy && 'opacity-60',
+        )}
+      >
+        <span className="font-medium text-stone-800">{enabled ? 'Sendes' : 'Av'}</span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          disabled={busy}
+          onChange={(e) => change(e.target.checked)}
+          className="peer sr-only"
+        />
+        <span className="relative h-5 w-8 shrink-0 rounded-full bg-stone-300 transition peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2 after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:shadow after:transition peer-checked:after:translate-x-3" />
+      </label>
+      {error && (
+        <p role="alert" className="text-xs text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -507,6 +616,122 @@ function PreviewDialog({ template, onClose }: { template: EmailTemplate; onClose
 }
 
 // ---------------------------------------------------------------------------
+// Stoppede adresser
+// ---------------------------------------------------------------------------
+
+function Blocks({ blocks }: { blocks: EmailBlock[] }) {
+  const { viewer } = Route.useRouteContext()
+  const canManage = viewer.permissions.includes('email.manage')
+  const router = useRouter()
+  const block = useServerFn(blockAddress)
+  const unblock = useServerFn(unblockAddress)
+  const [email, setEmail] = useState('')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function act(key: string, fn: () => Promise<unknown>) {
+    setBusy(key)
+    setError(null)
+    try {
+      await fn()
+      await router.invalidate()
+      return true
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
+      return false
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section aria-labelledby="stoppet" className="space-y-4">
+      <div>
+        <h2 id="stoppet" className="text-base font-semibold text-stone-950">
+          Stoppede adresser
+        </h2>
+        <p className="mt-1 text-sm text-stone-500">
+          Appen sender ingenting til disse adressene: ingen varsler, invitasjoner eller lenker for
+          nytt passord. Lenkene lages likevel, og du deler dem selv.
+        </p>
+      </div>
+      {canManage && (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            const ok = await act('ny', () =>
+              block({ data: { email, reason: reason.trim() || undefined } }),
+            )
+            if (ok) {
+              setEmail('')
+              setReason('')
+            }
+          }}
+        >
+          <Field label="E-postadresse" className="min-w-56 flex-1">
+            <Input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              maxLength={254}
+            />
+          </Field>
+          <Field label="Hvorfor? (valgfritt)" className="min-w-56 flex-1">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
+          </Field>
+          <Button type="submit" variant="secondary" disabled={busy !== null}>
+            <MailX className="size-4" aria-hidden /> {busy === 'ny' ? 'Stopper …' : 'Stopp e-post'}
+          </Button>
+        </form>
+      )}
+      {error && <ErrorText>{error}</ErrorText>}
+      {blocks.length === 0 ? (
+        <p className="text-sm text-stone-500">Ingen adresser er stoppet.</p>
+      ) : (
+        <Card className="divide-y divide-stone-100">
+          {blocks.map((b) => (
+            <div key={b.email} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-medium break-all text-stone-900">{b.email}</p>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  {b.person ? (
+                    <Link
+                      to="/medlemmer/$personId"
+                      params={{ personId: b.person.personId }}
+                      className="font-medium text-stone-700 hover:underline"
+                    >
+                      {b.person.fullName}
+                    </Link>
+                  ) : (
+                    'Ingen profil'
+                  )}{' '}
+                  · stoppet {b.createdBy ? `av ${b.createdBy.fullName} ` : ''}
+                  {timestamp(b.createdAt)}
+                  {b.reason ? ` · «${b.reason}»` : ''}
+                </p>
+              </div>
+              {canManage && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => act(b.email, () => unblock({ data: { email: b.email } }))}
+                >
+                  {busy === b.email ? 'Lagrer …' : 'Send igjen'}
+                </Button>
+              )}
+            </div>
+          ))}
+        </Card>
+      )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Valgene for varsler
 // ---------------------------------------------------------------------------
 
@@ -572,9 +797,12 @@ type Filter = { kind?: EmailKind; status?: EmailStatus; q?: string }
 function SentLog({
   first,
   kindNames,
+  blocked,
 }: {
   first: EmailLogEntry[]
   kindNames: Record<EmailKind, string>
+  /** Adressene som er stoppet. */
+  blocked: Set<string>
 }) {
   const fetchPage = useServerFn(fetchEmailLog)
   // Det som vises hører til siden fra loaderen det ble hentet etter. Kommer en ny
@@ -682,7 +910,12 @@ function SentLog({
       ) : (
         <Card className="divide-y divide-stone-100" aria-busy={loading}>
           {entries.map((e) => (
-            <LogRow key={e.id} entry={e} kindName={kindNames[e.kind]} />
+            <LogRow
+              key={e.id}
+              entry={e}
+              kindName={kindNames[e.kind]}
+              blocked={blocked.has(e.toEmail)}
+            />
           ))}
         </Card>
       )}
@@ -699,7 +932,20 @@ function SentLog({
   )
 }
 
-function LogRow({ entry: e, kindName }: { entry: EmailLogEntry; kindName: string }) {
+function LogRow({
+  entry: e,
+  kindName,
+  blocked,
+}: {
+  entry: EmailLogEntry
+  kindName: string
+  blocked: boolean
+}) {
+  const { viewer } = Route.useRouteContext()
+  const canManage = viewer.permissions.includes('email.manage')
+  const router = useRouter()
+  const block = useServerFn(blockAddress)
+  const [busy, setBusy] = useState(false)
   const failed = e.status !== 'sent'
   return (
     <div className="flex gap-3 px-4 py-3">
@@ -745,6 +991,32 @@ function LogRow({ entry: e, kindName }: { entry: EmailLogEntry; kindName: string
           )}
         </p>
       </div>
+      {blocked ? (
+        <span className="self-center rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-600">
+          Stoppet
+        </span>
+      ) : (
+        canManage && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-center"
+            disabled={busy}
+            title="Appen sender ikke mer til denne adressen"
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await block({ data: { email: e.toEmail } })
+                await router.invalidate()
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            {busy ? 'Stopper …' : 'Stopp'}
+          </Button>
+        )
+      )}
     </div>
   )
 }

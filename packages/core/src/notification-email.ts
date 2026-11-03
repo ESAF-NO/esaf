@@ -4,7 +4,7 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from 'dri
 import { z } from 'zod'
 import { assertMember, type Viewer } from './access.ts'
 import { EmailError, type Mailer } from './email.ts'
-import { getEmailSwitch } from './email-switch.ts'
+import { getEmailSwitch, resumedAt, type SwitchableEmailKind } from './email-switch.ts'
 import { notificationEmail, welcomeEmail, type NotificationEmailItem } from './email-templates.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
@@ -28,8 +28,10 @@ const { membership, notification, notificationEmailPreference, person, user } = 
  * - Hver e-post har en lenke for å slutte med den slags e-post, som virker uten
  *   innlogging (signert, se `unsubscribeToken`), og `List-Unsubscribe` med ett
  *   klikk (RFC 8058), så e-postprogrammet kan tilby det selv.
- * - Er e-post satt på pause (`email-switch.ts`), sendes ingenting, og det som
- *   kom mens den var av, sendes ikke når den slås på igjen (unntatt velkomsten).
+ * - Er e-post satt på pause, eller varsler eller oppsummeringer slått av
+ *   (`email-switch.ts`), sendes de ikke, og det som kom mens de var av, sendes
+ *   ikke når de slås på igjen. Velkomsten sendes. Til en stoppet adresse prøves
+ *   det ikke igjen.
  * - Velkomsten etter at en admin godkjente en forespørsel, sendes med en gang
  *   (neste runde), til alle: personen venter på svaret og er ikke i appen. Den
  *   er ikke et varsel man kan melde seg av, og har ingen avmelding. Velkomsten
@@ -450,8 +452,7 @@ export async function sendNotificationEmails(
     if (!locked) return { ...run, skipped: true }
     const toggle = await getEmailSwitch(tx)
     if (toggle.paused) return { ...run, skipped: true, paused: true }
-    // Varslene som kom mens e-post var på pause, sendes ikke. Velkomsten sendes.
-    const resumedAt = toggle.changedAt
+    const kindOn = (kind: SwitchableEmailKind) => toggle.kinds.find((k) => k.kind === kind)!.enabled
 
     // Uleste, ikke sendte varsler innenfor vinduet, til aktive medlemmer med bekreftet konto.
     const candidates = await tx
@@ -470,9 +471,6 @@ export async function sendNotificationEmails(
         and(
           isNull(notification.readAt),
           isNull(notification.emailedAt),
-          resumedAt
-            ? or(eq(notification.type, 'welcome'), gte(notification.createdAt, resumedAt))
-            : undefined,
           gte(notification.createdAt, new Date(now.getTime() - EMAIL_WINDOW_MS)),
           or(
             eq(notification.type, 'welcome'),
@@ -487,7 +485,10 @@ export async function sendNotificationEmails(
       .limit(5000)
     if (!candidates.length) return run
 
-    const welcomes = candidates.filter((c) => c.type === 'welcome' && c.payload.emailWelcome)
+    // Velkomsten sendes også om den kom mens e-post var av, så lenge den er på nå.
+    const welcomes = kindOn('welcome')
+      ? candidates.filter((c) => c.type === 'welcome' && c.payload.emailWelcome)
+      : []
     if (welcomes.length) {
       const sent = await sendWelcomes(tx, welcomes, options, now, log, run)
       if (!sent) return run
@@ -504,6 +505,12 @@ export async function sendNotificationEmails(
       const own = prefs.get(c.recipientPersonId)
       const frequency = frequencyFor(own, category)
       if (!isDue(c.createdAt, frequency, now)) continue
+      // Varsler og oppsummeringer kan slås av hver for seg (`email-switch.ts`), og
+      // det som kom mens de var av (eller e-post var på pause), sendes ikke.
+      const kind = frequency === 'instant' ? 'notification' : 'digest'
+      if (!kindOn(kind)) continue
+      const back = resumedAt(toggle, kind)
+      if (back && c.createdAt < back) continue
       // Slås e-post på igjen, sendes ikke det som kom mens den var av.
       const since = own?.get(category.id)?.since
       if (since && c.createdAt < since) continue
@@ -583,7 +590,10 @@ export async function sendNotificationEmails(
         run.notifications += items.length
       } catch (error) {
         run.failed++
-        if (error instanceof EmailError && error.reason === 'bounced') {
+        if (
+          error instanceof EmailError &&
+          (error.reason === 'bounced' || error.reason === 'blocked')
+        ) {
           // Adressen tar ikke imot e-post; prøves ikke igjen.
           await markEmailed(tx, sentIds, now)
           continue
@@ -641,7 +651,10 @@ async function sendWelcomes(
       run.notifications++
     } catch (error) {
       run.failed++
-      if (error instanceof EmailError && error.reason === 'bounced') {
+      if (
+        error instanceof EmailError &&
+        (error.reason === 'bounced' || error.reason === 'blocked')
+      ) {
         await markEmailed(tx, [w.id], now)
         continue
       }

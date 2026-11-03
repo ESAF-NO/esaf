@@ -102,11 +102,21 @@ export {
   type MailerOptions,
 } from './email.ts'
 export {
+  blockEmailAddress,
+  emailKindAvailable,
   getEmailSwitch,
+  isEmailBlocked,
   isEmailPaused,
+  listEmailBlocks,
+  setEmailKindEnabled,
   setEmailPaused,
-  withEmailPause,
+  switchableEmailKinds,
+  unblockEmailAddress,
+  withEmailSwitch,
+  type EmailBlock,
+  type EmailKindSwitch,
   type EmailSwitch,
+  type SwitchableEmailKind,
 } from './email-switch.ts'
 export {
   EMAIL_LOG_PAGE_SIZE,

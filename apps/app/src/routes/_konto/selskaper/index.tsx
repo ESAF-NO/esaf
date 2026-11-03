@@ -1,6 +1,6 @@
 import type { Company } from '@esaf/core'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { Building2, MapPin, Plus, Rocket, Search } from 'lucide-react'
+import { Briefcase, Building2, Landmark, MapPin, Plus, Rocket, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { SearchInput } from '#/components/SearchInput.tsx'
@@ -19,13 +19,16 @@ import { roleText, statusLabels, statusOrder, type CompanyStatus } from '#/lib/c
 import { fetchCompanies } from '#/lib/companies.functions.ts'
 import { fold } from '#/lib/member-search.ts'
 
-const views = ['es', 'alle'] as const
+const views = ['es', 'jobb', 'styre', 'alle'] as const
 const sorts = ['navn', 'nyest'] as const
 
 export const Route = createFileRoute('/_konto/selskaper/')({
   validateSearch: z.object({
     q: z.string().optional().catch(undefined),
-    /** Uten: startet av alumni. `es`: startet på Entreprenørskolen. `alle`: alle selskaper. */
+    /**
+     * Uten: startet av alumni. `es`: startet på Entreprenørskolen. `jobb`: der
+     * alumni jobber eller har jobbet. `styre`: bare styreverv. `alle`: alle.
+     */
     vis: z.enum(views).optional().catch(undefined),
     bransje: z.string().optional().catch(undefined),
     status: z.enum(statusOrder).optional().catch(undefined),
@@ -52,7 +55,21 @@ function Companies() {
 
   const founded = useMemo(() => companies.filter((c) => c.startedByAlumni), [companies])
   const atEs = useMemo(() => companies.filter((c) => c.esCompany), [companies])
-  const tab = vis === 'alle' ? companies : vis === 'es' ? atEs : founded
+  const workplaces = useMemo(
+    () => companies.filter((c) => !c.startedByAlumni && !c.boardOnly),
+    [companies],
+  )
+  const boards = useMemo(() => companies.filter((c) => c.boardOnly), [companies])
+  const tab =
+    vis === 'alle'
+      ? companies
+      : vis === 'es'
+        ? atEs
+        : vis === 'jobb'
+          ? workplaces
+          : vis === 'styre'
+            ? boards
+            : founded
 
   // Valgene i nedtrekkslistene er det som finnes i fanen, med antall.
   const industries = useMemo(() => tally(tab, (c) => c.industries), [tab])
@@ -112,7 +129,7 @@ function Companies() {
         title="Selskaper"
         description={
           companies.length
-            ? `${founded.length} startet av ES-alumni, ${atEs.length} av dem på Entreprenørskolen · ${companies.length} der ES-ere jobber eller har jobbet`
+            ? `${founded.length} startet av ES-alumni, ${atEs.length} av dem på Entreprenørskolen · ${workplaces.length} arbeidsplasser · ${boards.length} med ES-alumni i styret`
             : 'Selskaper ES-alumni har startet, jobber i eller har jobbet i.'
         }
       />
@@ -125,7 +142,9 @@ function Companies() {
           options={[
             { value: undefined, label: 'Startet av alumni', count: founded.length },
             { value: 'es', label: 'Startet på ES', count: atEs.length },
-            { value: 'alle', label: 'Alle selskaper', count: companies.length },
+            { value: 'jobb', label: 'Arbeidsplasser', count: workplaces.length },
+            { value: 'styre', label: 'Styreverv', count: boards.length },
+            { value: 'alle', label: 'Alle', count: companies.length },
           ]}
         />
         <div className="flex flex-col gap-2 lg:flex-row">
@@ -278,10 +297,20 @@ function CompanyCard({ company: c }: { company: Company }) {
             </Link>
           </h2>
           <p className="flex flex-wrap items-center gap-x-2 text-sm text-stone-500">
-            {c.startedByAlumni && (
+            {c.startedByAlumni ? (
               <span className="inline-flex items-center gap-1 font-medium text-brand-700">
                 <Rocket className="size-3.5" aria-hidden />
                 {c.esCompany ? 'ES-selskap' : 'Gründerselskap'}
+              </span>
+            ) : c.boardOnly ? (
+              <span className="inline-flex items-center gap-1">
+                <Landmark className="size-3.5" aria-hidden />
+                Styreverv
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <Briefcase className="size-3.5" aria-hidden />
+                Arbeidsplass
               </span>
             )}
             {c.cohortYears.length > 0 && <span>ES {c.cohortYears.join(', ')}</span>}
@@ -302,7 +331,13 @@ function CompanyCard({ company: c }: { company: Company }) {
       <div className="mt-auto pt-4">
         <div className="border-t border-stone-100 pt-4">
           <p className="mb-2 text-xs font-medium text-stone-500">
-            {c.people.length === 1 ? 'Fra ES' : `${c.people.length} fra ES`}
+            {c.boardOnly
+              ? c.people.length === 1
+                ? 'I styret'
+                : `${c.people.length} i styret`
+              : c.people.length === 1
+                ? 'Fra ES'
+                : `${c.people.length} fra ES`}
           </p>
           <ul className="space-y-2">
             {c.people.slice(0, 4).map((p) => (

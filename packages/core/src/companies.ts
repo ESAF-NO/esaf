@@ -154,8 +154,13 @@ export const companyInput = z.object({
 export type CompanyInput = z.input<typeof companyInput>
 
 /** Sterkeste tilknytning først: grunnla, ES-team, jobber der, har jobbet der. */
-export type CompanyRole = 'founder' | 'es' | 'current' | 'past'
-const rank: Record<CompanyRole, number> = { founder: 0, es: 1, current: 2, past: 3 }
+/** `board`: sitter i styret nå, uten å jobbe der (et styreverv, ikke en jobb). */
+export type CompanyRole = 'founder' | 'es' | 'current' | 'board' | 'past'
+const rank: Record<CompanyRole, number> = { founder: 0, es: 1, current: 2, board: 3, past: 4 }
+
+/** Styreverv: styremedlem, styreleder, varamedlem, board member, chair … */
+const boardTitle = /styre|varamedlem|\bvara\b|\bboard\b|\bchair/i
+export const isBoardTitle = (title: string | null) => !!title && boardTitle.test(title)
 
 export type CompanyPerson = {
   personId: string
@@ -188,6 +193,8 @@ export type Company = {
   startedByAlumni: boolean
   /** Noen har oppgitt det som selskapet sitt på Entreprenørskolen. */
   esCompany: boolean
+  /** Ikke startet av alumni, og alumni er bare (eller var bare) i styret, ingen har jobbet der. */
+  boardOnly: boolean
   people: CompanyPerson[]
   /** Kullene til gründerne og ES-teamet. */
   cohortYears: number[]
@@ -292,7 +299,13 @@ async function loadLinks(db: Db | Tx, companyIds?: string[]): Promise<Link[]> {
       ...r,
       photo: photoUrls(photoKey),
       claimed: userId !== null,
-      role: (founder ? 'founder' : r.endYear === null ? 'current' : 'past') as CompanyRole,
+      role: (founder
+        ? 'founder'
+        : r.endYear !== null
+          ? 'past'
+          : isBoardTitle(r.title)
+            ? 'board'
+            : 'current') as CompanyRole,
     })),
   ]
 }
@@ -361,11 +374,15 @@ const isTeam = (p: CompanyPerson) => p.role === 'founder' || p.esTeam
 function summarize(
   people: CompanyPerson[],
   years: Map<string, number[]>,
-): Pick<Company, 'startedByAlumni' | 'esCompany' | 'cohortYears'> {
+): Pick<Company, 'startedByAlumni' | 'esCompany' | 'boardOnly' | 'cohortYears'> {
   const team = people.filter(isTeam)
   return {
     startedByAlumni: team.length > 0,
     esCompany: people.some((p) => p.esTeam),
+    boardOnly:
+      team.length === 0 &&
+      people.length > 0 &&
+      people.every((p) => p.role === 'board' || (p.role === 'past' && isBoardTitle(p.title))),
     cohortYears: [...new Set(team.flatMap((p) => years.get(p.personId) ?? []))].sort(),
   }
 }

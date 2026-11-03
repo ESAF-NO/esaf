@@ -22,6 +22,7 @@ import {
   DomainError,
   fillUnclaimedContact,
   getEditableProfile,
+  updateProfile,
   getPersonAdmin,
   grantRoleAsOperator,
   listApiTokens,
@@ -339,6 +340,19 @@ describe.skipIf(!url)('MCP: nøkler og adminverktøy i @esaf/core', () => {
         ['bio', 'entreprenorskolen.no'],
         ['experience', 'proff.no'],
       ])
+
+      // En admin retter én jobb og bioen: bio-kilden gjelder ikke lenger, men
+      // kilden til erfaringen gjelder fortsatt resten av lista, og er sett over.
+      await updateProfile(db, admin, ada, {
+        ...profile,
+        bio: 'Skrev det første programmet.',
+        experience: [{ ...profile.experience[0]!, title: 'Daglig leder' }],
+      })
+      const after = await db
+        .select()
+        .from(schema.fieldSource)
+        .where(eq(schema.fieldSource.entityId, ada))
+      expect(after.map((s) => [s.field, s.reviewedAt !== null])).toEqual([['experience', true]])
       const [company] = await db.select().from(schema.company)
       expect(company!.status).toBe('unknown')
       expect(

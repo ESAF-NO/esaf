@@ -127,6 +127,9 @@ export function normalizeWebsite(raw: string): string | null {
   return url.pathname === '/' && !url.search && !url.hash ? url.origin : url.href
 }
 
+/** Lengste bransjenavn på et selskap (de lengste fra Enhetsregisteret er rundt 110 tegn). */
+export const COMPANY_INDUSTRY_MAX = 150
+
 /** Felles validering av selskapsinfo, brukt av webappen og senere MCP. Tomme felt lagres som `null`. */
 export const companyInput = z.object({
   name: companyName,
@@ -147,7 +150,12 @@ export const companyInput = z.object({
   }),
   foundedYear: yearInput(1800),
   location: optionalText(80),
-  industries: tagList('bransjenavn', 'bransjer'),
+  /**
+   * Bransjene fra Enhetsregisteret (NACE) er lange («Forskning og eksperimentell
+   * utvikling innenfor naturvitenskap og teknikk»), så grensen er høyere enn for
+   * emner. Med 40 kunne ingen endre et selskap med en slik bransje.
+   */
+  industries: tagList('bransjenavn', 'bransjer', COMPANY_INDUSTRY_MAX),
   status: z.enum(companyStatuses),
 })
 

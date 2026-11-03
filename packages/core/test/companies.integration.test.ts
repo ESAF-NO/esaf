@@ -345,6 +345,15 @@ describe.skipIf(!url)('selskaper', () => {
       canMerge: false,
     })
     expect(await page(kari, 'syrlig')).toMatchObject({ websiteLabel: 'syrlig.no' })
+    // Lange bransjenavn fra Enhetsregisteret stopper ikke andre endringer.
+    const nace = 'Forskning og eksperimentell utvikling innenfor naturvitenskap og teknikk'
+    await save({ industries: [nace, 'Energi'] })
+    await save({ industries: [nace, 'Energi'], tagline: 'Syretester for gründere og forskere' })
+    expect(await getEditableCompany(db, ola, 'syrlig')).toMatchObject({
+      industries: [nace, 'Energi'],
+      tagline: 'Syretester for gründere og forskere',
+    })
+    await expect(save({ industries: ['x'.repeat(151)] })).rejects.toThrow('150')
     await save({ website: 'http://syrlig.no/om-oss?ref=esaf' })
     expect((await page(kari, 'syrlig')).website).toBe('http://syrlig.no/om-oss?ref=esaf')
   })

@@ -312,6 +312,7 @@ export {
   companyForEdit,
   companyInput,
   companySlug,
+  COMPANY_INDUSTRY_MAX,
   companyStatuses,
   formerNamesInput,
   getCompany,

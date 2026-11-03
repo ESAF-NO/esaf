@@ -1,5 +1,7 @@
 import {
+  acceptAllReview,
   addFieldSources,
+  bulkReviewKinds,
   clearImportedField,
   companySourceFields,
   decideCompanyLink,
@@ -156,6 +158,20 @@ export function registerAdminTools(server: McpServer, ctx: ToolContext) {
     effect: 'write',
     idempotent: true,
     run: async (args, ctx) => ({ reviewed: await markSourcesReviewed(ctx.db, ctx.viewer, args) }),
+  })
+
+  defineTool(server, ctx, {
+    name: 'accept_all_review',
+    title: 'Accept everything of one kind in review',
+    description:
+      'Bulk accept in review: "events" first merges similar uncertain events (same company, date and type) into ' +
+      'one with all their sources, then shows the rest to members; "quotes" shows all uncertain quotes; ' +
+      '"sources" marks all imported fields as looked over. Duplicates and member suggestions are never bulk ' +
+      'accepted. Ask the admin first.',
+    input: z.object({ kind: z.enum(bulkReviewKinds) }),
+    effect: 'write',
+    idempotent: true,
+    run: ({ kind }, ctx) => acceptAllReview(ctx.db, ctx.viewer, kind),
   })
 
   defineTool(server, ctx, {

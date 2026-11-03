@@ -68,6 +68,8 @@ export type CompanyEvent = {
   type: CompanyEventType
   text: string
   source: { label: string; url: string | null } | null
+  /** Flere kilder, når like hendelser fra flere saker er slått sammen. */
+  moreSources: { label: string; url: string | null }[]
   /** Usikker hendelse som bare de som kan redigere, ser. */
   review: boolean
 }
@@ -127,6 +129,11 @@ export async function loadCompanyEvents(
       type: r.type,
       text: r.text,
       source: label ? { label, url } : null,
+      moreSources: r.moreSources.flatMap((m) => {
+        const moreUrl = safeHttpUrl(m.url)
+        const moreLabel = m.label ?? hostLabel(moreUrl)
+        return moreLabel ? [{ label: moreLabel, url: moreUrl }] : []
+      }),
       review: r.confidence === 'low',
     }
   })

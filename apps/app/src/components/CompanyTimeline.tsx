@@ -131,7 +131,7 @@ function EventRow({
           )}
         </p>
         <p className="mt-1 text-sm leading-relaxed text-stone-800">{e.text}</p>
-        {(e.source || canEdit) && (
+        {(e.source || e.moreSources.length > 0 || canEdit) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
             {e.source &&
               (e.source.url ? (
@@ -147,6 +147,22 @@ function EventRow({
               ) : (
                 <span>{e.source.label}</span>
               ))}
+            {e.moreSources.map((m) =>
+              m.url ? (
+                <a
+                  key={m.url}
+                  href={m.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 hover:text-brand-600"
+                >
+                  {m.label}
+                  <ArrowUpRight className="size-3" aria-hidden />
+                </a>
+              ) : (
+                <span key={m.label}>{m.label}</span>
+              ),
+            )}
             {canEdit && (
               <span className="flex items-center gap-1">
                 {e.review && (

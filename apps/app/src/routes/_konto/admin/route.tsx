@@ -116,7 +116,9 @@ function AdminLayout() {
     .flatMap((g) => g.items)
     .filter((i) => pathname === i.to || pathname.startsWith(`${i.to}/`))
     .sort((a, b) => b.to.length - a.to.length)[0]
-  const review = counts && counts.total > 0 ? (counts.total > 999 ? '999+' : counts.total) : null
+  // Bare det som venter på svar (forslag og tilknytninger); importresten er ikke et varsel.
+  const review =
+    counts && counts.attention > 0 ? (counts.attention > 99 ? '99+' : counts.attention) : null
 
   const menu = (
     <div className="space-y-5">
@@ -140,7 +142,7 @@ function AdminLayout() {
                     <span className="rounded-full bg-amber-100 px-1.5 py-px text-xs font-medium text-amber-800 tabular-nums">
                       <span className="sr-only">, </span>
                       {review}
-                      <span className="sr-only"> til gjennomgang</span>
+                      <span className="sr-only"> venter på svar</span>
                     </span>
                   )}
                 </Link>
@@ -177,7 +179,7 @@ function AdminLayout() {
               {review !== null && current?.to !== '/admin/gjennomgang' && (
                 <span className="rounded-full bg-amber-100 px-1.5 py-px text-xs font-medium text-amber-800 tabular-nums">
                   {review}
-                  <span className="sr-only"> til gjennomgang</span>
+                  <span className="sr-only"> venter på svar</span>
                 </span>
               )}
               <ChevronDown

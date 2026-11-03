@@ -14,6 +14,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CheckCheck,
   CircleCheck,
   GitMerge,
   Pencil,
@@ -22,6 +23,7 @@ import {
   X,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import { z } from 'zod'
 import { LinkRequestCard, SuggestionCard, useAction } from '#/components/Contributions.tsx'
 import { PersonMergeDialog } from '#/components/PersonMergeDialog.tsx'
@@ -42,6 +44,7 @@ import { mergeCompany, removeCompanyEvent } from '#/lib/companies.functions.ts'
 import { kull, partialDate, plural } from '#/lib/format.ts'
 import { removeQuote } from '#/lib/quotes.functions.ts'
 import {
+  acceptAll,
   approveEvent,
   approveQuote,
   approveSources,
@@ -150,10 +153,15 @@ function Review() {
         </EmptyState>
       ) : (
         <>
-          <p className="mb-3 text-sm text-stone-500" aria-live="polite">
-            {plural(page.total, 'sak', 'saker')}
-            {pages > 1 && ` · side ${side} av ${pages}`}
-          </p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-stone-500" aria-live="polite">
+              {plural(page.total, 'sak', 'saker')}
+              {pages > 1 && ` · side ${side} av ${pages}`}
+            </p>
+            {(page.kind === 'events' || page.kind === 'quotes' || page.kind === 'sources') && (
+              <AcceptAllButton kind={page.kind} total={page.total} />
+            )}
+          </div>
           <ul className="space-y-3">
             {page.kind === 'suggestions' &&
               page.items.map((s) => (
@@ -712,6 +720,105 @@ function PersonPair({ pair }: { pair: ReviewPersonPair }) {
             await router.invalidate()
           }}
         />
+      )}
+    </>
+  )
+}
+
+/** Hva «Godta alle» gjør, for hver del av køen den finnes i. */
+const acceptAllText = {
+  events: {
+    button: 'Slå sammen like og godta alle',
+    title: 'Godta alle hendelsene?',
+    body: [
+      'Like hendelser (samme selskap, dag og type) blir først én, med kildene fra alle. Er en av dem allerede bekreftet, er det den som blir stående.',
+      'Så vises alle hendelsene på selskapssidene. Du kan fortsatt rette og slette dem der.',
+    ],
+  },
+  quotes: {
+    button: 'Godta alle',
+    title: 'Godta alle sitatene?',
+    body: [
+      'Alle sitatene vises for medlemmene, hos personen og selskapet de er koblet til. Du kan fortsatt rette og slette dem der.',
+    ],
+  },
+  sources: {
+    button: 'Godta alle',
+    title: 'Sette alle importerte felt som sett over?',
+    body: [
+      'Feltene tas ut av køen. Medlemmene ser dem allerede; ingenting endres på profilene.',
+      'Profilen viser fortsatt «ikke bekreftet» til personen selv bekrefter.',
+    ],
+  },
+} as const
+
+function AcceptAllButton({
+  kind,
+  total,
+}: {
+  kind: 'events' | 'quotes' | 'sources'
+  total: number
+}) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const text = acceptAllText[kind]
+
+  async function confirm() {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await acceptAll({ data: { kind } })
+      setDone(
+        kind === 'events'
+          ? `${plural(result.accepted, 'hendelse', 'hendelser')} godtatt${result.merged ? `, ${result.merged} like slått sammen` : ''}.`
+          : kind === 'quotes'
+            ? `${plural(result.accepted, 'sitat', 'sitater')} godtatt.`
+            : `${plural(result.accepted, 'felt', 'felt')} satt som sett over.`,
+      )
+      setOpen(false)
+      await router.invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Noe gikk galt.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="flex items-center gap-3">
+        <p role="status" className="text-sm text-emerald-700">
+          {done}
+        </p>
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+          <CheckCheck className="size-4" aria-hidden /> {text.button} ({total})
+        </Button>
+      </div>
+      {open && (
+        <Dialog title={text.title} onClose={() => setOpen(false)} busy={busy}>
+          <div className="space-y-2 text-sm text-stone-600">
+            {text.body.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+            <p>Det står i loggen.</p>
+          </div>
+          {error && (
+            <div className="mt-3">
+              <ErrorText>{error}</ErrorText>
+            </div>
+          )}
+          <DialogActions>
+            <Button variant="secondary" onClick={() => setOpen(false)} disabled={busy}>
+              Avbryt
+            </Button>
+            <Button variant="brand" onClick={confirm} disabled={busy} data-autofocus>
+              {busy ? 'Godtar …' : `Godta alle ${total}`}
+            </Button>
+          </DialogActions>
+        </Dialog>
       )}
     </>
   )

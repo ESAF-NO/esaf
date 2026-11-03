@@ -2,6 +2,7 @@ import {
   AccessDeniedError,
   DomainError,
   type Embedder,
+  type Mailer,
   type ObjectStorage,
   type Viewer,
 } from '@esaf/core'
@@ -19,6 +20,8 @@ export type ToolContext = {
   fetchImage: ImageFetcher
   /** Embedding-modellen for personsøket. Uten den er søket et rent ordsøk. */
   embedder: Embedder | null
+  /** E-posten appen sender med. Null uten leverandør. */
+  mailer: Mailer | null
   /** Adressen til appen, for lenker i svarene, f.eks. `https://app.esaf.no`. */
   appUrl: string
 }

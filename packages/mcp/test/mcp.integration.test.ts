@@ -16,6 +16,8 @@ import {
   listMcpConnections,
   loadViewer,
   pruneOAuth,
+  withEmailLog,
+  type EmailMessage,
   type ObjectStorage,
   type Viewer,
 } from '@esaf/core'
@@ -54,6 +56,7 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
   let owner: Viewer
   let admin: Viewer
   let handle: (request: Request) => Promise<Response>
+  const mailbox: EmailMessage[] = []
   /** Adressene verktøyene har bedt om å hente bilder fra. */
   const fetched: string[] = []
 
@@ -69,6 +72,11 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       resource: ENDPOINT,
       resourceMetadataUrl: METADATA,
       clientAddress: (request) => request.headers.get('x-test-address') ?? '203.0.113.7',
+      // Logget som i appen, med en postkasse i stedet for Cloudflare.
+      mailer: withEmailLog(db, {
+        provider: 'console',
+        send: async (m) => void mailbox.push(m),
+      }),
       // Forutsigbar «modell»: rakett, romfart og space er samme begrep.
       embedder: {
         model: 'test-model',
@@ -771,6 +779,53 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
         await callError(client, 'create_invitation', { email: 'ny2@example.test', role: 'admin' }),
       ).toMatch(/hovedadmin/)
       await client.close()
+    })
+  })
+
+  describe('e-post', () => {
+    it('forklarer e-postene, sender test bare til admin selv, og viser den i loggen og tallene', async () => {
+      const client = await connect(await tokenFor(admin))
+      const { templates, sending } = await call<{
+        sending: boolean
+        templates: { kind: string; trigger: string; sampleSubject: string }[]
+      }>(client, 'email_templates')
+      expect(sending).toBe(true)
+      expect(templates.map((t) => t.kind)).toContain('welcome')
+      const preview = await call<{ subject: string; text: string; html?: string }>(
+        client,
+        'email_preview',
+        { kind: 'welcome' },
+      )
+      expect(preview.subject).toBe('Du er med i ESAF')
+      expect(preview.html).toBeUndefined()
+
+      mailbox.length = 0
+      const { to } = await call<{ to: string }>(client, 'send_test_email', { kind: 'invitation' })
+      const [account] = await db
+        .select({ email: schema.user.email })
+        .from(schema.user)
+        .where(eq(schema.user.id, admin!.userId))
+      expect(to).toBe(account!.email)
+      expect(mailbox.map((m) => [m.to, m.subject])).toEqual([
+        [account!.email, '[Test] Invitasjon til ESAF'],
+      ])
+
+      const log = await call<{ kind: string; toEmail: string; person: { personId: string } }[]>(
+        client,
+        'list_sent_emails',
+        { kind: 'test' },
+      )
+      expect(log).toMatchObject([
+        { kind: 'test', toEmail: account!.email, person: { personId: admin!.personId } },
+      ])
+      const stats = await call<{ last30: { sent: number } }>(client, 'email_stats')
+      expect(stats.last30.sent).toBeGreaterThanOrEqual(1)
+
+      // En nøkkel med bare lesing kan se, men ikke sende.
+      const read = await connect(await tokenFor(admin, true))
+      expect((await read.listTools()).tools.map((t) => t.name)).not.toContain('send_test_email')
+      await client.close()
+      await read.close()
     })
   })
 

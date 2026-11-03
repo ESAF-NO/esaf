@@ -33,6 +33,7 @@ const tabs = [
   { to: '/admin/arrangementer', label: 'Arrangementer', permission: 'profiles.edit' },
   { to: '/admin/selskaper', label: 'Selskaper', permission: 'profiles.edit' },
   { to: '/admin/merker', label: 'Merker', permission: 'badges.manage' },
+  { to: '/admin/e-post', label: 'E-post', permission: 'audit.read' },
   { to: '/admin/logg', label: 'Logg', permission: 'audit.read' },
   { to: '/admin/mcp', label: 'MCP', permission: 'mcp.access' },
 ] as const

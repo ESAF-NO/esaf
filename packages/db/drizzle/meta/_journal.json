@@ -225,6 +225,20 @@
       "when": 1793572206336,
       "tag": "0031_badges",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793699461148,
+      "tag": "0032_email_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793700770767,
+      "tag": "0033_email_switches",
+      "breakpoints": true
     }
   ]
 }

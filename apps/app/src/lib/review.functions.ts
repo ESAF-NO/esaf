@@ -1,4 +1,6 @@
 import {
+  acceptAllReview,
+  bulkReviewKinds,
   clearImportedField,
   confirmCompanyEvent,
   confirmQuote,
@@ -50,3 +52,8 @@ export const dismissPair = createServerFn({ method: 'POST' })
     }),
   )
   .handler(({ data }) => run((viewer) => dismissDuplicate(db, viewer, data)))
+
+/** «Godta alle» for hendelser, sitater eller importerte felt. */
+export const acceptAll = createServerFn({ method: 'POST' })
+  .validator(z.object({ kind: z.enum(bulkReviewKinds) }))
+  .handler(({ data }) => run((viewer) => acceptAllReview(db, viewer, data.kind)))

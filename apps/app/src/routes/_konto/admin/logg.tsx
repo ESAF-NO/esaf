@@ -613,6 +613,17 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {parts.actor} la inn et sitat fra {speaker(parts)}.
     </>
   ),
+  'review.accept_all': ({ actor, details }) => (
+    <>
+      {actor}{' '}
+      {details.kind === 'events'
+        ? `godtok alle de usikre hendelsene (${count(details.accepted) ?? 0}${count(details.merged) ? `, ${count(details.merged)} like slått sammen` : ''})`
+        : details.kind === 'quotes'
+          ? `godtok alle de usikre sitatene (${count(details.accepted) ?? 0})`
+          : `satte alle importerte felt som sett over (${count(details.accepted) ?? 0})`}
+      .
+    </>
+  ),
   'quote.confirm': (parts) => (
     <>
       {parts.actor} bekreftet hvem som sa et sitat fra {speaker(parts)}.

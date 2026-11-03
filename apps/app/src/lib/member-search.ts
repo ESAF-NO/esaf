@@ -26,7 +26,7 @@ function haystack(m: MemberListItem) {
 export function filterMembers(
   members: MemberListItem[],
   { q, kull }: { q?: string; kull?: number },
-) {
+): MemberListItem[] {
   const words = fold(q ?? '')
     .split(/\s+/)
     .filter(Boolean)

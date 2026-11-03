@@ -4,13 +4,13 @@ import { Building2, MapPin, Plus, Rocket, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { SearchInput } from '#/components/SearchInput.tsx'
+import { FilterSummary, Segmented, sameText, tally } from '#/components/Filters.tsx'
 import {
   Avatar,
   Button,
   buttonClass,
   Card,
   CompanyLogo,
-  cx,
   EmptyState,
   PageHeader,
   Select,
@@ -19,44 +19,43 @@ import { roleText, statusLabels, statusOrder, type CompanyStatus } from '#/lib/c
 import { fetchCompanies } from '#/lib/companies.functions.ts'
 import { fold } from '#/lib/member-search.ts'
 
+const views = ['es', 'alle'] as const
+const sorts = ['navn', 'nyest'] as const
+
 export const Route = createFileRoute('/_konto/selskaper/')({
   validateSearch: z.object({
     q: z.string().optional().catch(undefined),
-    vis: z.enum(['alle']).optional().catch(undefined),
+    /** Uten: startet av alumni. `es`: startet på Entreprenørskolen. `alle`: alle selskaper. */
+    vis: z.enum(views).optional().catch(undefined),
     bransje: z.string().optional().catch(undefined),
     status: z.enum(statusOrder).optional().catch(undefined),
+    kull: z.coerce.number().int().optional().catch(undefined),
+    /** Uten: flest fra ES først. */
+    sorter: z.enum(sorts).optional().catch(undefined),
   }),
   loader: () => fetchCompanies(),
   head: () => ({ meta: [{ title: 'Selskaper – ESAF' }] }),
   component: Companies,
 })
 
+type Search = ReturnType<typeof Route.useSearch>
+
 const PAGE = 48
-const same = (a: string, b: string) => a.toLocaleLowerCase('nb') === b.toLocaleLowerCase('nb')
 
 function Companies() {
   const companies = Route.useLoaderData()
-  const { q, vis, bransje, status } = Route.useSearch()
+  const search = Route.useSearch()
+  const { q, vis, bransje, status, kull, sorter } = search
   const { viewer } = Route.useRouteContext()
   const navigate = useNavigate({ from: Route.fullPath })
   const [shown, setShown] = useState(PAGE)
-  const all = vis === 'alle'
+
   const founded = useMemo(() => companies.filter((c) => c.startedByAlumni), [companies])
-  const tab = all ? companies : founded
+  const atEs = useMemo(() => companies.filter((c) => c.esCompany), [companies])
+  const tab = vis === 'alle' ? companies : vis === 'es' ? atEs : founded
 
-  // Bransjene som finnes i fanen, mest brukt først. Skrivemåten varierer, så de telles uten store bokstaver.
-  const industries = useMemo(() => {
-    const counts = new Map<string, { label: string; n: number }>()
-    for (const c of tab) {
-      for (const tag of c.industries) {
-        const key = tag.toLocaleLowerCase('nb')
-        counts.set(key, { label: counts.get(key)?.label ?? tag, n: (counts.get(key)?.n ?? 0) + 1 })
-      }
-    }
-    return [...counts.values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label, 'nb'))
-  }, [tab])
-
-  // Statusene som finnes i fanen, i fast rekkefølge.
+  // Valgene i nedtrekkslistene er det som finnes i fanen, med antall.
+  const industries = useMemo(() => tally(tab, (c) => c.industries), [tab])
   const statuses = useMemo(
     () =>
       statusOrder
@@ -64,14 +63,19 @@ function Companies() {
         .filter((s) => s.n > 0),
     [tab],
   )
+  const years = useMemo(
+    () => [...new Set(tab.flatMap((c) => c.cohortYears))].sort((a, b) => b - a),
+    [tab],
+  )
 
   const results = useMemo(() => {
     const words = fold(q ?? '')
       .split(/\s+/)
       .filter(Boolean)
-    return tab.filter((c) => {
-      if (bransje && !c.industries.some((tag) => same(tag, bransje))) return false
+    const hits = tab.filter((c) => {
+      if (bransje && !c.industries.some((tag) => sameText(tag, bransje))) return false
       if (status && c.status !== status) return false
+      if (kull !== undefined && !c.cohortYears.includes(kull)) return false
       const text = fold(
         [
           c.name,
@@ -86,12 +90,21 @@ function Companies() {
       )
       return words.every((w) => text.includes(w))
     })
-  }, [tab, q, bransje, status])
+    if (sorter === 'navn') return [...hits].sort((a, b) => a.name.localeCompare(b.name, 'nb'))
+    if (sorter === 'nyest') {
+      const newest = (c: Company) => Math.max(0, ...c.cohortYears)
+      return [...hits].sort((a, b) => newest(b) - newest(a) || a.name.localeCompare(b.name, 'nb'))
+    }
+    return hits
+  }, [tab, q, bransje, status, kull, sorter])
 
-  const setSearch = (patch: { q?: string; bransje?: string; status?: CompanyStatus }) => {
+  const setSearch = (patch: Partial<Search>) => {
     setShown(PAGE)
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
   }
+  const filtered = Boolean(q || bransje || status || kull !== undefined)
+  const reset = () =>
+    setSearch({ q: undefined, bransje: undefined, status: undefined, kull: undefined })
 
   return (
     <>
@@ -99,43 +112,24 @@ function Companies() {
         title="Selskaper"
         description={
           companies.length
-            ? `${founded.length} startet av ES-alumni · ${companies.length} der ES-ere jobber eller har jobbet`
+            ? `${founded.length} startet av ES-alumni, ${atEs.length} av dem på Entreprenørskolen · ${companies.length} der ES-ere jobber eller har jobbet`
             : 'Selskaper ES-alumni har startet, jobber i eller har jobbet i.'
         }
       />
 
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
-        <div
-          className="inline-flex shrink-0 self-start rounded-xl bg-stone-200/60 p-1"
-          role="tablist"
-        >
-          {(
-            [
-              [undefined, 'Startet av alumni'],
-              ['alle', 'Alle selskaper'],
-            ] as const
-          ).map(([value, label]) => (
-            <Link
-              key={label}
-              from={Route.fullPath}
-              to="/selskaper"
-              search={(prev) => ({ ...prev, vis: value })}
-              onClick={() => setShown(PAGE)}
-              role="tab"
-              aria-selected={vis === value}
-              className={cx(
-                'inline-flex h-8 items-center rounded-lg px-3 text-sm font-medium transition',
-                vis === value
-                  ? 'bg-white text-stone-950 shadow-card'
-                  : 'text-stone-600 hover:text-stone-900',
-              )}
-            >
-              {label}
-            </Link>
-          ))}
-        </div>
-        <div className="flex flex-1 flex-col gap-2 sm:flex-row">
-          <div className="relative min-w-0 flex-1 md:max-w-md">
+      <div className="mb-4 flex flex-col gap-3">
+        <Segmented
+          label="Hvilke selskaper"
+          value={vis}
+          onChange={(value) => setSearch({ vis: value })}
+          options={[
+            { value: undefined, label: 'Startet av alumni', count: founded.length },
+            { value: 'es', label: 'Startet på ES', count: atEs.length },
+            { value: 'alle', label: 'Alle selskaper', count: companies.length },
+          ]}
+        />
+        <div className="flex flex-col gap-2 lg:flex-row">
+          <div className="relative min-w-0 flex-1">
             <Search
               className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400"
               aria-hidden
@@ -148,55 +142,91 @@ function Companies() {
               className="pl-9"
             />
           </div>
-          {(industries.length > 0 || bransje) && (
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            {(industries.length > 0 || bransje) && (
+              <Select
+                value={industries.find((i) => sameText(bransje, i.label))?.label ?? ''}
+                onChange={(e) => setSearch({ bransje: e.target.value || undefined })}
+                aria-label="Bransje"
+                className="sm:w-44"
+              >
+                <option value="">Alle bransjer</option>
+                {industries.map((i) => (
+                  <option key={i.label} value={i.label}>
+                    {i.label} ({i.n})
+                  </option>
+                ))}
+              </Select>
+            )}
+            {(years.length > 0 || kull !== undefined) && (
+              <Select
+                value={kull ?? ''}
+                onChange={(e) =>
+                  setSearch({ kull: e.target.value ? Number(e.target.value) : undefined })
+                }
+                aria-label="Kull"
+                className="sm:w-32"
+              >
+                <option value="">Alle kull</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    ES {y}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {(statuses.length > 1 || status) && (
+              <Select
+                value={status ?? ''}
+                onChange={(e) =>
+                  setSearch({ status: (e.target.value || undefined) as CompanyStatus | undefined })
+                }
+                aria-label="Status"
+                className="sm:w-40"
+              >
+                <option value="">Alle statuser</option>
+                {statuses.map((s) => (
+                  <option key={s.status} value={s.status}>
+                    {statusLabels[s.status]} ({s.n})
+                  </option>
+                ))}
+              </Select>
+            )}
             <Select
-              value={industries.find((i) => bransje && same(i.label, bransje))?.label ?? ''}
-              onChange={(e) => setSearch({ bransje: e.target.value || undefined })}
-              aria-label="Bransje"
-              className="shrink-0 sm:w-48"
-            >
-              <option value="">Alle bransjer</option>
-              {industries.map((i) => (
-                <option key={i.label} value={i.label}>
-                  {i.label} ({i.n})
-                </option>
-              ))}
-            </Select>
-          )}
-          {(statuses.length > 1 || status) && (
-            <Select
-              value={status ?? ''}
+              value={sorter ?? ''}
               onChange={(e) =>
-                setSearch({ status: (e.target.value || undefined) as CompanyStatus | undefined })
+                setSearch({ sorter: (e.target.value || undefined) as Search['sorter'] })
               }
-              aria-label="Status"
-              className="shrink-0 sm:w-44"
+              aria-label="Sortering"
+              className="sm:w-40"
             >
-              <option value="">Alle statuser</option>
-              {statuses.map((s) => (
-                <option key={s.status} value={s.status}>
-                  {statusLabels[s.status]} ({s.n})
-                </option>
-              ))}
+              <option value="">Flest fra ES</option>
+              <option value="nyest">Nyeste kull</option>
+              <option value="navn">Navn A–Å</option>
             </Select>
-          )}
+          </div>
         </div>
       </div>
 
       {results.length === 0 ? (
         <EmptyState
           icon={Building2}
-          title={q || bransje || status ? 'Ingen selskaper matcher søket' : 'Ingen selskaper ennå'}
+          title={filtered ? 'Ingen selskaper matcher søket' : 'Ingen selskaper ennå'}
         >
-          {q || bransje || status ? (
-            <p>Prøv et annet søk, eller se alle selskaper.</p>
+          {filtered ? (
+            <>
+              <p>Prøv et annet søk, eller fjern filtrene.</p>
+              <Button variant="secondary" size="sm" className="mt-4" onClick={reset}>
+                Nullstill filtre
+              </Button>
+            </>
           ) : (
             <p>
               Selskaper dukker opp her når medlemmer legger inn erfaring og ES-selskap på profilen
               sin.
             </p>
           )}
-          {!q && !bransje && !status && viewer.personId && (
+          {!filtered && viewer.personId && (
             <Link
               to="/medlemmer/$personId/rediger"
               params={{ personId: viewer.personId }}
@@ -208,6 +238,9 @@ function Companies() {
         </EmptyState>
       ) : (
         <>
+          <FilterSummary onReset={filtered ? reset : undefined}>
+            {filtered ? `${results.length} av ${tab.length} selskaper` : `${tab.length} selskaper`}
+          </FilterSummary>
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {results.slice(0, shown).map((c) => (
               <li key={c.id}>

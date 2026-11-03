@@ -1,26 +1,57 @@
+import type { MemberListItem } from '@esaf/core'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useServerFn } from '@tanstack/react-start'
-import { Search, SearchX, Sparkles, X } from 'lucide-react'
+import { Rocket, Search, SearchX, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
+import { FilterSummary, sameText, tally, ToggleChip } from '#/components/Filters.tsx'
 import { comparePeople, PersonCard } from '#/components/PersonCard.tsx'
 import { SearchInput } from '#/components/SearchInput.tsx'
 import { Button, cx, EmptyState, PageHeader, Select, Verified } from '#/components/ui.tsx'
 import { filterMembers } from '#/lib/member-search.ts'
 import { findPeopleByTopic, getMembers } from '#/lib/members.functions.ts'
 
+const searchSchema = z.object({
+  q: z.string().optional().catch(undefined),
+  kull: z.coerce.number().int().optional().catch(undefined),
+  /** Tilknytning til ES: student, mentor eller ansatt (i kullet over, om det er valgt). */
+  rolle: z.enum(['student', 'mentor', 'staff']).optional().catch(undefined),
+  sted: z.string().optional().catch(undefined),
+  grunder: z.boolean().optional().catch(undefined),
+  verifisert: z.boolean().optional().catch(undefined),
+})
+
 export const Route = createFileRoute('/_konto/medlemmer/')({
   head: () => ({ meta: [{ title: 'Personer – ESAF' }] }),
-  validateSearch: z.object({
-    q: z.string().optional().catch(undefined),
-    kull: z.coerce.number().int().optional().catch(undefined),
-    verifisert: z.boolean().optional().catch(undefined),
-  }),
+  validateSearch: searchSchema,
   loader: async () => ({ members: await getMembers() }),
   component: People,
 })
 
 type Found = Awaited<ReturnType<typeof findPeopleByTopic>>
+type Member = MemberListItem
+type Search = z.infer<typeof searchSchema>
+
+const roles = [
+  { value: 'student', label: 'Studenter' },
+  { value: 'mentor', label: 'Mentorer' },
+  { value: 'staff', label: 'Ansatte ved ES' },
+] as const
+
+/** Filtrene utenom søkeordene. Kull og rolle må gjelde samme kull. */
+function matches(m: Member, s: Search) {
+  if (s.verifisert && !m.claimed) return false
+  if (s.grunder && !m.experience.some((e) => e.founder)) return false
+  if (s.sted && !sameText(m.city, s.sted)) return false
+  if (s.kull !== undefined || s.rolle) {
+    return m.cohorts.some(
+      (c) =>
+        (s.kull === undefined || c.graduationYear === s.kull) &&
+        (!s.rolle || c.relation === s.rolle),
+    )
+  }
+  return true
+}
 
 const PAGE = 48
 
@@ -85,26 +116,45 @@ function People() {
   )
 
   const results = useMemo(() => {
-    const keep = (m: (typeof members)[number]) =>
-      (!search.verifisert || m.claimed) &&
-      (search.kull === undefined || m.cohorts.some((c) => c.graduationYear === search.kull))
-    const local = filterMembers(members, search)
-      .filter((m) => !search.verifisert || m.claimed)
+    const local = filterMembers(members, { q: search.q })
+      .filter((m) => matches(m, search))
       .sort(comparePeople)
     if (!serverHits) return local
     const byId = new Map(members.map((m) => [m.personId, m]))
     const fromServer = serverHits.flatMap((h) => {
       const m = byId.get(h.personId)
-      return m && keep(m) ? [m] : []
+      return m && matches(m, search) ? [m] : []
     })
     const seen = new Set(fromServer.map((m) => m.personId))
     return [...fromServer, ...local.filter((m) => !seen.has(m.personId))]
   }, [members, search, serverHits])
   const claimed = members.filter((m) => m.claimed).length
-  const setSearch = (patch: Partial<typeof search>) => {
+  const founders = useMemo(
+    () => members.filter((m) => m.experience.some((e) => e.founder)).length,
+    [members],
+  )
+  const cities = useMemo(() => tally(members, (m) => [m.city]).filter((c) => c.n > 1), [members])
+  const setSearch = (patch: Partial<Search>) => {
     setShown(PAGE)
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
   }
+  const filtered = Boolean(
+    search.q ||
+    search.kull !== undefined ||
+    search.rolle ||
+    search.sted ||
+    search.grunder ||
+    search.verifisert,
+  )
+  const reset = () =>
+    setSearch({
+      q: undefined,
+      kull: undefined,
+      rolle: undefined,
+      sted: undefined,
+      grunder: undefined,
+      verifisert: undefined,
+    })
 
   return (
     <>
@@ -127,14 +177,14 @@ function People() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
           <Select
             value={search.kull ?? ''}
             onChange={(e) =>
               setSearch({ kull: e.target.value ? Number(e.target.value) : undefined })
             }
             aria-label="Kull"
-            className="w-36"
+            className="sm:w-32"
           >
             <option value="">Alle kull</option>
             {years.map((y) => (
@@ -143,17 +193,51 @@ function People() {
               </option>
             ))}
           </Select>
-          <Button
-            variant="secondary"
-            aria-pressed={Boolean(search.verifisert)}
-            onClick={() => setSearch({ verifisert: search.verifisert ? undefined : true })}
-            className={cx(
-              search.verifisert && 'bg-brand-50 text-brand-700 ring-brand-200 hover:bg-brand-50',
-            )}
+          <Select
+            value={search.rolle ?? ''}
+            onChange={(e) => setSearch({ rolle: (e.target.value || undefined) as Search['rolle'] })}
+            aria-label="Tilknytning til ES"
+            className="sm:w-40"
           >
-            <Verified claimed className="size-4" /> Verifiserte
-          </Button>
+            <option value="">Alle roller</option>
+            {roles.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </Select>
+          {(cities.length > 0 || search.sted) && (
+            <Select
+              value={cities.find((c) => sameText(search.sted, c.label))?.label ?? ''}
+              onChange={(e) => setSearch({ sted: e.target.value || undefined })}
+              aria-label="Sted"
+              className="sm:w-40"
+            >
+              <option value="">Alle steder</option>
+              {cities.map((c) => (
+                <option key={c.label} value={c.label}>
+                  {c.label} ({c.n})
+                </option>
+              ))}
+            </Select>
+          )}
         </div>
+      </div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <ToggleChip
+          pressed={Boolean(search.grunder)}
+          onToggle={() => setSearch({ grunder: search.grunder ? undefined : true })}
+        >
+          <Rocket className="size-4" aria-hidden /> Gründere
+          <span className="text-xs text-stone-400 tabular-nums">{founders}</span>
+        </ToggleChip>
+        <ToggleChip
+          pressed={Boolean(search.verifisert)}
+          onToggle={() => setSearch({ verifisert: search.verifisert ? undefined : true })}
+        >
+          <Verified claimed className="size-4" /> Verifiserte
+          <span className="text-xs text-stone-400 tabular-nums">{claimed}</span>
+        </ToggleChip>
       </div>
 
       {topTopics.length > 0 && (
@@ -182,13 +266,20 @@ function People() {
 
       {results.length === 0 ? (
         <EmptyState icon={SearchX} title="Ingen treff">
-          Prøv et annet søk, eller fjern filtrene.
+          <p>Prøv et annet søk, eller fjern filtrene.</p>
+          {filtered && (
+            <Button variant="secondary" size="sm" className="mt-4" onClick={reset}>
+              Nullstill filtre
+            </Button>
+          )}
         </EmptyState>
       ) : (
         <>
-          <p className="mb-3 text-sm text-stone-500" aria-live="polite">
-            {results.length === members.length ? 'Alle' : `${results.length} treff`}
-          </p>
+          <FilterSummary onReset={filtered ? reset : undefined}>
+            {filtered
+              ? `${results.length} av ${members.length} personer`
+              : `${members.length} personer`}
+          </FilterSummary>
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {results.slice(0, shown).map((m) => {
               const reason = reasons.get(m.personId)

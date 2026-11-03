@@ -1,10 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { schema, type Db, type NotificationEmailFrequency, type NotificationType } from '@esaf/db'
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertMember, type Viewer } from './access.ts'
 import { EmailError, type Mailer } from './email.ts'
-import { notificationEmail, type NotificationEmailItem } from './email-templates.ts'
+import { notificationEmail, welcomeEmail, type NotificationEmailItem } from './email-templates.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 import { selectNotificationViews, type NotificationView } from './notifications.ts'
@@ -27,7 +27,10 @@ const { membership, notification, notificationEmailPreference, person, user } = 
  * - Hver e-post har en lenke for å slutte med den slags e-post, som virker uten
  *   innlogging (signert, se `unsubscribeToken`), og `List-Unsubscribe` med ett
  *   klikk (RFC 8058), så e-postprogrammet kan tilby det selv.
- * - Velkomsten sendes aldri på e-post: den som blir godkjent, er i appen.
+ * - Velkomsten etter at en admin godkjente en forespørsel, sendes med en gang
+ *   (neste runde), til alle: personen venter på svaret og er ikke i appen. Den
+ *   er ikke et varsel man kan melde seg av, og har ingen avmelding. Velkomsten
+ *   etter en invitasjon sendes ikke: den som tok imot, er i appen.
  */
 
 export const notificationEmailFrequencies = [
@@ -441,6 +444,7 @@ export async function sendNotificationEmails(
         id: notification.id,
         recipientPersonId: notification.recipientPersonId,
         type: notification.type,
+        payload: notification.payload,
         createdAt: notification.createdAt,
       })
       .from(notification)
@@ -452,7 +456,10 @@ export async function sendNotificationEmails(
           isNull(notification.readAt),
           isNull(notification.emailedAt),
           gte(notification.createdAt, new Date(now.getTime() - EMAIL_WINDOW_MS)),
-          lte(notification.createdAt, new Date(now.getTime() - INSTANT_DELAY_MS)),
+          or(
+            eq(notification.type, 'welcome'),
+            lte(notification.createdAt, new Date(now.getTime() - INSTANT_DELAY_MS)),
+          ),
           eq(membership.status, 'active'),
           eq(user.emailVerified, true),
           isNotNull(person.userId),
@@ -461,6 +468,12 @@ export async function sendNotificationEmails(
       .orderBy(asc(notification.createdAt))
       .limit(5000)
     if (!candidates.length) return run
+
+    const welcomes = candidates.filter((c) => c.type === 'welcome' && c.payload.emailWelcome)
+    if (welcomes.length) {
+      const sent = await sendWelcomes(tx, welcomes, options, now, log, run)
+      if (!sent) return run
+    }
 
     const prefs = await frequencies(
       tx,
@@ -558,6 +571,57 @@ export async function sendNotificationEmails(
     }
     return run
   })
+}
+
+/**
+ * Velkomstene etter godkjenning, én e-post hver. Gir `false` om leverandøren
+ * feilet, så runden stopper og alt prøves igjen neste gang.
+ */
+async function sendWelcomes(
+  tx: Tx,
+  welcomes: { id: string; recipientPersonId: string; payload: { graduationYear?: number } }[],
+  options: { mailer: Mailer; appUrl: string },
+  now: Date,
+  log: Pick<Console, 'error'>,
+  run: NotificationEmailRun,
+): Promise<boolean> {
+  const accounts = await tx
+    .select({ personId: person.id, email: user.email })
+    .from(person)
+    .innerJoin(user, eq(user.id, person.userId))
+    .where(
+      inArray(
+        person.id,
+        welcomes.map((w) => w.recipientPersonId),
+      ),
+    )
+  const emailOf = new Map(accounts.map((a) => [a.personId, a.email]))
+  for (const w of welcomes.slice(0, MAX_RECIPIENTS)) {
+    const to = emailOf.get(w.recipientPersonId)
+    if (!to) {
+      await markEmailed(tx, [w.id], now)
+      continue
+    }
+    const content = welcomeEmail({
+      url: new URL('/', options.appUrl).href,
+      graduationYear: w.payload.graduationYear ?? null,
+    })
+    try {
+      await options.mailer.send({ to, ...content })
+      await markEmailed(tx, [w.id], now)
+      run.emails++
+      run.notifications++
+    } catch (error) {
+      run.failed++
+      if (error instanceof EmailError && error.reason === 'bounced') {
+        await markEmailed(tx, [w.id], now)
+        continue
+      }
+      if (!(error instanceof EmailError)) log.error('[esaf/varsler] Velkomsten feilet:', error)
+      return false
+    }
+  }
+  return true
 }
 
 async function markEmailed(tx: Tx, ids: string[], now: Date) {

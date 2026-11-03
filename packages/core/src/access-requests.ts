@@ -383,7 +383,7 @@ async function approveInTx(
     .set({ status: 'approved', profilePersonId, ...decided })
     .where(eq(accessRequest.id, request.id))
   // Først nå er personen aktiv, koblet til profilen og i riktig kull.
-  await notifyMemberApproved(tx, personId)
+  await notifyMemberApproved(tx, personId, { emailWelcome: true })
   return personId
 }
 

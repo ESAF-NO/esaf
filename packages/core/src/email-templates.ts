@@ -158,6 +158,27 @@ export function verificationEmail(input: { url: string; expiresInMinutes: number
   })
 }
 
+/** Når en admin har godkjent forespørselen om tilgang. */
+export function welcomeEmail(input: {
+  url: string
+  /** Kullet personen ble med i, om det er kjent. */
+  graduationYear: number | null
+}): EmailContent {
+  return render({
+    subject: 'Du er med i ESAF',
+    intro: [
+      'Forespørselen din om tilgang til ESAF-appen er godkjent.',
+      input.graduationYear
+        ? `Logg inn for å se hvem fra ES ${input.graduationYear} og de andre kullene som er med, og fyll gjerne ut profilen din.`
+        : 'Logg inn for å se hvem som er med, og fyll gjerne ut profilen din.',
+    ],
+    action: { label: 'Logg inn', url: input.url },
+    outro: [
+      'Du logger inn med samme e-postadresse og passord eller passkey som da du registrerte deg.',
+    ],
+  })
+}
+
 /** Ett varsel i en e-post: setningen, lenken og eventuelt starten på teksten. */
 export type NotificationEmailItem = {
   /** «Kari Nordmann kommenterte innlegget ditt «Lansering»». */

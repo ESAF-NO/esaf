@@ -1501,6 +1501,8 @@ export type NotificationPayload = {
   /** Tilknytningen varselet gjelder. */
   linkRequestId?: string
   linkRole?: CompanyLinkRole
+  /** Velkomsten etter at en admin godkjente forespørselen: sendes også på e-post. */
+  emailWelcome?: boolean
 }
 
 /**

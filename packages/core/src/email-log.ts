@@ -26,7 +26,16 @@ import {
   notificationEmailFrequencies,
 } from './notification-email.ts'
 
-const { emailLog, membership, notificationEmailPreference, person, personEmail, user } = schema
+const {
+  cohort,
+  emailLog,
+  membership,
+  notificationEmailPreference,
+  person,
+  personCohort,
+  personEmail,
+  user,
+} = schema
 
 /**
  * Oversikten over e-post for admins: hvilke e-poster appen sender og når (med
@@ -93,6 +102,31 @@ async function personForAddress(db: Db, address: string): Promise<string | null>
     .where(eq(personEmail.email, email))
     .limit(1)
   return listed?.id ?? null
+}
+
+/**
+ * Navnet til den som har en adresse, til hilsenen i e-posten: profilen til
+ * kontoen som logger inn med den, ellers profilen adressen står på, ellers
+ * navnet fra registreringen. Null når adressen er ukjent (som en ny invitasjon).
+ */
+export async function nameForAddress(db: Db, address: string): Promise<string | null> {
+  const email = address.toLowerCase()
+  const [own] = await db
+    .select({ fullName: person.fullName })
+    .from(person)
+    .innerJoin(user, eq(user.id, person.userId))
+    .where(eq(user.email, email))
+    .limit(1)
+  if (own) return own.fullName
+  const [listed] = await db
+    .select({ fullName: person.fullName })
+    .from(personEmail)
+    .innerJoin(person, eq(person.id, personEmail.personId))
+    .where(eq(personEmail.email, email))
+    .limit(1)
+  if (listed) return listed.fullName
+  const [account] = await db.select({ name: user.name }).from(user).where(eq(user.email, email))
+  return account?.name?.trim() || null
 }
 
 async function record(
@@ -177,8 +211,17 @@ export type EmailTemplate = {
   sample: EmailContent
 }
 
+/** Mottakeren i eksemplene: oppdiktet, eller admin selv når det er en test til seg selv. */
+export type SampleRecipient = { name: string; graduationYear: number | null }
+
+const sampleRecipient: SampleRecipient = { name: 'Ingrid Berg', graduationYear: 2017 }
+
 /** Alle e-postene appen sender, med eksempler. */
-export function emailCatalog(appUrl: string): EmailTemplate[] {
+export function emailCatalog(
+  appUrl: string,
+  recipient: SampleRecipient = sampleRecipient,
+): EmailTemplate[] {
+  const name = recipient.name
   const url = (path: string) => new URL(path, appUrl).href
   const days = (n: number) => new Date(Date.now() + n * 24 * 3600 * 1000)
   const settings = 'Under Konto → Varsler på e-post, eller med lenken nederst i e-posten.'
@@ -202,6 +245,7 @@ export function emailCatalog(appUrl: string): EmailTemplate[] {
   ]
   const notification = (summary: boolean, items: typeof sampleItems) =>
     notificationEmail({
+      name,
       items,
       summary,
       settingsUrl: url('/konto#varsler'),
@@ -220,6 +264,7 @@ export function emailCatalog(appUrl: string): EmailTemplate[] {
       timing: `Med en gang. Lenken virker én gang, i ${INVITATION_TTL_DAYS} dager.`,
       unsubscribe: null,
       sample: invitationEmail({
+        name,
         url: url('/invitasjon/eksempel'),
         invitedBy: 'Kari Nordmann',
         role: 'member',
@@ -235,6 +280,7 @@ export function emailCatalog(appUrl: string): EmailTemplate[] {
         'Med en gang, og på nytt når de prøver å logge inn uten å ha bekreftet. Lenken virker i én time.',
       unsubscribe: null,
       sample: verificationEmail({
+        name,
         url: url('/api/auth/verify-email?token=eksempel'),
         expiresInMinutes: 60,
       }),
@@ -248,7 +294,7 @@ export function emailCatalog(appUrl: string): EmailTemplate[] {
       timing:
         'Innen et minutt. Ikke om de allerede har sett velkomsten i appen. Den som tar imot en invitasjon, får ingen.',
       unsubscribe: null,
-      sample: welcomeEmail({ url: url('/'), graduationYear: 2017 }),
+      sample: welcomeEmail({ name, url: url('/'), graduationYear: recipient.graduationYear }),
     },
     {
       kind: 'password_reset',
@@ -258,6 +304,7 @@ export function emailCatalog(appUrl: string): EmailTemplate[] {
       timing: `Med en gang, høyst hvert andre minutt per adresse. Lenken virker i ${PASSWORD_REQUEST_TTL_MINUTES} minutter.`,
       unsubscribe: null,
       sample: passwordResetEmail({
+        name,
         url: url('/nytt-passord/eksempel'),
         expiresAt: new Date(Date.now() + PASSWORD_REQUEST_TTL_MINUTES * 60 * 1000),
       }),
@@ -270,6 +317,7 @@ export function emailCatalog(appUrl: string): EmailTemplate[] {
       timing: `Med en gang. Lenken virker én gang, i ${INVITATION_TTL_DAYS} dager.`,
       unsubscribe: null,
       sample: passwordLinkEmail({
+        name,
         url: url('/nytt-passord/eksempel'),
         createdBy: 'Kari Nordmann',
         expiresAt: days(INVITATION_TTL_DAYS),
@@ -531,13 +579,25 @@ export async function sendTestEmail(
 ): Promise<{ to: string }> {
   assertCan(viewer, 'audit.read')
   if (!mailer) throw new DomainError('E-post er ikke satt opp på serveren.')
-  const template = emailCatalog(input.appUrl).find((t) => t.kind === input.kind)
-  if (!template) throw new DomainError('Ukjent e-post.')
   const [account] = await db
-    .select({ email: user.email })
+    .select({ email: user.email, fullName: person.fullName })
     .from(user)
+    .innerJoin(person, eq(person.userId, user.id))
     .where(eq(user.id, viewer!.userId))
   if (!account) throw new DomainError('Fant ikke kontoen din.')
+  // Testen er personlig: navnet ditt, og kullet ditt i velkomsten.
+  const [own] = await db
+    .select({ year: cohort.graduationYear })
+    .from(personCohort)
+    .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+    .where(and(eq(personCohort.personId, viewer!.personId!), eq(personCohort.relation, 'student')))
+    .orderBy(desc(cohort.graduationYear))
+    .limit(1)
+  const template = emailCatalog(input.appUrl, {
+    name: account.fullName,
+    graduationYear: own?.year ?? null,
+  }).find((t) => t.kind === input.kind)
+  if (!template) throw new DomainError('Ukjent e-post.')
   try {
     await mailer.send({
       to: account.email,

@@ -11,11 +11,14 @@ import {
   EmailError,
   getEmailPreferences,
   grantRoleAsOperator,
+  listAccessRequests,
   loadViewer,
   markAllNotificationsRead,
   sendNotificationEmails,
+  sendWelcomeEmail,
   blockEmailAddress,
   setEmailKindEnabled,
+  withEmailLog,
   withEmailSwitch,
   setEmailPaused,
   setEmailPreference,
@@ -87,7 +90,7 @@ describe.skipIf(!url)('varsler på e-post', () => {
     sent = []
     failWith = null
     await db.execute(
-      sql`truncate ${schema.appSetting}, ${schema.emailBlock}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
+      sql`truncate ${schema.appSetting}, ${schema.emailLog}, ${schema.emailBlock}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.postVote}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
     )
     const adminId = await account('Ada Admin')
     await grantRoleAsOperator(db, {
@@ -272,6 +275,7 @@ describe.skipIf(!url)('varsler på e-post', () => {
     expect(await run(new Date())).toMatchObject({ emails: 1 })
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({ to: 'nina.ny@example.test', subject: 'Du er med i ESAF' })
+    expect(sent[0]!.text.startsWith('Hei Nina!')).toBe(true)
     expect(sent[0]!.text).toContain('ES 2017')
     expect(sent[0]!.text).toContain(`${APP}/`)
     expect(sent[0]!.headers).toBeUndefined()
@@ -386,5 +390,45 @@ describe.skipIf(!url)('varsler på e-post', () => {
     expect(sent).toEqual([])
     // Merket som ferdig, så det ikke prøves hver runde.
     expect(await emailed()).toHaveLength(1)
+  })
+
+  it('velkomsten kan sendes for hånd, og forespørselen viser når den sist ble sendt', async () => {
+    const logged = withEmailLog(db, mailer, { error() {} })
+    const userId = await account('Nina Ny')
+    await submitAccessRequest(db, await loadViewer(db, userId), {
+      profilePersonId: null,
+      fullName: 'Nina Ny',
+      graduationYear: 2017,
+      linkedinUrl: '',
+      note: '',
+    })
+    const [request] = await db.select().from(schema.accessRequest)
+    await decideAccessRequest(db, admin, { requestId: request!.id, decision: 'approve' })
+    expect((await listAccessRequests(db, admin, 'approved'))[0]!.welcomeEmail).toBeNull()
+
+    // Godkjent før velkomsten fantes: admin sender den selv.
+    const { to } = await sendWelcomeEmail(db, admin, logged, {
+      requestId: request!.id,
+      appUrl: APP,
+    })
+    expect(to).toBe('nina.ny@example.test')
+    expect(sent.map((m) => m.subject)).toEqual(['Du er med i ESAF'])
+    expect((await listAccessRequests(db, admin, 'approved'))[0]!.welcomeEmail).toMatchObject({
+      status: 'sent',
+    })
+    // Den automatiske kommer ikke i tillegg.
+    await run(new Date())
+    expect(sent).toHaveLength(1)
+
+    await expect(
+      sendWelcomeEmail(db, ola, logged, { requestId: request!.id, appUrl: APP }),
+    ).rejects.toMatchObject({ reason: 'forbidden' })
+    await db
+      .update(schema.membership)
+      .set({ status: 'inactive' })
+      .where(eq(schema.membership.personId, (await loadViewer(db, userId))!.personId!))
+    await expect(
+      sendWelcomeEmail(db, admin, logged, { requestId: request!.id, appUrl: APP }),
+    ).rejects.toThrow('bare til godkjente, aktive medlemmer')
   })
 })

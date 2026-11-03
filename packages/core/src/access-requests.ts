@@ -1,14 +1,32 @@
-import { schema, type AccessRequestStatus, type Db, type MemberRole } from '@esaf/db'
+import {
+  schema,
+  type AccessRequestStatus,
+  type Db,
+  type EmailStatus,
+  type MemberRole,
+} from '@esaf/db'
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 import { accessLevel, assertCan, assertMember, type Viewer } from './access.ts'
+import { EmailError, type Mailer } from './email.ts'
+import { welcomeEmail } from './email-templates.ts'
 import { AccessDeniedError, DomainError } from './errors.ts'
 import { ensurePersonForVerifiedUser, linkAccountInTx, normalizeEmail, type Tx } from './members.ts'
 import { notifyMemberApproved } from './notifications.ts'
 import { normalizeLinkedinUrl } from './profiles.ts'
 
-const { accessRequest, auditEvent, cohort, membership, person, personCohort, personEmail, user } =
-  schema
+const {
+  accessRequest,
+  auditEvent,
+  cohort,
+  emailLog,
+  membership,
+  notification,
+  person,
+  personCohort,
+  personEmail,
+  user,
+} = schema
 
 /**
  * Tilgang til ESAF krever at en admin godkjenner en forespørsel. Ingenting skjer
@@ -238,6 +256,11 @@ export type AccessRequestView = {
   emailOnProfile: boolean
   /** Profiler med likt navn (samme kull først), når personen ikke fant seg selv. */
   suggestions: CandidateProfile[]
+  /**
+   * For godkjente: den siste velkomsten på e-post («Du er med i ESAF») og hvordan
+   * det gikk, eller null om ingen er sendt (e-postloggen begynte 3. november 2026).
+   */
+  welcomeEmail: { status: EmailStatus; at: Date } | null
 }
 
 const fold = (s: string) => s.toLocaleLowerCase('nb').normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -297,6 +320,24 @@ export async function listAccessRequests(
       : [],
   ])
 
+  // Den siste velkomsten til hver godkjent: kontoen er nå koblet til profilen sin.
+  const approvedUsers = rows
+    .filter((r) => r.request.status === 'approved')
+    .map((r) => r.request.userId)
+  const welcomes = approvedUsers.length
+    ? await db
+        .selectDistinctOn([person.userId], {
+          userId: person.userId,
+          status: emailLog.status,
+          at: emailLog.createdAt,
+        })
+        .from(emailLog)
+        .innerJoin(person, eq(person.id, emailLog.personId))
+        .where(and(eq(emailLog.kind, 'welcome'), inArray(person.userId, approvedUsers)))
+        .orderBy(person.userId, desc(emailLog.createdAt))
+    : []
+  const welcomeOf = new Map(welcomes.map((w) => [w.userId, { status: w.status, at: w.at }]))
+
   return rows.map(({ request, email }) => {
     const address = normalizeEmail(email)
     const year = request.graduationYear
@@ -322,8 +363,86 @@ export async function listAccessRequests(
             Number(year !== null && a.years.includes(year)),
         )
         .slice(0, 4),
+      welcomeEmail: welcomeOf.get(request.userId) ?? null,
     }
   })
+}
+
+/**
+ * Sender velkomsten («Du er med i ESAF») for en godkjent forespørsel nå, også om
+ * den er sendt før, eller ble godkjent før velkomsten fantes. Til adressen
+ * personen logger inn med, og bare om de er aktive med bekreftet konto. Den
+ * automatiske velkomsten regnes da som sendt, så den ikke kommer i tillegg.
+ */
+export async function sendWelcomeEmail(
+  db: Db,
+  viewer: Viewer,
+  mailer: Mailer | null,
+  input: { requestId: string; appUrl: string },
+): Promise<{ to: string }> {
+  assertCan(viewer, 'members.review')
+  if (!mailer) throw new DomainError('E-post er ikke satt opp på serveren.')
+  const [row] = await db
+    .select({
+      status: accessRequest.status,
+      graduationYear: accessRequest.graduationYear,
+      email: user.email,
+      verified: user.emailVerified,
+      personId: person.id,
+      fullName: person.fullName,
+      membership: membership.status,
+    })
+    .from(accessRequest)
+    .innerJoin(user, eq(user.id, accessRequest.userId))
+    .leftJoin(person, eq(person.userId, user.id))
+    .leftJoin(membership, eq(membership.personId, person.id))
+    .where(eq(accessRequest.id, input.requestId))
+  if (!row) throw new DomainError('Fant ikke forespørselen.')
+  if (row.status !== 'approved' || !row.personId || row.membership !== 'active') {
+    throw new DomainError('Velkomsten sendes bare til godkjente, aktive medlemmer.')
+  }
+  if (!row.verified) throw new DomainError('Kontoen har ikke bekreftet e-postadressen sin.')
+  const [cohortRow] = row.graduationYear
+    ? [{ year: row.graduationYear }]
+    : await db
+        .select({ year: cohort.graduationYear })
+        .from(personCohort)
+        .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+        .where(and(eq(personCohort.personId, row.personId), eq(personCohort.relation, 'student')))
+        .orderBy(desc(cohort.graduationYear))
+        .limit(1)
+  try {
+    await mailer.send({
+      to: row.email,
+      ...welcomeEmail({
+        name: row.fullName,
+        url: new URL('/', input.appUrl).href,
+        graduationYear: cohortRow?.year ?? null,
+      }),
+      log: { kind: 'welcome', personId: row.personId },
+    })
+  } catch (error) {
+    // Meldingen sier hva som skjedde, uten adresser eller nøkler.
+    if (error instanceof EmailError) throw new DomainError(error.message)
+    throw error
+  }
+  await db
+    .update(notification)
+    .set({ emailedAt: new Date() })
+    .where(
+      and(
+        eq(notification.recipientPersonId, row.personId),
+        eq(notification.type, 'welcome'),
+        isNull(notification.emailedAt),
+      ),
+    )
+  await db.insert(auditEvent).values({
+    actorPersonId: viewer!.personId,
+    action: 'email.welcome',
+    subjectPersonId: row.personId,
+    details: { requestId: input.requestId },
+  })
+  return { to: row.email }
 }
 
 type RequestRow = typeof accessRequest.$inferSelect

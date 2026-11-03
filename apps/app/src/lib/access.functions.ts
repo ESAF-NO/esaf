@@ -3,12 +3,15 @@ import {
   finishOnboarding,
   getAccessState,
   listAccessRequests,
+  sendWelcomeEmail,
   submitAccessRequest,
 } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
+import { mailer } from '#/server/email.server.ts'
+import { env } from '#/server/env.server.ts'
 
 /** Søkerens egen status og eventuelt profilen som har kontoens e-postadresse. */
 export const fetchAccessState = createServerFn({ method: 'GET' }).handler(() =>
@@ -45,3 +48,15 @@ export const decideRequest = createServerFn({ method: 'POST' })
 export const completeOnboarding = createServerFn({ method: 'POST' }).handler(() =>
   run((viewer) => finishOnboarding(db, viewer)),
 )
+
+/** Sender velkomsten («Du er med i ESAF») for en godkjent forespørsel nå. */
+export const resendWelcome = createServerFn({ method: 'POST' })
+  .validator(z.object({ requestId: z.uuid() }))
+  .handler(({ data }) =>
+    run((viewer) =>
+      sendWelcomeEmail(db, viewer, mailer, {
+        requestId: data.requestId,
+        appUrl: env.BETTER_AUTH_URL,
+      }),
+    ),
+  )

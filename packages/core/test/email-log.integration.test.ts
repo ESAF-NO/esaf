@@ -89,7 +89,7 @@ describe.skipIf(!url)('e-postloggen', () => {
     sent = []
     failWith = null
     await db.execute(
-      sql`truncate ${schema.emailLog}, ${schema.emailBlock}, ${schema.appSetting}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personEmail}, ${schema.person}, ${schema.user} cascade`,
+      sql`truncate ${schema.emailLog}, ${schema.emailBlock}, ${schema.appSetting}, ${schema.notification}, ${schema.notificationEmailPreference}, ${schema.comment}, ${schema.post}, ${schema.auditEvent}, ${schema.membership}, ${schema.personEmail}, ${schema.personCohort}, ${schema.person}, ${schema.cohort}, ${schema.user} cascade`,
     )
     const adminId = await account('Ada Admin')
     await grantRoleAsOperator(db, {
@@ -222,9 +222,21 @@ describe.skipIf(!url)('e-postloggen', () => {
     const { to } = await sendTestEmail(db, admin, mailer, { kind: 'digest', appUrl: APP })
     expect(to).toBe('ada.admin@example.test')
     expect(sent.at(-1)!.subject).toMatch(/^\[Test\] Oppsummering fra ESAF/)
+    // Testen er personlig: navnet ditt i hilsenen, og kullet ditt i velkomsten.
+    expect(sent.at(-1)!.text.startsWith('Hei Ada!')).toBe(true)
+    const [es2024] = await db
+      .insert(schema.cohort)
+      .values({ graduationYear: 2024 })
+      .onConflictDoUpdate({ target: schema.cohort.graduationYear, set: { graduationYear: 2024 } })
+      .returning({ id: schema.cohort.id })
+    await db.insert(schema.personCohort).values({ personId: admin.personId, cohortId: es2024!.id })
+    await sendTestEmail(db, admin, mailer, { kind: 'welcome', appUrl: APP })
+    expect(sent.at(-1)!.text).toContain('ES 2024')
+    expect(sent.at(-1)!.text).not.toContain('ES 2017')
     expect(
       (await listEmailLog(db, admin)).map((e) => [e.kind, e.person?.fullName, e.category, e.items]),
     ).toEqual([
+      ['test', 'Ada Admin', null, 0],
       ['test', 'Ada Admin', null, 0],
       ['notification', 'Ola Hansen', 'post_comments', 1],
     ])

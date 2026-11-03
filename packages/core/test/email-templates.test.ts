@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   escapeHtml,
+  greeting,
+  notificationEmail,
   invitationEmail,
   passwordLinkEmail,
   passwordResetEmail,
@@ -67,6 +69,30 @@ describe('e-postene', () => {
     expect(email.text).toContain('ES 2017')
     expect(email.html).toContain(`href="${app}"`)
     expect(welcomeEmail({ url: app, graduationYear: null }).text).not.toContain('ES ')
+  })
+
+  it('hilsenen bruker fornavnet når vi vet hvem det er', () => {
+    expect(greeting('Kari Nordmann')).toBe('Hei Kari!')
+    expect(greeting('  Ola  ')).toBe('Hei Ola!')
+    expect(greeting(null)).toBe('Hei!')
+    expect(greeting('')).toBe('Hei!')
+    const named = welcomeEmail({ name: 'Kari Nordmann', url, graduationYear: 2024 })
+    expect(named.text.startsWith('Hei Kari!')).toBe(true)
+    expect(named.html).toContain('Hei Kari!')
+    expect(named.text).toContain('ES 2024')
+    expect(invitationEmail({ url, invitedBy: null, role: 'member', expiresAt }).text).toMatch(
+      /^Hei!/,
+    )
+    const note = notificationEmail({
+      name: 'Ola Hansen',
+      items: [{ text: 'Kari kommenterte', url, excerpt: null }],
+      summary: false,
+      settingsUrl: url,
+      unsubscribeUrl: url,
+      unsubscribeLabel: 'Alle varsler',
+      allUrl: url,
+    })
+    expect(note.text.startsWith('Hei Ola!')).toBe(true)
   })
 
   it('alt som settes inn, escapes i HTML-en', () => {

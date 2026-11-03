@@ -42,5 +42,6 @@ export function roleText({ role, title }: Pick<CompanyPerson, 'role' | 'title'>)
   if (role === 'founder') return 'Gründer'
   if (role === 'es') return 'ES-team'
   if (role === 'current') return title ?? 'Jobber der'
+  if (role === 'board') return title ?? 'Styremedlem'
   return title ? `Tidl. ${title}` : 'Har jobbet der'
 }

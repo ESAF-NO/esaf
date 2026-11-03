@@ -3,10 +3,12 @@ import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-rout
 import {
   ArrowLeft,
   ArrowUpRight,
+  Briefcase,
   CalendarDays,
   Globe,
   Hand,
   History,
+  Landmark,
   LogOut,
   MapPin,
   MessageSquarePlus,
@@ -57,6 +59,7 @@ const groups: { role: Member['role']; title: string }[] = [
   { role: 'founder', title: 'Gründere' },
   { role: 'es', title: 'ES-team' },
   { role: 'current', title: 'Jobber der nå' },
+  { role: 'board', title: 'I styret' },
   { role: 'past', title: 'Har jobbet der' },
 ]
 
@@ -144,6 +147,21 @@ function CompanyPage() {
               <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-stone-500">
                 <History className="size-4" aria-hidden />
                 Sist nevnt på ES-siden {c.lastSeenOnEsSite.slice(0, 4)}
+              </p>
+            )}
+            {!c.startedByAlumni && (
+              <p className="mt-3 inline-flex items-center gap-1.5 text-sm text-stone-500">
+                {c.boardOnly ? (
+                  <>
+                    <Landmark className="size-4" aria-hidden />
+                    Styreverv: ES-alumni sitter eller har sittet i styret. Ikke startet av alumni.
+                  </>
+                ) : (
+                  <>
+                    <Briefcase className="size-4" aria-hidden />
+                    Arbeidsplass for ES-alumni. Ikke startet av alumni.
+                  </>
+                )}
               </p>
             )}
             {c.startedByAlumni && (

@@ -552,6 +552,27 @@ describe.skipIf(!url)('selskaper', () => {
     await expect(getCompany(db, kari, 'finnes-ikke')).rejects.toThrow('Fant ikke')
   })
 
+  it('styreverv er ikke jobber: egen rolle, og selskaper med bare styreverv merkes', async () => {
+    await work(ola, [job('Storbank', { title: 'Styremedlem' })])
+    await work(kari, [
+      job('Storbank', { title: 'Styreleder', startYear: 2015, endYear: 2019 }),
+      job('Verksted', { title: 'Styremedlem' }),
+    ])
+    await work(per, [job('Verksted', { title: 'Utvikler' })])
+
+    const listed = new Map((await listCompanies(db, ola)).map((c) => [c.slug, c]))
+    const bank = listed.get('storbank')!
+    expect(bank).toMatchObject({ startedByAlumni: false, boardOnly: true })
+    expect(bank.people.map((p) => [p.fullName, p.role])).toEqual([
+      ['Ola', 'board'],
+      ['Kari', 'past'],
+    ])
+    // Noen jobber der: en arbeidsplass, selv om andre sitter i styret.
+    const shop = listed.get('verksted')!
+    expect(shop.boardOnly).toBe(false)
+    expect(shop.people.map((p) => p.role).sort()).toEqual(['board', 'current'])
+  })
+
   it('søket finner selskapet uansett skrivemåte, med samme selskap først', async () => {
     await work(ola, [job('Kahoot!')])
     await work(kari, [job('Kahoot!')])

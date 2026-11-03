@@ -692,13 +692,12 @@ export async function searchPeopleByTopic(
   }[] = []
   const chunkZ = (id: string, text: string) => ((chunkSims.get(`${id}\n${text}`) ?? cm) - cm) / cs
   // Har personen søkeord, er de fasiten: bioen (med metaforer, hobbyer og
-  // drømmer) teller bare når søkeordene også passer til søket.
-  const topicsAgree = (d: PersonDoc) => {
-    if (!d.topics.length) return true
-    if (lexicalScore(terms, d.topics.join(', '), undefined, weights).score > 0) return true
-    const chunk = d.chunks.find((c) => c.kind === 'topics')
-    return !!chunk && semantic.size > 0 && chunkZ(d.personId, chunk.text) >= EVIDENCE_FLOOR
-  }
+  // drømmer) teller bare når søkeordene også inneholder søket, eller et ord fra
+  // samme begrep. At søkeordene bare ligner i mening, er ikke nok: «passion for
+  // space crafts» kom da med fordi «elbiler, maskinteknikk» ligner på romfart
+  // (målt: 94 → 62 feil, like mange sterke treff funnet).
+  const topicsAgree = (d: PersonDoc) =>
+    !d.topics.length || lexicalScore(terms, d.topics.join(', '), undefined, weights).score > 0
   for (const d of docs) {
     const id = d.personId
     const ignoreBio = !topicsAgree(d)

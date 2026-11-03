@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   addComment,
   createPost,
+  decideAccessRequest,
   decideMembership,
   deletePost,
   EmailError,
@@ -14,6 +15,7 @@ import {
   markAllNotificationsRead,
   sendNotificationEmails,
   setEmailPreference,
+  submitAccessRequest,
   unsubscribe,
   unsubscribeToken,
   type EmailMessage,
@@ -249,5 +251,57 @@ describe.skipIf(!url)('varsler på e-post', () => {
       .where(eq(schema.membership.personId, ola.personId))
     await run(soon())
     expect(sent).toEqual([])
+  })
+
+  it('godkjent forespørsel gir velkomst på e-post med en gang, én gang, uten avmelding', async () => {
+    const userId = await account('Nina Ny')
+    await submitAccessRequest(db, await loadViewer(db, userId), {
+      profilePersonId: null,
+      fullName: 'Nina Ny',
+      graduationYear: 2017,
+      linkedinUrl: '',
+      note: '',
+    })
+    const [request] = await db.select().from(schema.accessRequest)
+    await decideAccessRequest(db, admin, { requestId: request!.id, decision: 'approve' })
+
+    expect(await run(new Date())).toMatchObject({ emails: 1 })
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ to: 'nina.ny@example.test', subject: 'Du er med i ESAF' })
+    expect(sent[0]!.text).toContain('ES 2017')
+    expect(sent[0]!.text).toContain(`${APP}/`)
+    expect(sent[0]!.headers).toBeUndefined()
+
+    await run(tomorrow())
+    expect(sent).toHaveLength(1)
+  })
+
+  it('velkomsten etter en invitasjon sendes ikke på e-post', async () => {
+    await db.insert(schema.notification).values({
+      recipientPersonId: ola.personId,
+      type: 'welcome',
+      eventKey: 'welcome',
+      payload: {},
+    })
+    await run(soon())
+    expect(sent).toEqual([])
+  })
+
+  it('feiler velkomsten, prøves den igjen', async () => {
+    const userId = await account('Nina Ny')
+    await submitAccessRequest(db, await loadViewer(db, userId), {
+      profilePersonId: null,
+      fullName: 'Nina Ny',
+      graduationYear: null,
+      linkedinUrl: '',
+      note: '',
+    })
+    const [request] = await db.select().from(schema.accessRequest)
+    await decideAccessRequest(db, admin, { requestId: request!.id, decision: 'approve' })
+    failWith = new EmailError('unavailable')
+    expect(await run(new Date())).toMatchObject({ emails: 0, failed: 1 })
+    failWith = null
+    await run(new Date())
+    expect(sent.map((m) => m.subject)).toEqual(['Du er med i ESAF'])
   })
 })

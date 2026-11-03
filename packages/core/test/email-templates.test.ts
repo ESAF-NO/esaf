@@ -5,6 +5,7 @@ import {
   passwordLinkEmail,
   passwordResetEmail,
   verificationEmail,
+  welcomeEmail,
 } from '../src/index.ts'
 
 const url = 'https://app.example.test/invitasjon/abc_DEF-123'
@@ -56,6 +57,16 @@ describe('e-postene', () => {
     // `&` i adressen escapes i HTML-en, men står som den er i teksten.
     expect(email.html).toContain('token=t&amp;callbackURL=%2Fvelkommen')
     expect(email.text).toContain('token=t&callbackURL=%2Fvelkommen')
+  })
+
+  it('velkomsten etter godkjenning nevner kullet når det er kjent', () => {
+    const app = 'https://app.example.test/'
+    const email = welcomeEmail({ url: app, graduationYear: 2017 })
+    expect(email.subject).toBe('Du er med i ESAF')
+    expect(email.text).toContain('Forespørselen din om tilgang til ESAF-appen er godkjent.')
+    expect(email.text).toContain('ES 2017')
+    expect(email.html).toContain(`href="${app}"`)
+    expect(welcomeEmail({ url: app, graduationYear: null }).text).not.toContain('ES ')
   })
 
   it('alt som settes inn, escapes i HTML-en', () => {

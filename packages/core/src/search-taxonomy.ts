@@ -7,7 +7,8 @@
  * selskaper. Ord på minst fem tegn treffer også inne i sammensatte ord.
  *
  * Hold gruppene presise: et ord som betyr noe annet i dagligtale (som «spill»
- * eller «rom»), hører ikke hjemme her alene.
+ * eller «rom»), eller som er et vanlig selskapsnavn (som «orbit»), hører ikke
+ * hjemme her alene.
  */
 export const SEARCH_TAXONOMY: readonly (readonly string[])[] = [
   // Teknologi
@@ -20,7 +21,6 @@ export const SEARCH_TAXONOMY: readonly (readonly string[])[] = [
     'rakett',
     'rocket',
     'nasa',
-    'orbit',
     'romindustri',
     'space industry',
     'verdensrom',

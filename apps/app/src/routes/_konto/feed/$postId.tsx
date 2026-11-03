@@ -1,10 +1,10 @@
 import type { CommentView } from '@esaf/core'
 import { createFileRoute, Link, useLocation, useRouter } from '@tanstack/react-router'
 import { ArrowLeft, ExternalLink, MessageCircle, Pencil, Pin, PinOff, Trash2 } from 'lucide-react'
-import { useState, type FormEvent, type KeyboardEvent } from 'react'
-import { AttachmentEditor, AttachmentList, useAttachments } from '#/components/Attachments.tsx'
+import { useState, type FormEvent } from 'react'
+import { AttachmentList, useAttachments } from '#/components/Attachments.tsx'
+import { Composer } from '#/components/Composer.tsx'
 import { Markdown } from '#/components/Markdown.tsx'
-import { MarkdownEditor, MarkdownHint } from '#/components/MarkdownEditor.tsx'
 import { AuthorLine, PinnedLabel, VoteButton } from '#/components/PostCard.tsx'
 import { Avatar, Button, buttonClass, Card, ChannelBadge, cx, ErrorText } from '#/components/ui.tsx'
 import {
@@ -15,6 +15,7 @@ import {
   removePost,
   submitComment,
 } from '#/lib/feed.functions.ts'
+import { useDraft } from '#/lib/drafts.ts'
 import { plural } from '#/lib/format.ts'
 
 export const Route = createFileRoute('/_konto/feed/$postId')({
@@ -25,11 +26,6 @@ export const Route = createFileRoute('/_konto/feed/$postId')({
 
 const errorText = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message : fallback
-
-/** ⌘/Ctrl + Enter sender skjemaet, som i kommentarfeltet. */
-function submitOnModEnter(e: KeyboardEvent<HTMLTextAreaElement>) {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') e.currentTarget.form?.requestSubmit()
-}
 
 function PostPage() {
   const post = Route.useLoaderData()
@@ -182,7 +178,8 @@ function PostPage() {
 function CommentForm({ postId, people }: { postId: string; people: { personId: string }[] }) {
   const { viewer } = Route.useRouteContext()
   const router = useRouter()
-  const [body, setBody] = useState('')
+  // Kommentaren huskes som utkast til den er sendt, også om du går fra siden.
+  const [body, setBody, clearDraft] = useDraft(`kommentar:${postId}`, '')
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const attachments = useAttachments({ til: 'kommentar' })
@@ -195,7 +192,7 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
     setError(null)
     try {
       await submitComment({ data: { postId, body, attachmentIds: attachments.ids } })
-      setBody('')
+      clearDraft()
       attachments.reset()
       await router.invalidate()
     } catch (err) {
@@ -206,55 +203,39 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      {...attachments.drop.props}
-      className={cx(
-        'mb-6 flex gap-3 rounded-2xl transition',
-        attachments.drop.dragging &&
-          'bg-brand-50 ring-2 ring-brand-400 ring-offset-4 ring-offset-brand-50',
-      )}
-    >
+    <form onSubmit={onSubmit} {...attachments.drop.props} className="mb-8 flex gap-3">
       {viewer.fullName && (
         <Avatar
           name={viewer.fullName}
           photo={viewer.photo}
           size="md"
-          className="mt-8 hidden sm:inline-grid"
+          className="mt-0.5 hidden sm:inline-grid"
         />
       )}
       <div className="min-w-0 flex-1 space-y-2">
-        <MarkdownEditor
+        <Composer
           id="ny-kommentar"
-          label="Kommentar"
-          showLabel={false}
-          hint={false}
+          label="Skriv en kommentar"
           value={body}
           onChange={setBody}
           placeholder="Skriv en kommentar …"
           maxLength={5000}
-          className="min-h-20"
-          onKeyDown={submitOnModEnter}
+          attachments={attachments}
           suggestFirst={people}
-        />
-        <AttachmentEditor attachments={attachments} compact />
-        {error && <ErrorText>{error}</ErrorText>}
-        <div className="flex items-center justify-between gap-3">
-          <MarkdownHint className="min-w-0" />
-          <div className="flex shrink-0 items-center gap-3">
-            <span className="hidden text-xs text-stone-400 md:inline">
-              @ for å nevne noen · ⌘ + Enter for å sende
-            </span>
+          compact
+          dragging={attachments.drop.dragging}
+          actions={
             <Button
               type="submit"
-              variant="primary"
+              variant="brand"
               size="sm"
               disabled={sending || empty || attachments.busy}
             >
-              {sending ? 'Sender …' : attachments.busy ? 'Laster opp …' : 'Kommenter'}
+              {sending ? 'Sender …' : attachments.busy ? 'Laster opp …' : 'Send'}
             </Button>
-          </div>
-        </div>
+          }
+        />
+        {error && <ErrorText>{error}</ErrorText>}
       </div>
     </form>
   )
@@ -349,39 +330,35 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
         </div>
         {editing ? (
           <form onSubmit={onSave} className="mt-2 space-y-2" {...attachments.drop.props}>
-            <MarkdownEditor
+            <Composer
               id={`rediger-kommentar-${c.id}`}
               label="Rediger kommentaren"
-              showLabel={false}
-              hint={false}
               value={draft}
               onChange={setDraft}
+              placeholder="Skriv en kommentar …"
               maxLength={5000}
-              className="min-h-20"
+              attachments={attachments}
               autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setEditing(false)
-                else submitOnModEnter(e)
-              }}
+              minRows={2}
+              onEscape={() => setEditing(false)}
+              dragging={attachments.drop.dragging}
+              actions={
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                    Avbryt
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="brand"
+                    size="sm"
+                    disabled={saving || empty || attachments.busy}
+                  >
+                    {saving ? 'Lagrer …' : 'Lagre'}
+                  </Button>
+                </>
+              }
             />
-            <AttachmentEditor attachments={attachments} compact />
             {error && <ErrorText>{error}</ErrorText>}
-            <div className="flex items-center justify-between gap-3">
-              <MarkdownHint className="min-w-0" />
-              <div className="flex shrink-0 gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-                  Avbryt
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="sm"
-                  disabled={saving || empty || attachments.busy}
-                >
-                  {saving ? 'Lagrer …' : 'Lagre'}
-                </Button>
-              </div>
-            </div>
           </form>
         ) : (
           <>

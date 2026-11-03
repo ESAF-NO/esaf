@@ -325,10 +325,13 @@ function PickButton({
 export function AttachmentEditor({
   attachments: a,
   compact = false,
+  button = true,
 }: {
   attachments: Attachments
   /** I kommentarfeltet: bare knappen og vedleggene, uten forklaring. */
   compact?: boolean
+  /** Uten «Legg ved fil»: knappen står i verktøylinja i `Composer`. */
+  button?: boolean
 }) {
   const images = a.items.filter((i) => i.image)
   const documents = a.items.filter((i) => !i.image)
@@ -365,17 +368,19 @@ export function AttachmentEditor({
       )}
       <PendingList pending={a.pending} onDismiss={a.dismiss} />
       {a.error && <ErrorText>{a.error}</ErrorText>}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <PickButton accept={ATTACHMENT_ACCEPT} onFiles={a.add} disabled={full}>
-          <Paperclip className="size-4" aria-hidden /> Legg ved fil
-        </PickButton>
-        {!compact && (
-          <p className="text-xs text-stone-500">
-            Bilder (JPEG, PNG, WebP) og dokumenter (PDF, Word, Excel, PowerPoint, tekst, CSV), maks
-            25 MB og {MAX_ATTACHMENTS} filer. Dra filer hit, eller lim inn et bilde.
-          </p>
-        )}
-      </div>
+      {button && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <PickButton accept={ATTACHMENT_ACCEPT} onFiles={a.add} disabled={full}>
+            <Paperclip className="size-4" aria-hidden /> Legg ved fil
+          </PickButton>
+          {!compact && (
+            <p className="text-xs text-stone-500">
+              Bilder (JPEG, PNG, WebP) og dokumenter (PDF, Word, Excel, PowerPoint, tekst, CSV),
+              maks 25 MB og {MAX_ATTACHMENTS} filer. Dra filer hit, eller lim inn et bilde.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

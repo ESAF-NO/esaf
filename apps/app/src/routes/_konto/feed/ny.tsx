@@ -27,6 +27,7 @@ function NewPost() {
 
       <PostForm
         initial={{ channel: kanal ?? 'sporsmal', title: '', body: '', url: '' }}
+        draftKey="nytt-innlegg"
         submitLabel="Publiser"
         savingLabel="Publiserer …"
         autoFocus

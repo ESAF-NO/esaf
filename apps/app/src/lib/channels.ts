@@ -28,6 +28,8 @@ export const channels: Record<
     dot: string
     hint: string
     placeholder: string
+    /** Hjelpeteksten i tekstfeltet for innlegg i kanalen. */
+    prompt: string
   }
 > = {
   sporsmal: {
@@ -38,6 +40,8 @@ export const channels: Record<
     dot: 'bg-sky-500',
     hint: 'Be nettverket om råd',
     placeholder: 'Hva lurer du på?',
+    prompt:
+      'Gi nok kontekst til at folk kan hjelpe: hva gjelder det, hva har du prøvd, og hva trenger du?',
   },
   intro: {
     label: 'Intro',
@@ -47,6 +51,7 @@ export const channels: Record<
     dot: 'bg-violet-500',
     hint: 'Finn noen som kjenner noen',
     placeholder: 'Hvem vil du bli introdusert for, og hvorfor?',
+    prompt: 'Fortell kort hva du jobber med, og hva en intro kan hjelpe med.',
   },
   lansering: {
     label: 'Lansering',
@@ -56,6 +61,7 @@ export const channels: Record<
     dot: 'bg-brand-500',
     hint: 'Vis frem noe du har laget',
     placeholder: 'Hva lanserer dere?',
+    prompt: 'Hva er det, hvem er det for, og hva vil dere gjerne ha tilbakemelding på?',
   },
   jobb: {
     label: 'Jobb',
@@ -65,6 +71,7 @@ export const channels: Record<
     dot: 'bg-emerald-500',
     hint: 'Stillinger og oppdrag',
     placeholder: 'Hvem ser dere etter?',
+    prompt: 'Rollen, hvor, og hvordan man søker. Legg gjerne ved annonsen.',
   },
   arrangement: {
     label: 'Arrangement',
@@ -75,6 +82,7 @@ export const channels: Record<
     dot: 'bg-amber-500',
     hint: 'Treff, talks og ESAF-helg',
     placeholder: 'Hva skjer, hvor og når?',
+    prompt: 'Tid, sted, hvem det passer for, og hvordan man melder seg på.',
   },
   generelt: {
     label: 'Generelt',
@@ -84,6 +92,7 @@ export const channels: Record<
     dot: 'bg-stone-400',
     hint: 'Alt annet',
     placeholder: 'Hva vil du dele?',
+    prompt: 'Skriv det du vil dele med nettverket.',
   },
 }
 

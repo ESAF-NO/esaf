@@ -52,6 +52,10 @@ type Props = Omit<ComponentProps<'textarea'>, 'value' | 'defaultValue' | 'onChan
   onValueChange: (value: string) => void
   /** Foreslås først og når det bare står @, for eksempel de som er med i tråden. */
   suggestFirst?: { personId: string }[]
+  /** Uten egen ramme og bakgrunn, inne i en `Composer`. */
+  bare?: boolean
+  /** Plassering av «Varsler …» under feltet. */
+  noteClassName?: string
 }
 
 /**
@@ -68,8 +72,11 @@ export function MentionTextarea({
   onFocus,
   onBlur,
   onScroll,
+  bare = false,
+  noteClassName,
   ...props
 }: Props) {
+  const Field = bare ? 'textarea' : Textarea
   const { viewer } = useRouteContext({ from: '__root__' })
   const field = useRef<HTMLTextAreaElement>(null)
   const popup = useRef<HTMLDivElement>(null)
@@ -187,7 +194,7 @@ export function MentionTextarea({
   return (
     <div>
       <div className="relative">
-        <Textarea
+        <Field
           {...props}
           ref={field}
           value={plainText(value)}
@@ -250,7 +257,7 @@ export function MentionTextarea({
       </p>
       <p
         aria-live="polite"
-        className={cx('text-xs text-stone-500', mentioned.length > 0 && 'mt-1.5')}
+        className={cx('text-xs text-stone-500', mentioned.length > 0 && 'mt-1.5', noteClassName)}
       >
         {mentioned.length > 0 && `Varsler ${names.format(mentioned.map((p) => p.name))}.`}
       </p>

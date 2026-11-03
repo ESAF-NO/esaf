@@ -4,8 +4,10 @@ import {
   invitationEmail,
   passwordLinkEmail,
   passwordResetEmail,
+  isEmailPaused,
   verificationEmail,
   withEmailLog,
+  withEmailPause,
   type CreatedLink,
   type Mailer,
 } from '@esaf/core'
@@ -19,8 +21,16 @@ import { emailConfig, env } from './env.server.ts'
  * i e-postloggen (Admin → E-post).
  */
 export const mailer: Mailer | null = emailConfig
-  ? withEmailLog(db, createMailer(emailConfig))
+  ? withEmailLog(db, withEmailPause(db, createMailer(emailConfig)))
   : null
+
+/**
+ * Om appen sender e-post nå: leverandøren er satt opp, og en admin har ikke satt
+ * e-post på pause (Admin → E-post). Registrering og «Glemt passord?» krever det.
+ */
+export async function emailActive(): Promise<boolean> {
+  return mailer !== null && !(await isEmailPaused(db))
+}
 
 /** Hvor lenge bekreftelseslenken etter registrering virker, i sekunder (som Better Auths standard). */
 export const VERIFICATION_TTL_SECONDS = 60 * 60

@@ -18,8 +18,13 @@ import { z } from 'zod'
 import { rethrowForClient, withViewer as run } from '#/server/access.server.ts'
 import { auth } from '#/server/auth.server.ts'
 import { db } from '#/server/db.server.ts'
-import { linkUrl, logEmailFailure, mailer, sendLinkEmail } from '#/server/email.server.ts'
-import { emailEnabled } from '#/server/env.server.ts'
+import {
+  emailActive,
+  linkUrl,
+  logEmailFailure,
+  mailer,
+  sendLinkEmail,
+} from '#/server/email.server.ts'
 import { getRequestViewer } from '#/server/viewer.server.ts'
 
 /**
@@ -72,12 +77,13 @@ async function deliver(link: CreatedLink): Promise<ShareableLink> {
 
 /**
  * Hva appen kan uten admin: registrering og «Glemt passord?» krever e-post.
- * Uten e-post kommer folk inn med invitasjon, og lenker deles av admin.
+ * Uten e-post (eller med e-post på pause) kommer folk inn med invitasjon, og
+ * lenker deles av admin.
  */
-export const fetchAuthOptions = createServerFn({ method: 'GET' }).handler(() => ({
-  selfSignUp: emailEnabled,
-  emailEnabled,
-}))
+export const fetchAuthOptions = createServerFn({ method: 'GET' }).handler(async () => {
+  const emailEnabled = await emailActive()
+  return { selfSignUp: emailEnabled, emailEnabled }
+})
 
 /** Det siden for en lenke viser. Tokenet er hemmeligheten; ingen innlogging kreves. */
 export const fetchLinkDetails = createServerFn({ method: 'POST' })

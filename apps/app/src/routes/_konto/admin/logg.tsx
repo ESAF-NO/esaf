@@ -818,6 +818,18 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} fjernet {subject} fra <EventLink details={details} />.
     </>
   ),
+  'email.pause': ({ actor, details }) => (
+    <>
+      {actor} satte all e-post fra appen på pause
+      {text(details.reason) ? `: «${text(details.reason)}»` : ''}.
+    </>
+  ),
+  'email.resume': ({ actor, details }) => (
+    <>
+      {actor} slo på e-post fra appen igjen
+      {text(details.reason) ? `: «${text(details.reason)}»` : ''}.
+    </>
+  ),
   'badge.create': ({ actor, details }) => (
     <>
       {actor} lagde merket <BadgeLink details={details} />

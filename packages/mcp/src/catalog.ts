@@ -164,13 +164,14 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
     id: 'email',
     title: 'E-post',
     description:
-      'Alle e-postene appen sender, med eksempler og når de sendes, tall for hva som er sendt og feilet, loggen over hvem som har fått hva, og test til deg selv.',
+      'Alle e-postene appen sender, med eksempler og når de sendes, tall for hva som er sendt og feilet, loggen over hvem som har fått hva, test til deg selv, og å sette all e-post på pause.',
     tools: [
       'email_templates',
       'email_preview',
       'email_stats',
       'list_sent_emails',
       'send_test_email',
+      'set_email_paused',
     ],
   },
   {

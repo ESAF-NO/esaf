@@ -232,6 +232,13 @@
       "when": 1793699461148,
       "tag": "0032_email_log",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793700328582,
+      "tag": "0033_app_setting",
+      "breakpoints": true
     }
   ]
 }

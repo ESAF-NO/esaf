@@ -102,6 +102,13 @@ export {
   type MailerOptions,
 } from './email.ts'
 export {
+  getEmailSwitch,
+  isEmailPaused,
+  setEmailPaused,
+  withEmailPause,
+  type EmailSwitch,
+} from './email-switch.ts'
+export {
   EMAIL_LOG_PAGE_SIZE,
   EMAIL_LOG_RETENTION_DAYS,
   emailCatalog,

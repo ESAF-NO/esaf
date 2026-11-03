@@ -18,10 +18,20 @@ export const optionalText = (max: number) =>
 export const tidyTag = (tag: string) =>
   tag === tag.toLocaleLowerCase('nb') ? tag.charAt(0).toLocaleUpperCase('nb') + tag.slice(1) : tag
 
-/** Stikkord (emner, bransjer): maks 10 à 40 tegn. Duplikater fjernes uavhengig av store/små bokstaver. */
-export const tagList = (one: string, many: string) =>
+/**
+ * Stikkord (emner, bransjer): maks 10 à 40 tegn, eller `maxLength`. Duplikater
+ * fjernes uavhengig av store/små bokstaver.
+ */
+export const tagList = (one: string, many: string, maxLength = 40) =>
   z
-    .array(z.string().trim().min(1).max(40, `Hvert ${one} kan ha maks 40 tegn.`).transform(tidyTag))
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(maxLength, `Hvert ${one} kan ha maks ${maxLength} tegn.`)
+        .transform(tidyTag),
+    )
     .max(10, `Maks 10 ${many}.`)
     .transform((tags) =>
       tags.filter(

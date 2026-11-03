@@ -3,6 +3,7 @@ import { createAdminMcpHttpHandler } from '@esaf/mcp'
 import { mcpResourceUrl } from './auth-config.server.ts'
 import { auth } from './auth.server.ts'
 import { db } from './db.server.ts'
+import { mailer } from './email.server.ts'
 import { env } from './env.server.ts'
 import { storage } from './photos.server.ts'
 import { embedder } from './search.server.ts'
@@ -27,6 +28,7 @@ export const handleMcpRequest = createAdminMcpHttpHandler({
   resource: mcpResource,
   resourceMetadataUrl: mcpResourceMetadataUrl,
   embedder,
+  mailer,
   // Bak Coolify/Traefik: proxyen legger klientens adresse sist i X-Forwarded-For.
   // Det første leddet kan klienten skrive selv, så det brukes ikke.
   clientAddress: (request) =>

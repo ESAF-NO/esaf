@@ -1584,6 +1584,55 @@ export const notificationEmailPreference = pgTable(
 export type NotificationEmailFrequency = (typeof notificationEmailFrequency.enumValues)[number]
 
 // ---------------------------------------------------------------------------
+// Sendte e-poster
+// ---------------------------------------------------------------------------
+
+/** Hvilken e-post det var. Se `emailCatalog` i @esaf/core for når hver sendes. */
+export const emailKind = pgEnum('email_kind', [
+  'invitation',
+  'password_link',
+  'password_reset',
+  'verification',
+  'welcome',
+  'notification',
+  'digest',
+  'test',
+])
+
+/** Hvordan det gikk: levert til leverandøren, avvist av mottakeren, eller feilet. */
+export const emailStatus = pgEnum('email_status', ['sent', 'bounced', 'failed'])
+
+/**
+ * Hver e-post appen har prøvd å sende, til admins oversikt. Bare emnet lagres,
+ * ikke innholdet: lenkene i e-postene er hemmeligheter. Slettes etter ett år
+ * (`pruneEmailLog`).
+ */
+export const emailLog = pgTable(
+  'email_log',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    kind: emailKind().notNull(),
+    toEmail: text().notNull(),
+    /** Profilen adressen hører til, om den finnes. */
+    personId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    subject: text().notNull(),
+    status: emailStatus().notNull(),
+    /** Hvorfor det feilet (`EmailErrorReason`, eller `error` for ukjente feil). */
+    errorReason: text(),
+    /** For varsler: kategorien, eller `all` når e-posten har flere. */
+    category: text(),
+    /** For varsler: hvor mange varsler e-posten hadde. */
+    items: integer().notNull().default(0),
+    provider: text().notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index().on(t.createdAt), index().on(t.personId, t.createdAt), index().on(t.toEmail)],
+)
+
+export type EmailKind = (typeof emailKind.enumValues)[number]
+export type EmailStatus = (typeof emailStatus.enumValues)[number]
+
+// ---------------------------------------------------------------------------
 // Vedlegg: bilder og dokumenter på innlegg, kommentarer, arrangementer og selskaper
 // ---------------------------------------------------------------------------
 

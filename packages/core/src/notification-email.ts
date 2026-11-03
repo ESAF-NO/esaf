@@ -549,6 +549,12 @@ export async function sendNotificationEmails(
         await options.mailer.send({
           to: account.email,
           ...content,
+          log: {
+            kind: entry.digest ? 'digest' : 'notification',
+            personId,
+            category: single ?? 'all',
+            items: items.length,
+          },
           headers: {
             'List-Unsubscribe': `<${new URL(`/api/varsler/avmeld?t=${token}`, options.appUrl).href}>`,
             'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -607,7 +613,11 @@ async function sendWelcomes(
       graduationYear: w.payload.graduationYear ?? null,
     })
     try {
-      await options.mailer.send({ to, ...content })
+      await options.mailer.send({
+        to,
+        ...content,
+        log: { kind: 'welcome', personId: w.recipientPersonId },
+      })
       await markEmailed(tx, [w.id], now)
       run.emails++
       run.notifications++

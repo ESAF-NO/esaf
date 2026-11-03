@@ -7,6 +7,7 @@ import {
   MCP_OAUTH_SCOPES,
   OAUTH_ACCESS_TOKEN_PREFIX,
   type Embedder,
+  type Mailer,
   type ObjectStorage,
   type Viewer,
 } from '@esaf/core'
@@ -46,6 +47,8 @@ export type AdminMcpHttpOptions = {
   resourceMetadataUrl: string
   fetchImage?: ImageFetcher
   embedder?: Embedder | null
+  /** E-posten appen sender med, til testsending fra MCP. Null uten leverandør. */
+  mailer?: Mailer | null
   /** IP-adressen bak forespørselen, til grensen for avviste forsøk. */
   clientAddress?: (request: Request) => string | null
   onError?: (error: Error) => void
@@ -120,6 +123,7 @@ export function createAdminMcpHttpHandler(options: AdminMcpHttpOptions) {
         appUrl: options.appUrl,
         fetchImage: options.fetchImage,
         embedder: options.embedder,
+        mailer: options.mailer,
       })
     },
     { maxRequestBodySize: MAX_BODY_BYTES, onerror: options.onError },

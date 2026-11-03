@@ -225,6 +225,13 @@
       "when": 1793572206336,
       "tag": "0031_badges",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793699461148,
+      "tag": "0032_email_log",
+      "breakpoints": true
     }
   ]
 }

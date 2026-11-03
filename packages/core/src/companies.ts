@@ -127,6 +127,9 @@ export function normalizeWebsite(raw: string): string | null {
   return url.pathname === '/' && !url.search && !url.hash ? url.origin : url.href
 }
 
+/** Lengste bransjenavn på et selskap (de lengste fra Enhetsregisteret er rundt 110 tegn). */
+export const COMPANY_INDUSTRY_MAX = 150
+
 /** Felles validering av selskapsinfo, brukt av webappen og senere MCP. Tomme felt lagres som `null`. */
 export const companyInput = z.object({
   name: companyName,
@@ -147,7 +150,12 @@ export const companyInput = z.object({
   }),
   foundedYear: yearInput(1800),
   location: optionalText(80),
-  industries: tagList('bransjenavn', 'bransjer'),
+  /**
+   * Bransjene fra Enhetsregisteret (NACE) er lange («Forskning og eksperimentell
+   * utvikling innenfor naturvitenskap og teknikk»), så grensen er høyere enn for
+   * emner. Med 40 kunne ingen endre et selskap med en slik bransje.
+   */
+  industries: tagList('bransjenavn', 'bransjer', COMPANY_INDUSTRY_MAX),
   status: z.enum(companyStatuses),
 })
 
@@ -654,11 +662,14 @@ export function changedCompanyFields(
   current: Pick<CompanyRow, keyof z.output<typeof companyInput>>,
   values: Partial<z.output<typeof companyInput>>,
 ) {
-  return (Object.keys(values) as (keyof typeof values)[]).filter((key) =>
-    key === 'industries'
-      ? !sameTags(values.industries!, current.industries)
-      : values[key] !== current[key],
-  )
+  return (Object.keys(values) as (keyof typeof values)[]).filter((key) => {
+    if (key === 'industries') return !sameTags(values.industries!, current.industries)
+    // Lagrede verdier fra import er ikke alltid normalisert («https://x.no/»).
+    // Sammenlign med den normaliserte formen, så et felt ingen har rørt ikke
+    // regnes som endret (og mister kilden sin) bare fordi skjemaet sender det på nytt.
+    const parsed = companyInput.shape[key].safeParse(current[key])
+    return values[key] !== (parsed.success ? parsed.data : current[key])
+  })
 }
 
 /**

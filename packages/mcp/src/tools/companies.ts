@@ -4,6 +4,7 @@ import {
   addFieldSources,
   companyEventTypes,
   companySourceFields,
+  COMPANY_INDUSTRY_MAX,
   companyStatuses,
   confirmCompanyEvent,
   createCompany,
@@ -66,7 +67,7 @@ const companyFields = {
   website: z.string().max(300).nullable().optional(),
   foundedYear: z.number().int().nullable().optional(),
   location: z.string().max(80).nullable().optional().describe('City, e.g. "Trondheim".'),
-  industries: z.array(z.string().max(40)).max(10).optional(),
+  industries: z.array(z.string().max(COMPANY_INDUSTRY_MAX)).max(10).optional(),
   status: z
     .enum(companyStatuses)
     .optional()

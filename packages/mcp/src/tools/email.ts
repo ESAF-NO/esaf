@@ -9,6 +9,7 @@ import {
   listEmailBlocks,
   listEmailLog,
   sendTestEmail,
+  sendWelcomeEmail,
   setEmailKindEnabled,
   setEmailPaused,
   switchableEmailKinds,
@@ -186,5 +187,18 @@ export function registerEmailTools(server: McpServer, ctx: ToolContext) {
       await unblockEmailAddress(ctx.db, ctx.viewer, args)
       return listEmailBlocks(ctx.db, ctx.viewer)
     },
+  })
+
+  defineTool(server, ctx, {
+    name: 'send_welcome_email',
+    title: 'Send the welcome e-mail for an approved request',
+    description:
+      'Sends "Du er med i ESAF" now to the person behind an approved access request (list_access_requests ' +
+      'with status approved shows welcomeEmail: when it was last sent, or null). Use for people approved ' +
+      'before the welcome e-mail existed, or when it failed.',
+    input: z.object({ requestId: id('Access request') }),
+    effect: 'write',
+    run: async ({ requestId }, ctx) =>
+      sendWelcomeEmail(ctx.db, ctx.viewer, ctx.mailer, { requestId, appUrl: ctx.appUrl }),
   })
 }

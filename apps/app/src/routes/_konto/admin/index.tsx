@@ -1,10 +1,12 @@
 import type { AccessRequestView } from '@esaf/core'
 import { createFileRoute, Link, notFound, useRouter } from '@tanstack/react-router'
+import { useServerFn } from '@tanstack/react-start'
 import {
   AlertTriangle,
   Check,
   CircleCheck,
   Lock,
+  Mail,
   Phone,
   Search,
   ShieldCheck,
@@ -23,7 +25,7 @@ import {
   Input,
   LinkedInIcon,
 } from '#/components/ui.tsx'
-import { decideRequest, fetchAccessRequests } from '#/lib/access.functions.ts'
+import { decideRequest, fetchAccessRequests, resendWelcome } from '#/lib/access.functions.ts'
 import { timeAgo } from '#/lib/format.ts'
 import { findUnclaimedProfiles } from '#/lib/members.functions.ts'
 
@@ -400,6 +402,7 @@ function DecidedRow({ request: r }: { request: AccessRequestView }) {
           {r.profile?.fullName ?? r.fullName}
         </p>
         <p className="truncate text-xs text-stone-500">{r.email}</p>
+        {approved && <WelcomeStatus request={r} />}
       </div>
       <span
         className={cx(
@@ -414,6 +417,58 @@ function DecidedRow({ request: r }: { request: AccessRequestView }) {
       {r.decidedAt && (
         <span className="w-24 text-right text-xs text-stone-500">{timeAgo(r.decidedAt)}</span>
       )}
+    </div>
+  )
+}
+
+/** Om velkomsten («Du er med i ESAF») er sendt på e-post, og en knapp for å sende den nå. */
+function WelcomeStatus({ request: r }: { request: AccessRequestView }) {
+  const router = useRouter()
+  const send = useServerFn(resendWelcome)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const w = r.welcomeEmail
+
+  async function run() {
+    setBusy(true)
+    setResult(null)
+    try {
+      const { to } = await send({ data: { requestId: r.id } })
+      setResult({ ok: true, text: `Sendt til ${to}.` })
+      await router.invalidate()
+    } catch (e) {
+      setResult({ ok: false, text: e instanceof Error ? e.message : 'Kunne ikke sende.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <span
+        className={cx(
+          'inline-flex items-center gap-1',
+          !w ? 'text-stone-500' : w.status === 'sent' ? 'text-emerald-700' : 'text-red-700',
+        )}
+      >
+        <Mail className="size-3.5" aria-hidden />
+        {!w
+          ? 'Ingen velkomst på e-post'
+          : w.status === 'sent'
+            ? `Velkomst sendt ${timeAgo(w.at)}`
+            : `Velkomsten feilet ${timeAgo(w.at)}`}
+      </span>
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy}
+        className="font-medium text-brand-700 hover:underline disabled:opacity-50"
+      >
+        {busy ? 'Sender …' : w?.status === 'sent' ? 'Send på nytt' : 'Send velkomst'}
+      </button>
+      <span role="status" className={result?.ok ? 'text-emerald-700' : 'text-red-700'}>
+        {result?.text}
+      </span>
     </div>
   )
 }

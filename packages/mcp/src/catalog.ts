@@ -175,6 +175,7 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
       'set_email_kind_enabled',
       'block_email_address',
       'unblock_email_address',
+      'send_welcome_email',
     ],
   },
   {

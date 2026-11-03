@@ -645,11 +645,14 @@ export function changedCompanyFields(
   current: Pick<CompanyRow, keyof z.output<typeof companyInput>>,
   values: Partial<z.output<typeof companyInput>>,
 ) {
-  return (Object.keys(values) as (keyof typeof values)[]).filter((key) =>
-    key === 'industries'
-      ? !sameTags(values.industries!, current.industries)
-      : values[key] !== current[key],
-  )
+  return (Object.keys(values) as (keyof typeof values)[]).filter((key) => {
+    if (key === 'industries') return !sameTags(values.industries!, current.industries)
+    // Lagrede verdier fra import er ikke alltid normalisert («https://x.no/»).
+    // Sammenlign med den normaliserte formen, så et felt ingen har rørt ikke
+    // regnes som endret (og mister kilden sin) bare fordi skjemaet sender det på nytt.
+    const parsed = companyInput.shape[key].safeParse(current[key])
+    return values[key] !== (parsed.success ? parsed.data : current[key])
+  })
 }
 
 /**

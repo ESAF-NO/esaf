@@ -311,6 +311,39 @@ describe.skipIf(!url)('selskaper', () => {
     expect(await denial(updateCompany(db, without2fa, id, info))).toBe('strong_auth_required')
   })
 
+  it('felt ingen har rørt, regnes ikke som endret, selv om de ble lagret uten normalisering', async () => {
+    await work(ola, [job('Syrlig', { founder: true })])
+    const { id } = (await companyBySlug('syrlig'))!
+    // Som fra import: nettadresse med skråstrek og en kilde.
+    await db
+      .update(schema.company)
+      .set({ website: 'https://syrlig.no/', tagline: 'Syretester  for gründere' })
+      .where(eq(schema.company.id, id))
+    await db.insert(schema.fieldSource).values({
+      entityType: 'company',
+      entityId: id,
+      field: 'website',
+      sourceLabel: 'entreprenorskolen.no',
+      confidence: 'high',
+    })
+    await updateCompany(db, admin, id, {
+      ...info,
+      website: 'https://syrlig.no/',
+      tagline: 'Syretester for gründere',
+      location: 'Trondheim',
+    })
+    const sources = await db
+      .select({ field: schema.fieldSource.field })
+      .from(schema.fieldSource)
+      .where(eq(schema.fieldSource.entityId, id))
+    expect(sources.map((s) => s.field)).toEqual(['website'])
+    const [event] = await db
+      .select()
+      .from(schema.auditEvent)
+      .where(eq(schema.auditEvent.action, 'company.admin_edit'))
+    expect(event!.details).toMatchObject({ fields: ['location'] })
+  })
+
   it('selskapsinfo valideres og ryddes', async () => {
     await work(ola, [job('Syrlig', { founder: true })])
     const { id } = (await companyBySlug('syrlig'))!

@@ -311,6 +311,39 @@ describe.skipIf(!url)('selskaper', () => {
     expect(await denial(updateCompany(db, without2fa, id, info))).toBe('strong_auth_required')
   })
 
+  it('felt ingen har rørt, regnes ikke som endret, selv om de ble lagret uten normalisering', async () => {
+    await work(ola, [job('Syrlig', { founder: true })])
+    const { id } = (await companyBySlug('syrlig'))!
+    // Som fra import: nettadresse med skråstrek og en kilde.
+    await db
+      .update(schema.company)
+      .set({ website: 'https://syrlig.no/', tagline: 'Syretester  for gründere' })
+      .where(eq(schema.company.id, id))
+    await db.insert(schema.fieldSource).values({
+      entityType: 'company',
+      entityId: id,
+      field: 'website',
+      sourceLabel: 'entreprenorskolen.no',
+      confidence: 'high',
+    })
+    await updateCompany(db, admin, id, {
+      ...info,
+      website: 'https://syrlig.no/',
+      tagline: 'Syretester for gründere',
+      location: 'Trondheim',
+    })
+    const sources = await db
+      .select({ field: schema.fieldSource.field })
+      .from(schema.fieldSource)
+      .where(eq(schema.fieldSource.entityId, id))
+    expect(sources.map((s) => s.field)).toEqual(['website'])
+    const [event] = await db
+      .select()
+      .from(schema.auditEvent)
+      .where(eq(schema.auditEvent.action, 'company.admin_edit'))
+    expect(event!.details).toMatchObject({ fields: ['location'] })
+  })
+
   it('selskapsinfo valideres og ryddes', async () => {
     await work(ola, [job('Syrlig', { founder: true })])
     const { id } = (await companyBySlug('syrlig'))!
@@ -345,6 +378,15 @@ describe.skipIf(!url)('selskaper', () => {
       canMerge: false,
     })
     expect(await page(kari, 'syrlig')).toMatchObject({ websiteLabel: 'syrlig.no' })
+    // Lange bransjenavn fra Enhetsregisteret stopper ikke andre endringer.
+    const nace = 'Forskning og eksperimentell utvikling innenfor naturvitenskap og teknikk'
+    await save({ industries: [nace, 'Energi'] })
+    await save({ industries: [nace, 'Energi'], tagline: 'Syretester for gründere og forskere' })
+    expect(await getEditableCompany(db, ola, 'syrlig')).toMatchObject({
+      industries: [nace, 'Energi'],
+      tagline: 'Syretester for gründere og forskere',
+    })
+    await expect(save({ industries: ['x'.repeat(151)] })).rejects.toThrow('150')
     await save({ website: 'http://syrlig.no/om-oss?ref=esaf' })
     expect((await page(kari, 'syrlig')).website).toBe('http://syrlig.no/om-oss?ref=esaf')
   })

@@ -275,6 +275,7 @@ describe.skipIf(!url)('varsler på e-post', () => {
     expect(await run(new Date())).toMatchObject({ emails: 1 })
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({ to: 'nina.ny@example.test', subject: 'Du er med i ESAF' })
+    expect(sent[0]!.text.startsWith('Hei Nina!')).toBe(true)
     expect(sent[0]!.text).toContain('ES 2017')
     expect(sent[0]!.text).toContain(`${APP}/`)
     expect(sent[0]!.headers).toBeUndefined()

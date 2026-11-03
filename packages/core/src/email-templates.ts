@@ -40,8 +40,22 @@ export function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;')
 }
 
+/**
+ * «Hei Kari!» med fornavnet når vi vet hvem e-posten går til, ellers «Hei!».
+ * Fornavnet er det første ordet i navnet.
+ */
+export function greeting(name: string | null | undefined): string {
+  const first = name?.trim().split(/\s+/)[0]
+  return first ? `Hei ${first}!` : 'Hei!'
+}
+
+/** Navnet til den e-posten går til, når vi vet det. Brukes i hilsenen. */
+type To = { name?: string | null }
+
 type Template = {
   subject: string
+  /** Navnet til mottakeren, til hilsenen. */
+  name?: string | null
   /** Avsnittene før knappen. */
   intro: string[]
   action: { label: string; url: string }
@@ -49,10 +63,14 @@ type Template = {
   outro: string[]
 }
 
-function render({ subject, intro, action, outro }: Template): EmailContent {
-  const text = ['Hei!', ...intro, `${action.label}:\n${action.url}`, ...outro, SIGNATURE].join(
-    '\n\n',
-  )
+function render({ subject, name, intro, action, outro }: Template): EmailContent {
+  const text = [
+    greeting(name),
+    ...intro,
+    `${action.label}:\n${action.url}`,
+    ...outro,
+    SIGNATURE,
+  ].join('\n\n')
 
   const p = (value: string) =>
     `<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#292524">${escapeHtml(value)}</p>`
@@ -67,7 +85,7 @@ function render({ subject, intro, action, outro }: Template): EmailContent {
 <body style="margin:0;padding:0;background:#fafaf9">
 <div style="max-width:520px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
 <p style="margin:0 0 24px;font-size:15px;font-weight:600;color:#0c0a09">ESAF</p>
-${p('Hei!')}
+${p(greeting(name))}
 ${intro.map(p).join('\n')}
 <p style="margin:24px 0"><a href="${url}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#ea580c;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none">${escapeHtml(action.label)}</a></p>
 <p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#78716c">Virker ikke knappen? Kopier lenken inn i nettleseren:<br><a href="${url}" style="color:#c2410c;word-break:break-all">${url}</a></p>
@@ -85,15 +103,18 @@ const AFTER_RESET =
   'Når du har valgt nytt passord, blir du logget ut på alle enheter. Har du tofaktor, trenger du fortsatt koden når du logger inn.'
 
 /** Invitasjon fra en admin (eller styret, fra kommandolinjen). */
-export function invitationEmail(input: {
-  url: string
-  /** Den som inviterte, eller null for styret. */
-  invitedBy: string | null
-  role: MemberRole
-  expiresAt: Date
-}): EmailContent {
+export function invitationEmail(
+  input: {
+    url: string
+    /** Den som inviterte, eller null for styret. */
+    invitedBy: string | null
+    role: MemberRole
+    expiresAt: Date
+  } & To,
+): EmailContent {
   const who = input.invitedBy ?? 'Styret i ESAF'
   return render({
+    name: input.name,
     subject: 'Invitasjon til ESAF',
     intro: [
       input.role === 'member'
@@ -110,13 +131,16 @@ export function invitationEmail(input: {
 }
 
 /** Lenke for nytt passord som en admin har laget, etter at personen ba styret om det. */
-export function passwordLinkEmail(input: {
-  url: string
-  /** Admin som laget lenken, eller null for styret. */
-  createdBy: string | null
-  expiresAt: Date
-}): EmailContent {
+export function passwordLinkEmail(
+  input: {
+    url: string
+    /** Admin som laget lenken, eller null for styret. */
+    createdBy: string | null
+    expiresAt: Date
+  } & To,
+): EmailContent {
   return render({
+    name: input.name,
     subject: 'Nytt passord til ESAF',
     intro: [
       `${input.createdBy ?? 'Styret i ESAF'} har laget en lenke du kan bruke til å velge nytt passord i ESAF-appen.`,
@@ -130,8 +154,9 @@ export function passwordLinkEmail(input: {
 }
 
 /** Lenke for nytt passord personen ba om selv («Glemt passord?»). */
-export function passwordResetEmail(input: { url: string; expiresAt: Date }): EmailContent {
+export function passwordResetEmail(input: { url: string; expiresAt: Date } & To): EmailContent {
   return render({
+    name: input.name,
     subject: 'Nytt passord til ESAF',
     intro: ['Noen ba om å få velge nytt passord til ESAF-kontoen med denne e-postadressen.'],
     action: { label: 'Velg nytt passord', url: input.url },
@@ -143,9 +168,12 @@ export function passwordResetEmail(input: { url: string; expiresAt: Date }): Ema
 }
 
 /** Bekreftelse av e-postadressen etter registrering. */
-export function verificationEmail(input: { url: string; expiresInMinutes: number }): EmailContent {
+export function verificationEmail(
+  input: { url: string; expiresInMinutes: number } & To,
+): EmailContent {
   const duration = input.expiresInMinutes === 60 ? 'én time' : `${input.expiresInMinutes} minutter`
   return render({
+    name: input.name,
     subject: 'Bekreft e-postadressen din',
     intro: [
       'Bekreft at dette er e-postadressen din, så kan du fortsette med å be om tilgang til ESAF-appen.',
@@ -159,12 +187,15 @@ export function verificationEmail(input: { url: string; expiresInMinutes: number
 }
 
 /** Når en admin har godkjent forespørselen om tilgang. */
-export function welcomeEmail(input: {
-  url: string
-  /** Kullet personen ble med i, om det er kjent. */
-  graduationYear: number | null
-}): EmailContent {
+export function welcomeEmail(
+  input: {
+    url: string
+    /** Kullet personen ble med i, om det er kjent. */
+    graduationYear: number | null
+  } & To,
+): EmailContent {
   return render({
+    name: input.name,
     subject: 'Du er med i ESAF',
     intro: [
       'Forespørselen din om tilgang til ESAF-appen er godkjent.',
@@ -197,17 +228,19 @@ const MAX_SUBJECT = 120
  * (samlet, eller i en daglig eller ukentlig oppsummering) som en liste. Under
  * står hvordan man endrer det, og en lenke for å slutte med det.
  */
-export function notificationEmail(input: {
-  items: NotificationEmailItem[]
-  /** Fra en daglig eller ukentlig oppsummering. */
-  summary: boolean
-  settingsUrl: string
-  unsubscribeUrl: string
-  /** Det avmeldingslenken slår av: «Kommentarer på innleggene dine» eller «alle varsler på e-post». */
-  unsubscribeLabel: string
-  /** Alle varslene i appen. */
-  allUrl: string
-}): EmailContent {
+export function notificationEmail(
+  input: {
+    items: NotificationEmailItem[]
+    /** Fra en daglig eller ukentlig oppsummering. */
+    summary: boolean
+    settingsUrl: string
+    unsubscribeUrl: string
+    /** Det avmeldingslenken slår av: «Kommentarer på innleggene dine» eller «alle varsler på e-post». */
+    unsubscribeLabel: string
+    /** Alle varslene i appen. */
+    allUrl: string
+  } & To,
+): EmailContent {
   const { items } = input
   const one = items.length === 1 ? items[0]! : null
   const count = `${items.length} ${items.length === 1 ? 'varsel' : 'varsler'}`
@@ -231,7 +264,9 @@ export function notificationEmail(input: {
     : null
   const unsubscribe = `Slutt å få ${input.unsubscribeLabel.toLocaleLowerCase('nb')} på e-post`
 
+  const hello = greeting(input.name)
   const text = [
+    hello,
     ...(intro ? [intro] : []),
     ...items.map((i) =>
       [one ? i.text : `• ${i.text}`, i.excerpt && `  «${i.excerpt}»`, one ? null : `  ${i.url}`]
@@ -264,6 +299,7 @@ ${i.excerpt ? `<p style="margin:6px 0 0;font-size:14px;line-height:1.5;color:#57
 <body style="margin:0;padding:0;background:#fafaf9">
 <div style="max-width:560px;margin:0 auto;padding:32px 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
 <p style="margin:0 0 24px;font-size:15px;font-weight:600;color:#0c0a09">ESAF</p>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#292524">${escapeHtml(hello)}</p>
 ${intro ? `<p style="margin:0 0 16px;font-size:15px;line-height:1.55;color:#292524">${escapeHtml(intro)}</p>` : ''}
 ${items.map(item).join('\n')}
 <p style="margin:24px 0"><a href="${url}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#ea580c;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none">${escapeHtml(action.label)}</a></p>

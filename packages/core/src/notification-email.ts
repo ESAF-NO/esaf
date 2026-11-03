@@ -529,7 +529,7 @@ export async function sendNotificationEmails(
 
     // Etter hverandre: én tilkobling i transaksjonen kan bare ha én spørring om gangen.
     const accounts = await tx
-      .select({ personId: person.id, email: user.email })
+      .select({ personId: person.id, email: user.email, fullName: person.fullName })
       .from(person)
       .innerJoin(user, eq(user.id, person.userId))
       .where(inArray(person.id, recipients))
@@ -563,6 +563,7 @@ export async function sendNotificationEmails(
         entry.categories.size === 1 ? ([...entry.categories][0] as NotificationCategoryId) : null
       const token = unsubscribeToken(options.secret, personId, single ?? 'all')
       const content = notificationEmail({
+        name: account.fullName,
         items,
         summary: entry.digest,
         settingsUrl: new URL('/konto#varsler', options.appUrl).href,
@@ -620,7 +621,7 @@ async function sendWelcomes(
   run: NotificationEmailRun,
 ): Promise<boolean> {
   const accounts = await tx
-    .select({ personId: person.id, email: user.email })
+    .select({ personId: person.id, email: user.email, fullName: person.fullName })
     .from(person)
     .innerJoin(user, eq(user.id, person.userId))
     .where(
@@ -629,14 +630,16 @@ async function sendWelcomes(
         welcomes.map((w) => w.recipientPersonId),
       ),
     )
-  const emailOf = new Map(accounts.map((a) => [a.personId, a.email]))
+  const accountOf = new Map(accounts.map((a) => [a.personId, a]))
   for (const w of welcomes.slice(0, MAX_RECIPIENTS)) {
-    const to = emailOf.get(w.recipientPersonId)
-    if (!to) {
+    const account = accountOf.get(w.recipientPersonId)
+    const to = account?.email
+    if (!account || !to) {
       await markEmailed(tx, [w.id], now)
       continue
     }
     const content = welcomeEmail({
+      name: account.fullName,
       url: new URL('/', options.appUrl).href,
       graduationYear: w.payload.graduationYear ?? null,
     })

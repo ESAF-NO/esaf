@@ -181,7 +181,7 @@ describe.skipIf(!url)('personsøk og ES-universet', () => {
     expect(await reindexPeople(db, { ...embedder, model: 'annen' })).toMatchObject({ indexed: 13 })
   })
 
-  it('finner folk på mening, med grunnen, og navnetreff først', async () => {
+  it('finner folk på begreper og ord, med grunnen, og navnetreff først', async () => {
     const { kari, ola } = await seed()
     const embedder = fakeEmbedder()
     await reindexPeople(db, embedder)
@@ -200,10 +200,9 @@ describe.skipIf(!url)('personsøk og ES-universet', () => {
       ola,
     )
 
-    // Bare mening: «galakse» står verken i teksten eller i begrepslisten.
-    const meaning = await searchPeopleByTopic(db, member, 'galakse', { embedder })
-    expect(meaning[0]).toMatchObject({ personId: ola, matchedBy: 'meaning' })
-    expect(meaning[0]!.reason).toContain('universet')
+    // Likhet i mening alene gir ikke treff: «galakse» står verken i teksten
+    // eller i begrepslisten, og Olas «universet» er ikke nok.
+    expect(await searchPeopleByTopic(db, member, 'galakse', { embedder })).toEqual([])
 
     const words = await searchPeopleByTopic(db, member, 'oppdrett', { embedder })
     expect(words[0]).toMatchObject({ personId: ola, matchedBy: 'text' })
@@ -347,6 +346,144 @@ describe.skipIf(!url)('personsøk og ES-universet', () => {
         { personId: ola, topics: ['b2'] },
       ]),
     ).rejects.toThrow('Samme person')
+  })
+
+  it('søkeordene er fasit: metaforer i bioen teller ikke for den som har søkeord', async () => {
+    const { kari } = await seed()
+    const result = await createProfileBatch(db, storage, admin, [
+      {
+        fullName: 'Lars Stjerne',
+        cohorts: [{ graduationYear: 2019 }],
+        bio: 'Lars er en utålmodig rakett klar for stjernene. Han jobber med regnskap og revisjon.',
+      },
+    ])
+    const lars = result.rows[0]!.personId!
+    const embedder = fakeEmbedder()
+    await reindexPeople(db, embedder)
+    const ids = async (q: string) =>
+      (await searchPeopleByTopic(db, member, q, { embedder })).map((h) => h.personId)
+
+    // Uten søkeord er bioen alt søket har, og «rakett» ligner på romfart.
+    expect(await ids('romfart')).toContain(lars)
+
+    await setSearchTopics(db, admin, [
+      { personId: lars, topics: ['regnskap', 'revisjon', 'accounting'] },
+      { personId: kari, topics: ['romfart', 'space'] },
+    ])
+    await reindexPeople(db, embedder)
+    expect(await ids('romfart')).not.toContain(lars)
+    expect(await ids('romfart')).toContain(kari)
+    // Det søkeordene sier, finnes fortsatt, også fra bioen.
+    expect((await searchPeopleByTopic(db, member, 'revisjon', { embedder }))[0]).toMatchObject({
+      personId: lars,
+      matchedBy: 'text',
+    })
+  })
+
+  it('standardtekst i formål fra Brønnøysund gir ikke treff, men det selskapet faktisk gjør, gjør det', async () => {
+    await seed()
+    const company = async (name: string, description: string, industries: string[] = []) => {
+      const { id } = await createCompany(db, admin, {
+        name,
+        tagline: null,
+        description,
+        website: null,
+        foundedYear: 2020,
+        location: null,
+        industries,
+        status: 'active',
+      })
+      await db.insert(schema.fieldSource).values({
+        entityType: 'company',
+        entityId: id,
+        field: 'description',
+        sourceLabel: 'Brønnøysundregistrene',
+        sourceUrl: 'https://virksomhet.brreg.no/oppslag/enheter/123456789',
+        confidence: 'high',
+      })
+      return id
+    }
+    const rows = []
+    for (let i = 1; i <= 6; i++) {
+      const id = await company(
+        `Holding ${i}`,
+        'Investering i aksjer, eiendom og annet som naturlig hører sammen med dette.',
+      )
+      rows.push({
+        fullName: `Holder ${i}`,
+        cohorts: [{ graduationYear: 2020 }],
+        experience: [{ companyId: id, company: `Holding ${i}`, title: 'Daglig leder' }],
+      })
+    }
+    const gaard = await company('Gårdeiendom', 'Kjøp, salg og utleie av næringseiendom.', [
+      'Utleie av egen eller leid fast eiendom',
+    ])
+    const ai = await company('Synsmaskin', 'Utvikling av kunstig intelligens for bildeanalyse.')
+    const result = await createProfileBatch(db, storage, admin, [
+      ...rows,
+      {
+        fullName: 'Gunn Gård',
+        cohorts: [{ graduationYear: 2020 }],
+        experience: [{ companyId: gaard, company: 'Gårdeiendom', title: 'Daglig leder' }],
+      },
+      {
+        fullName: 'Ada Syn',
+        cohorts: [{ graduationYear: 2020 }],
+        experience: [{ companyId: ai, company: 'Synsmaskin', title: 'CTO' }],
+      },
+    ])
+    const id = (name: string) => result.rows.find((r) => r.fullName === name)!.personId!
+    const names = async (q: string) =>
+      (await searchPeopleByTopic(db, admin, q)).map((h) => h.fullName)
+
+    // «eiendom» står i formålet til alle holdingselskapene; bare bransjen sier
+    // at Gårdeiendom faktisk driver med det.
+    const eiendom = await names('eiendom')
+    expect(eiendom).toContain('Gunn Gård')
+    expect(eiendom.filter((n) => n.startsWith('Holder'))).toEqual([])
+    // Et ord som er sjeldent i formålene, teller.
+    expect((await searchPeopleByTopic(db, admin, 'kunstig intelligens'))[0]!.personId).toBe(
+      id('Ada Syn'),
+    )
+  })
+
+  it('med flere ord i søket veier sjeldne ord mer enn vanlige', async () => {
+    await seed()
+    await createProfileBatch(db, storage, admin, [
+      ...[1, 2, 3, 4, 5].map((i) => ({
+        fullName: `Tekno ${i}`,
+        cohorts: [{ graduationYear: 2021 }],
+        bio: `Tekno ${i} er opptatt av ny teknologi og vil starte et teknologiselskap.`,
+      })),
+      {
+        fullName: 'Hege Helse',
+        cohorts: [{ graduationYear: 2021 }],
+        bio: 'Hege har bygget et selskap som lager digitale verktøy for helse og omsorg.',
+      },
+    ])
+    const hits = (await searchPeopleByTopic(db, admin, 'helse teknologi')).map((h) => h.fullName)
+    expect(hits[0]).toBe('Hege Helse')
+    expect(hits.filter((n) => n.startsWith('Tekno'))).toEqual([])
+  })
+
+  it('en setning som bare var kontaktinfo, blir ikke en bit i søket', async () => {
+    await seed()
+    const result = await createProfileBatch(db, storage, admin, [
+      {
+        fullName: 'Kim Kontakt',
+        cohorts: [{ graduationYear: 2022 }],
+        bio: 'Kim har jobbet med logistikk i mange år og leder nå et lager. Contact info: 41234567, kim@example.com',
+      },
+    ])
+    await reindexPeople(db, fakeEmbedder())
+    const [row] = await db
+      .select()
+      .from(schema.personSearchIndex)
+      .where(eq(schema.personSearchIndex.personId, result.rows[0]!.personId!))
+    const text = JSON.stringify(row!.chunks)
+    expect(text).toContain('logistikk')
+    expect(text).not.toContain('[telefon]')
+    expect(text).not.toContain('Contact info')
   })
 
   it('ES-universet: aktive medlemmer, selskapene og usikre hendelser bare for admins', async () => {

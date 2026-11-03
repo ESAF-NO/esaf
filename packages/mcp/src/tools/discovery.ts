@@ -28,8 +28,9 @@ export function registerDiscoveryTools(server: McpServer, ctx: ToolContext) {
     title: 'Find people by topic',
     description:
       'Find people by what they know or have done, not just their name: "space", "fish farming", "fintech", ' +
-      '"maskinlæring". Combines words in the profile (jobs with company descriptions, bio, search topics) with ' +
-      'similarity in meaning (local embedding model, Norwegian and English). Each hit says why it matched. Search ' +
+      '"maskinlæring". Matches the words (and related concepts in Norwegian and English) in the profile: jobs with ' +
+      'company descriptions, bio and search topics, ranked by similarity in meaning (local embedding model). If no ' +
+      'word matches, there are no hits; try a broader or other-language word. Each hit says why it matched. Search ' +
       'one topic at a time; for questions like "who in Oslo from ES 2015 knows health?", search "helse" and filter ' +
       'the hits yourself (get_person has city and cohorts).',
     input: z.object({
@@ -84,7 +85,9 @@ export function registerDiscoveryTools(server: McpServer, ctx: ToolContext) {
       '"nothing to add". Write 5–15 short topics per person, in BOTH Norwegian and English, including broader concepts ' +
       'and synonyms the profile does not spell out: someone at NASA → "romfart, space, aerospace, satellitter, NASA". ' +
       'Only from what the profile and its companies actually say; never sensitive data (health, religion, politics, ' +
-      'family). Topics are not shown on the profile, only as the reason for a search hit. Up to 200 people per call.',
+      'family) and no hobbies unless clearly professional. Topics are the answer key: once set, a word that only ' +
+      'appears in the bio (a metaphor, a hobby) no longer finds the person, so cover every real professional area. ' +
+      'Topics are not shown on the profile, only as the reason for a search hit. Up to 200 people per call.',
     input: z.object({
       people: z
         .array(

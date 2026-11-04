@@ -1,4 +1,4 @@
-import type { CohortSummary, CommunityOverview } from '@esaf/core'
+import type { CohortSummary, CommunityOverview, CompanyToFill } from '@esaf/core'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import {
   ArrowRight,
@@ -15,8 +15,9 @@ import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { PostCard } from '#/components/PostCard.tsx'
 import { FeaturedQuote } from '#/components/Quotes.tsx'
-import { Avatar, buttonClass, Card, cx, EmptyState } from '#/components/ui.tsx'
+import { Avatar, buttonClass, Card, CompanyLogo, cx, EmptyState } from '#/components/ui.tsx'
 import { channelKeys, channelOrder, channels } from '#/lib/channels.ts'
+import { fetchCompaniesToFill } from '#/lib/contributions.functions.ts'
 import { fetchCommunity, fetchPosts } from '#/lib/feed.functions.ts'
 import { esPeriod, plural } from '#/lib/format.ts'
 import { fetchRandomQuote } from '#/lib/quotes.functions.ts'
@@ -29,12 +30,13 @@ export const Route = createFileRoute('/_konto/feed/')({
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) => {
-    const [posts, community, quote] = await Promise.all([
+    const [posts, community, quote, toFill] = await Promise.all([
       fetchPosts({ data: { channel: deps.kanal, sort: deps.sort ?? 'top', q: deps.q, limit: 50 } }),
       fetchCommunity(),
       fetchRandomQuote(),
+      fetchCompaniesToFill(),
     ])
-    return { posts, community, quote }
+    return { posts, community, quote, toFill }
   },
   head: ({ match }) => ({
     meta: [
@@ -156,6 +158,62 @@ function Welcome({
   )
 }
 
+/**
+ * Selskaper den innloggede kan fylle ut, og som står tomme. Forsvinner av seg
+ * selv når selskapet har fått info.
+ */
+function FillCompanies({ companies }: { companies: CompanyToFill[] }) {
+  const [first] = companies
+  if (!first) return null
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl bg-brand-50 p-4 ring-1 ring-brand-200 ring-inset">
+      <div className="flex -space-x-2">
+        {companies.slice(0, 3).map((c) => (
+          <CompanyLogo
+            key={c.id}
+            name={c.name}
+            logo={c.logo}
+            size="sm"
+            className="ring-2 ring-brand-50"
+          />
+        ))}
+      </div>
+      <p className="min-w-0 flex-1 text-sm text-brand-900">
+        {companies.length === 1 ? (
+          <>
+            <span className="font-medium">{first.name}</span> mangler info. Fortell andre ES-ere hva
+            dere driver med.
+          </>
+        ) : (
+          <>
+            {companies.length} av selskapene dine mangler info:{' '}
+            {companies.map((c, i) => (
+              <span key={c.id}>
+                {i > 0 && ', '}
+                <Link
+                  to="/selskaper/$slug/rediger"
+                  params={{ slug: c.slug }}
+                  className="font-medium underline-offset-2 hover:underline"
+                >
+                  {c.name}
+                </Link>
+              </span>
+            ))}
+            .
+          </>
+        )}
+      </p>
+      <Link
+        to="/selskaper/$slug/rediger"
+        params={{ slug: first.slug }}
+        className={buttonClass({ variant: 'brand', size: 'sm' })}
+      >
+        Fyll ut{companies.length > 1 ? ` ${first.name}` : ''}
+      </Link>
+    </div>
+  )
+}
+
 function OwnCohort({ cohort: c }: { cohort: CohortSummary }) {
   return (
     <Card className="p-4">
@@ -199,7 +257,7 @@ function OwnCohort({ cohort: c }: { cohort: CohortSummary }) {
 }
 
 function Feed() {
-  const { posts, community, quote: loadedQuote } = Route.useLoaderData()
+  const { posts, community, quote: loadedQuote, toFill } = Route.useLoaderData()
   // Samme sitat mens man bytter kanal og sortering; et nytt neste gang man kommer hit.
   const [quote] = useState(loadedQuote)
   const { kanal, sort = 'top', q } = Route.useSearch()
@@ -321,6 +379,8 @@ function Feed() {
             </Link>
           ))}
         </div>
+
+        {!kanal && !q && <FillCompanies companies={toFill} />}
 
         {posts.length === 0 && !kanal && !q ? (
           <Welcome community={community} personId={viewer.personId} firstName={firstName} />

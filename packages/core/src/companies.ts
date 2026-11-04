@@ -996,6 +996,8 @@ export type CompanyHit = {
   exact: boolean
   /** Navn selskapet hadde før. Søket treffer dem også. */
   formerNames: string[]
+  /** Den innloggede er selv knyttet til selskapet, også som tidligere ansatt. */
+  mine: boolean
 }
 
 /**
@@ -1037,6 +1039,8 @@ export async function searchCompanies(
       formerNames: company.formerNames,
       people,
       exact,
+      mine: sql<boolean>`(exists (select 1 from experience e where e.company_id = ${sql.raw('"company"."id"')} and e.person_id = ${viewer.personId})
+        or exists (select 1 from person p where p.id = ${viewer.personId} and p.es_company_id = ${sql.raw('"company"."id"')}))`,
     })
     .from(company)
     .where(

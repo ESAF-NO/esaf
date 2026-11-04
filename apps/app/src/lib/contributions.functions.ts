@@ -1,5 +1,6 @@
 import {
   addSelfToCompany,
+  companiesToFill,
   companyEventTypes,
   companyLinkRoles,
   companyStatuses,
@@ -9,6 +10,7 @@ import {
   removeSelfFromCompany,
   requestCompanyLink,
   searchPeople,
+  startCompany,
   suggestCompanyArticle,
   suggestCompanyEvent,
   suggestCompanyInfo,
@@ -16,6 +18,7 @@ import {
   withdrawSuggestion,
 } from '@esaf/core'
 import { createServerFn } from '@tanstack/react-start'
+import { getCookie, setCookie } from '@tanstack/react-start/server'
 import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
@@ -36,6 +39,47 @@ export const joinCompany = createServerFn({ method: 'POST' })
   .validator(link.extend({ companyId: z.uuid() }))
   .handler(({ data: { companyId, ...values } }) =>
     run((viewer) => addSelfToCompany(db, viewer, companyId, values)),
+  )
+
+/** «Nytt selskap»: lager selskapet og knytter den innloggede til det. */
+export const createOwnCompany = createServerFn({ method: 'POST' })
+  .validator(z.object({ name: z.string().max(500), link }))
+  .handler(({ data }) => run((viewer) => startCompany(db, viewer, data)))
+
+/**
+ * «Ikke nå» på påminnelsen om å fylle ut et selskap: skjules i 30 dager i denne
+ * nettleseren. En informasjonskapsel, så Hjem ikke blinker når siden lastes.
+ */
+const SNOOZE_COOKIE = 'esaf_fyll_ut_senere'
+const SNOOZE_DAYS = 30
+
+const snoozed = () =>
+  new Set(
+    (getCookie(SNOOZE_COOKIE) ?? '').split('.').filter((id) => z.uuid().safeParse(id).success),
+  )
+
+/** Selskapene den innloggede har grunnlagt eller hadde på ES, og som mangler info. */
+export const fetchCompaniesToFill = createServerFn({ method: 'GET' }).handler(() =>
+  run(async (viewer) => {
+    const hidden = snoozed()
+    return (await companiesToFill(db, viewer)).filter((c) => !hidden.has(c.id))
+  }),
+)
+
+export const snoozeCompanyToFill = createServerFn({ method: 'POST' })
+  .validator(z.object({ companyId: z.uuid() }))
+  .handler(({ data }) =>
+    run(async () => {
+      // Høyst 20, så kapselen holder seg liten.
+      const ids = [...snoozed(), data.companyId].slice(-20)
+      setCookie(SNOOZE_COOKIE, [...new Set(ids)].join('.'), {
+        path: '/',
+        maxAge: SNOOZE_DAYS * 24 * 60 * 60,
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+      })
+    }),
   )
 
 export const leaveCompany = createServerFn({ method: 'POST' })

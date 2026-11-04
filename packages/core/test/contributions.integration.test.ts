@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   AccessDeniedError,
   addSelfToCompany,
+  companiesToFill,
   createProfile,
   decideCompanyLink,
   decideMembership,
@@ -18,6 +19,8 @@ import {
   mergeCompanies,
   removeSelfFromCompany,
   requestCompanyLink,
+  searchCompanies,
+  startCompany,
   suggestCompanyEvent,
   suggestCompanyInfo,
   updateCompany,
@@ -155,6 +158,105 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
     db.select().from(schema.auditEvent).where(eq(schema.auditEvent.action, action))
 
   const notifications = async (viewer: Viewer) => (await listNotifications(db, viewer)).items
+
+  describe('«Nytt selskap»', () => {
+    const founder = {
+      role: 'founder',
+      title: 'Daglig leder',
+      startYear: 2024,
+      endYear: null,
+    } as const
+
+    it('et medlem lager et selskap, blir gründer og kan fylle det ut', async () => {
+      expect(await companiesToFill(db, kari)).toEqual([])
+      const created = await startCompany(db, kari, { name: '  Fjordkraft  Labs ', link: founder })
+      expect(created.slug).toBe('fjordkraft-labs')
+
+      const c = await page(kari, created.slug)
+      expect(c).toMatchObject({ name: 'Fjordkraft Labs', status: 'active', canEdit: true })
+      expect(c.people.find((p) => p.personId === kari!.personId)).toMatchObject({
+        role: 'founder',
+        title: 'Daglig leder',
+      })
+      expect(await audit('company.create')).toMatchObject([
+        { actorPersonId: kari!.personId, details: { slug: 'fjordkraft-labs', role: 'founder' } },
+      ])
+
+      // Påminnelsen på Hjem, til selskapet har fått info.
+      expect(await companiesToFill(db, kari)).toMatchObject([
+        { slug: 'fjordkraft-labs', role: 'founder' },
+      ])
+      await updateCompany(db, kari, created.id, {
+        ...info,
+        name: 'Fjordkraft Labs',
+        tagline: 'Strøm',
+      })
+      expect(await companiesToFill(db, kari)).toEqual([])
+    })
+
+    it('et navn som finnes, også som tidligere navn, avvises', async () => {
+      await expect(startCompany(db, kari, { name: 'syrlig', link: founder })).rejects.toThrow(
+        /finnes allerede: Syrlig/,
+      )
+      // Søket i «Nytt selskap» sier om du selv er med, så du ikke blir bedt om «Jeg var med her».
+      expect(await searchCompanies(db, ola, 'syrlig')).toMatchObject([{ exact: true, mine: true }])
+      expect(await searchCompanies(db, kari, 'syrlig')).toMatchObject([
+        { exact: true, mine: false },
+      ])
+      await mergeCompanies(db, storage, admin, {
+        sourceId: (await startCompany(db, per, { name: 'Sur AS', link: founder })).id,
+        targetId: syrligId,
+        formerName: true,
+      })
+      await expect(startCompany(db, kari, { name: 'Sur AS', link: founder })).rejects.toThrow(
+        /finnes allerede/,
+      )
+    })
+
+    it('ES-team og tidligere ansatt; et tomt selskap ryddes bort når man fjerner seg', async () => {
+      const es = await startCompany(db, kari, {
+        name: 'Havbris',
+        link: { role: 'es', title: 'ignoreres', startYear: 2019, endYear: null },
+      })
+      expect((await getProfile(db, kari, kari!.personId!)).esCompanySlug).toBe(es.slug)
+      expect((await page(kari, es.slug)).canEdit).toBe(true)
+      expect(await companiesToFill(db, kari)).toMatchObject([{ slug: es.slug, role: 'es' }])
+
+      const past = await startCompany(db, per, {
+        name: 'Gammel Jobb',
+        link: { role: 'employee', title: 'Utvikler', startYear: 2015, endYear: 2017 },
+      })
+      expect((await page(per, past.slug)).canEdit).toBe(false)
+      expect(await companiesToFill(db, per)).toEqual([])
+
+      expect(await removeSelfFromCompany(db, per, past.id)).toEqual({ companyDeleted: true })
+    })
+
+    it('ansatte og styreverv gir ingen påminnelse, selv om de kan redigere', async () => {
+      const job = await startCompany(db, kari, {
+        name: 'Storbank',
+        link: { role: 'employee', title: 'Styremedlem', startYear: 2022, endYear: null },
+      })
+      await startCompany(db, kari, {
+        name: 'Verksted',
+        link: { role: 'employee', title: 'Utvikler', startYear: 2022, endYear: null },
+      })
+      expect((await page(kari, job.slug)).canEdit).toBe(true)
+      expect(await companiesToFill(db, kari)).toEqual([])
+    })
+
+    it('høyst fem nye selskaper i døgnet for medlemmer, ingen grense for admins', async () => {
+      for (const n of [1, 2, 3, 4, 5]) {
+        await startCompany(db, kari, { name: `Selskap ${n}`, link: founder })
+      }
+      await expect(startCompany(db, kari, { name: 'Selskap 6', link: founder })).rejects.toThrow(
+        /5 selskaper det siste døgnet/,
+      )
+      for (const n of [1, 2, 3, 4, 5, 6]) {
+        await startCompany(db, admin, { name: `Admin ${n}`, link: founder })
+      }
+    })
+  })
 
   describe('«Jeg var med her»', () => {
     it('et medlem legger seg selv til som ansatt, kan da redigere og fjerne seg selv', async () => {

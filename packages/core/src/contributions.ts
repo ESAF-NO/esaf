@@ -9,13 +9,14 @@ import {
 import { and, asc, count, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
-import { assertCan, assertMember, type Viewer } from './access.ts'
+import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import {
   companyForEdit,
   companyInput,
   deleteOrphanCompanies,
   isConnected,
   lockCompany,
+  pgCode,
   rethrowSlugConflict,
   writeCompanyValues,
   type CompanyInput,
@@ -26,6 +27,7 @@ import {
   parseArticle,
   type CompanyArticleInput,
 } from './company-articles.ts'
+import { insertCompany } from './company-admin.ts'
 import { companyEventInput, eventValues, type CompanyEventInput } from './company-events.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
@@ -196,6 +198,128 @@ export async function addSelfToCompany(
     const target = await companyName(tx, companyId)
     await applyLink(tx, viewer.personId, target, link, { owner: true, you: true })
   })
+}
+
+/** Høyst så mange nye selskaper per medlem i døgnet. Admins har ingen grense. */
+const COMPANIES_PER_DAY = 5
+
+export type StartCompanyInput = { name: string; link: CompanyLinkInput }
+
+/**
+ * «Nytt selskap» for alle medlemmer: lager selskapet og knytter den innloggede
+ * til det i samme slengen, som gründer, ES-team eller ansatt. Da kan de fylle ut
+ * selskapssiden med en gang. Finnes navnet fra før (også som tidligere navn),
+ * skal de bruke «Jeg var med her» der i stedet.
+ */
+export async function startCompany(
+  db: Db,
+  viewer: Viewer,
+  input: StartCompanyInput,
+): Promise<{ id: string; slug: string }> {
+  assertMember(viewer)
+  const link = parse(companyLinkInput, input.link)
+  // Navnet sjekkes som når en admin lager et selskap.
+  const values = parse(companyInput, {
+    name: input.name,
+    tagline: '',
+    description: '',
+    website: '',
+    foundedYear: null,
+    location: '',
+    industries: [],
+    status: 'active',
+  })
+  try {
+    return await db.transaction(async (tx) => {
+      if (!can(viewer, 'profiles.edit')) {
+        // Låst, så samtidige forespørsler ikke kan omgå grensen.
+        await tx
+          .select({ id: person.id })
+          .from(person)
+          .where(eq(person.id, viewer.personId))
+          .for('update')
+        const [recent] = await tx
+          .select({ n: count() })
+          .from(auditEvent)
+          .where(
+            and(
+              eq(auditEvent.actorPersonId, viewer.personId),
+              eq(auditEvent.action, 'company.create'),
+              gt(auditEvent.createdAt, new Date(Date.now() - DAY_MS)),
+            ),
+          )
+        if ((recent?.n ?? 0) >= COMPANIES_PER_DAY) {
+          throw new DomainError(
+            `Du har lagt til ${COMPANIES_PER_DAY} selskaper det siste døgnet. Prøv igjen i morgen.`,
+          )
+        }
+      }
+      const created = await insertCompany(tx, viewer.personId, values, {
+        edited: false,
+        details: { role: link.role },
+      })
+      await applyLink(tx, viewer.personId, { id: created.id, name: values.name }, link, {
+        owner: true,
+        you: true,
+      })
+      return created
+    })
+  } catch (error) {
+    if (pgCode(error) === '23505') throw new DomainError('Selskapet finnes allerede.')
+    throw error
+  }
+}
+
+export type CompanyToFill = {
+  id: string
+  slug: string
+  name: string
+  logo: CompanyLogoUrls | null
+  /** Hvordan den innloggede er knyttet til selskapet. */
+  role: 'founder' | 'es'
+}
+
+/**
+ * Selskapene den innloggede har grunnlagt eller hadde på ES, og som ikke har noe
+ * info ennå. Der er det de som bør fortelle hva selskapet gjør. Ansatte kan også
+ * fylle ut, men får ingen påminnelse; et stort selskap er ikke deres ansvar.
+ */
+export async function companiesToFill(db: Db, viewer: Viewer): Promise<CompanyToFill[]> {
+  assertMember(viewer)
+  const bare = and(
+    isNull(company.tagline),
+    isNull(company.description),
+    isNull(company.website),
+    isNull(company.location),
+    sql`cardinality(${company.industries}) = 0`,
+  )
+  const columns = {
+    id: company.id,
+    slug: company.slug,
+    name: company.name,
+    logoKey: company.logoKey,
+  }
+  const [founded, es] = await Promise.all([
+    db
+      .select(columns)
+      .from(experience)
+      .innerJoin(company, eq(company.id, experience.companyId))
+      .where(and(eq(experience.personId, viewer.personId), eq(experience.founder, true), bare)),
+    db
+      .select(columns)
+      .from(person)
+      .innerJoin(company, eq(company.id, person.esCompanyId))
+      .where(and(eq(person.id, viewer.personId), bare)),
+  ])
+  const byId = new Map<string, CompanyToFill>()
+  for (const [rows, role] of [
+    [es, 'es'],
+    [founded, 'founder'],
+  ] as const) {
+    for (const { logoKey, ...row } of rows)
+      byId.set(row.id, { ...row, logo: logoUrls(logoKey), role })
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'nb'))
 }
 
 /**

@@ -343,6 +343,7 @@ export {
 } from './company-admin.ts'
 export {
   addSelfToCompany,
+  companiesToFill,
   companyLinkInput,
   companyLinkRoles,
   decideCompanyLink,
@@ -350,13 +351,16 @@ export {
   listMyLinkRequests,
   removeSelfFromCompany,
   requestCompanyLink,
+  startCompany,
   suggestCompanyArticle,
   suggestCompanyEvent,
   suggestCompanyInfo,
   withdrawCompanyLink,
   withdrawSuggestion,
   type CompanyLinkInput,
+  type CompanyToFill,
   type LinkRequestView,
+  type StartCompanyInput,
   type SuggestedValue,
   type SuggestionView,
 } from './contributions.ts'

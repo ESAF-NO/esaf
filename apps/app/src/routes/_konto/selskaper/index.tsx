@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { Briefcase, Building2, Landmark, MapPin, Plus, Rocket, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
+import { NewCompanyDialog } from '#/components/CompanyLinkDialogs.tsx'
 import { SearchInput } from '#/components/SearchInput.tsx'
 import { FilterSummary, Segmented, sameText, tally } from '#/components/Filters.tsx'
 import {
@@ -52,6 +53,7 @@ function Companies() {
   const { viewer } = Route.useRouteContext()
   const navigate = useNavigate({ from: Route.fullPath })
   const [shown, setShown] = useState(PAGE)
+  const [adding, setAdding] = useState(false)
 
   const founded = useMemo(() => companies.filter((c) => c.startedByAlumni), [companies])
   const atEs = useMemo(() => companies.filter((c) => c.esCompany), [companies])
@@ -132,7 +134,13 @@ function Companies() {
             ? `${founded.length} startet av ES-alumni, ${atEs.length} av dem på Entreprenørskolen · ${workplaces.length} arbeidsplasser · ${boards.length} med ES-alumni i styret`
             : 'Selskaper ES-alumni har startet, jobber i eller har jobbet i.'
         }
+        actions={
+          <Button variant="secondary" onClick={() => setAdding(true)}>
+            <Plus className="size-4" aria-hidden /> Nytt selskap
+          </Button>
+        }
       />
+      {adding && <NewCompanyDialog onClose={() => setAdding(false)} />}
 
       <div className="mb-4 flex flex-col gap-3">
         <Segmented

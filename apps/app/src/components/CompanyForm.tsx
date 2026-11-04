@@ -40,8 +40,11 @@ export function CompanyForm({
   savingLabel = 'Lagrer …',
   cancel,
   extra,
+  autoFocusTagline = false,
 }: {
   initial: CompanyFormValues
+  /** Markøren i «Kort beskrivelse», for et selskap som ikke har noe info ennå. */
+  autoFocusTagline?: boolean
   /** Får verdiene og skjemadataene (for felt i `extra`). Kast en feil for å vise den. */
   onSubmit: (values: CompanyFormValues, form: FormData) => Promise<void>
   submitLabel: string
@@ -97,6 +100,7 @@ export function CompanyForm({
           <Input
             name="tagline"
             defaultValue={initial.tagline}
+            autoFocus={autoFocusTagline}
             maxLength={140}
             placeholder="Sanntids vannkvalitet for oppdrettere"
           />

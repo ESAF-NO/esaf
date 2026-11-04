@@ -3,6 +3,8 @@ import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import { assertCan, type Viewer } from './access.ts'
 import { deleteAssetsOf, purgeAssets } from './assets.ts'
 import { companyInput, companySlug, lockCompany, pgCode, type CompanyInput } from './companies.ts'
+import type { Tx } from './members.ts'
+import type { z } from 'zod'
 import { DomainError, NotFoundError } from './errors.ts'
 import { deleteLogoFiles, logoUrls, type CompanyLogoUrls } from './logos.ts'
 import { deleteFieldSources, recordFieldEdits } from './sources.ts'
@@ -169,30 +171,44 @@ export async function createCompany(
   assertCan(viewer, 'profiles.edit')
   const parsed = companyInput.safeParse(input)
   if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? 'Ugyldige felt.')
-  const values = parsed.data
-  const slug = companySlug(values.name)
   try {
-    return await db.transaction(async (tx) => {
-      const [taken] = await tx
-        .select({ name: company.name })
-        .from(company)
-        .where(or(eq(company.slug, slug), sql`${slug} = any(${company.aliasSlugs})`))
-      if (taken) throw new DomainError(`Selskapet finnes allerede: ${taken.name}.`)
-      const [row] = await tx
-        .insert(company)
-        .values({ ...values, slug, editedAt: new Date() })
-        .returning({ id: company.id, slug: company.slug })
-      await tx.insert(auditEvent).values({
-        actorPersonId: viewer.personId,
-        action: 'company.create',
-        details: { companyId: row!.id, slug, name: values.name },
-      })
-      return row!
-    })
+    return await db.transaction((tx) =>
+      insertCompany(tx, viewer.personId, parsed.data, { edited: true }),
+    )
   } catch (error) {
     if (pgCode(error) === '23505') throw new DomainError('Selskapet finnes allerede.')
     throw error
   }
+}
+
+/**
+ * Lager selskapet, og logger det. Navnet kan ikke tilhøre et annet selskap, heller
+ * ikke som tidligere navn. Felles for admins og medlemmer som starter et selskap.
+ * `edited` holder det tomme selskapet unna oppryddingen; et medlem som lager et
+ * selskap og fjerner seg fra det igjen, skal ikke etterlate et tomt selskap.
+ */
+export async function insertCompany(
+  tx: Tx,
+  actorPersonId: string,
+  values: z.output<typeof companyInput>,
+  { edited, details = {} }: { edited: boolean; details?: Record<string, unknown> },
+): Promise<{ id: string; slug: string }> {
+  const slug = companySlug(values.name)
+  const [taken] = await tx
+    .select({ name: company.name })
+    .from(company)
+    .where(or(eq(company.slug, slug), sql`${slug} = any(${company.aliasSlugs})`))
+  if (taken) throw new DomainError(`Selskapet finnes allerede: ${taken.name}.`)
+  const [row] = await tx
+    .insert(company)
+    .values({ ...values, slug, editedAt: edited ? new Date() : null })
+    .returning({ id: company.id, slug: company.slug })
+  await tx.insert(auditEvent).values({
+    actorPersonId,
+    action: 'company.create',
+    details: { companyId: row!.id, slug, name: values.name, ...details },
+  })
+  return row!
 }
 
 export type CompanyDeletion = {

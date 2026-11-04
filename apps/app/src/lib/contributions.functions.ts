@@ -1,5 +1,6 @@
 import {
   addSelfToCompany,
+  companiesToFill,
   companyEventTypes,
   companyLinkRoles,
   companyStatuses,
@@ -9,6 +10,7 @@ import {
   removeSelfFromCompany,
   requestCompanyLink,
   searchPeople,
+  startCompany,
   suggestCompanyArticle,
   suggestCompanyEvent,
   suggestCompanyInfo,
@@ -37,6 +39,16 @@ export const joinCompany = createServerFn({ method: 'POST' })
   .handler(({ data: { companyId, ...values } }) =>
     run((viewer) => addSelfToCompany(db, viewer, companyId, values)),
   )
+
+/** «Nytt selskap»: lager selskapet og knytter den innloggede til det. */
+export const createOwnCompany = createServerFn({ method: 'POST' })
+  .validator(z.object({ name: z.string().max(500), link }))
+  .handler(({ data }) => run((viewer) => startCompany(db, viewer, data)))
+
+/** Selskapene den innloggede er knyttet til og som mangler info. */
+export const fetchCompaniesToFill = createServerFn({ method: 'GET' }).handler(() =>
+  run((viewer) => companiesToFill(db, viewer)),
+)
 
 export const leaveCompany = createServerFn({ method: 'POST' })
   .validator(z.object({ companyId: z.uuid() }))

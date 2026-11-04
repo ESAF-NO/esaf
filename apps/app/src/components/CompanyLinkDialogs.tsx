@@ -1,12 +1,14 @@
 import type { PersonHit } from '@esaf/core'
-import { useRouter } from '@tanstack/react-router'
-import { Search } from 'lucide-react'
+import { Link, useNavigate, useRouter } from '@tanstack/react-router'
+import { ArrowRight, Search } from 'lucide-react'
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { linkRoleLabels } from './Contributions.tsx'
 import { Dialog, DialogActions } from './Dialog.tsx'
-import { Avatar, Button, cx, ErrorText, Field, Input, Verified } from './ui.tsx'
+import { Avatar, Button, CompanyLogo, cx, ErrorText, Field, Input, Verified } from './ui.tsx'
+import { findCompanies } from '#/lib/companies.functions.ts'
 import {
   addPersonToCompany,
+  createOwnCompany,
   findMembers,
   joinCompany,
   type CompanyLinkFormValues,
@@ -340,6 +342,130 @@ export function AddPersonDialog({
           </Button>
           <Button type="submit" variant="brand" disabled={saving || !chosen}>
             {saving ? 'Sender …' : 'Send til bekreftelse'}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  )
+}
+
+type CompanyHit = Awaited<ReturnType<typeof findCompanies>>[number]
+
+/**
+ * «Nytt selskap»: alle medlemmer kan legge til et selskap de selv var med i. Mens
+ * man skriver navnet, vises selskaper som ligner, så man går dit og trykker «Jeg
+ * var med her» i stedet for å lage et duplikat. Etterpå åpnes redigeringen.
+ */
+export function NewCompanyDialog({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate()
+  const [name, setName] = useState('')
+  const [draft, setDraft] = useState(blank)
+  const [found, setFound] = useState<{ term: string; hits: CompanyHit[] }>({ term: '', hits: [] })
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const term = name.trim()
+
+  useEffect(() => {
+    if (term.length < 2) return
+    let stale = false
+    const timer = setTimeout(async () => {
+      try {
+        const hits = await findCompanies({ data: { q: term } })
+        if (!stale) setFound({ term, hits })
+      } catch {
+        // Bare et hint; serveren sjekker uansett at navnet er ledig.
+      }
+    }, 200)
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [term])
+
+  // Bare treff for det som står i feltet nå.
+  const similar = found.term === term && term.length >= 2 ? found.hits : []
+  const exact = similar.find((c) => c.exact)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!term) {
+      setError('Skriv navnet på selskapet.')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const values = toValues(draft)
+      const created = await createOwnCompany({ data: { name: term, link: values } })
+      // Tidligere ansatte kan ikke redigere selskapet, så de får selskapssiden.
+      const canEdit = values.role !== 'employee' || values.endYear === null
+      await navigate({
+        to: canEdit ? '/selskaper/$slug/rediger' : '/selskaper/$slug',
+        params: { slug: created.slug },
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog
+      title="Nytt selskap"
+      description="Legg til et selskap du har startet, hadde på ES eller jobbet i. Det kommer på profilen din, og som gründer, ES-team eller ansatt nå kan du fylle ut selskapssiden med en gang."
+      onClose={onClose}
+      busy={saving}
+      className="max-w-lg"
+    >
+      <form onSubmit={submit} noValidate className="space-y-4">
+        <Field label="Navn på selskapet">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={120}
+            placeholder="Syrlig"
+            autoFocus
+            autoComplete="off"
+          />
+        </Field>
+        {similar.length > 0 && (
+          <div className="rounded-xl bg-stone-50 p-3 ring-1 ring-stone-200 ring-inset">
+            <p className="text-sm font-medium text-stone-800">
+              {exact ? `${exact.name} finnes allerede` : 'Er det et av disse?'}
+            </p>
+            <p className="mt-0.5 text-xs text-stone-500">
+              Gå til selskapet og trykk «Jeg var med her», så blir det ikke dobbelt opp.
+            </p>
+            <ul className="mt-2 space-y-1">
+              {(exact ? [exact] : similar.slice(0, 4)).map((c) => (
+                <li key={c.id}>
+                  <Link
+                    to="/selskaper/$slug"
+                    params={{ slug: c.slug }}
+                    className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-white"
+                  >
+                    <CompanyLogo name={c.name} logo={c.logo} size="sm" />
+                    <span className="min-w-0 flex-1 truncate font-medium text-stone-900">
+                      {c.name}
+                      {c.tagline && (
+                        <span className="font-normal text-stone-500"> · {c.tagline}</span>
+                      )}
+                    </span>
+                    <ArrowRight className="size-4 shrink-0 text-stone-400" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <LinkFields draft={draft} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />
+        {error && <ErrorText>{error}</ErrorText>}
+        <DialogActions>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Avbryt
+          </Button>
+          <Button type="submit" variant="brand" disabled={saving || Boolean(exact)}>
+            {saving ? 'Lagrer …' : 'Legg til selskapet'}
           </Button>
         </DialogActions>
       </form>

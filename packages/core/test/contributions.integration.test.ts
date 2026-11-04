@@ -19,6 +19,7 @@ import {
   mergeCompanies,
   removeSelfFromCompany,
   requestCompanyLink,
+  searchCompanies,
   startCompany,
   suggestCompanyEvent,
   suggestCompanyInfo,
@@ -182,7 +183,9 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       ])
 
       // Påminnelsen på Hjem, til selskapet har fått info.
-      expect((await companiesToFill(db, kari)).map((x) => x.slug)).toEqual(['fjordkraft-labs'])
+      expect(await companiesToFill(db, kari)).toMatchObject([
+        { slug: 'fjordkraft-labs', role: 'founder' },
+      ])
       await updateCompany(db, kari, created.id, {
         ...info,
         name: 'Fjordkraft Labs',
@@ -195,6 +198,11 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       await expect(startCompany(db, kari, { name: 'syrlig', link: founder })).rejects.toThrow(
         /finnes allerede: Syrlig/,
       )
+      // Søket i «Nytt selskap» sier om du selv er med, så du ikke blir bedt om «Jeg var med her».
+      expect(await searchCompanies(db, ola, 'syrlig')).toMatchObject([{ exact: true, mine: true }])
+      expect(await searchCompanies(db, kari, 'syrlig')).toMatchObject([
+        { exact: true, mine: false },
+      ])
       await mergeCompanies(db, storage, admin, {
         sourceId: (await startCompany(db, per, { name: 'Sur AS', link: founder })).id,
         targetId: syrligId,
@@ -212,6 +220,7 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       })
       expect((await getProfile(db, kari, kari!.personId!)).esCompanySlug).toBe(es.slug)
       expect((await page(kari, es.slug)).canEdit).toBe(true)
+      expect(await companiesToFill(db, kari)).toMatchObject([{ slug: es.slug, role: 'es' }])
 
       const past = await startCompany(db, per, {
         name: 'Gammel Jobb',
@@ -223,11 +232,16 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       expect(await removeSelfFromCompany(db, per, past.id)).toEqual({ companyDeleted: true })
     })
 
-    it('styreverv gir ingen påminnelse', async () => {
-      await startCompany(db, kari, {
+    it('ansatte og styreverv gir ingen påminnelse, selv om de kan redigere', async () => {
+      const job = await startCompany(db, kari, {
         name: 'Storbank',
         link: { role: 'employee', title: 'Styremedlem', startYear: 2022, endYear: null },
       })
+      await startCompany(db, kari, {
+        name: 'Verksted',
+        link: { role: 'employee', title: 'Utvikler', startYear: 2022, endYear: null },
+      })
+      expect((await page(kari, job.slug)).canEdit).toBe(true)
       expect(await companiesToFill(db, kari)).toEqual([])
     })
 

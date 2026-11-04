@@ -1,6 +1,7 @@
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
-import { ArrowLeft, Check, GitMerge, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, Check, CircleCheck, GitMerge, ShieldAlert } from 'lucide-react'
 import { useState } from 'react'
+import { z } from 'zod'
 import { CompanyForm, companyFormValues, Section } from '#/components/CompanyForm.tsx'
 import { CompanyInput, type CompanyValue } from '#/components/CompanyInput.tsx'
 import { LogoUpload } from '#/components/LogoUpload.tsx'
@@ -14,6 +15,10 @@ import {
 } from '#/lib/companies.functions.ts'
 
 export const Route = createFileRoute('/_konto/selskaper/$slug/rediger')({
+  validateSearch: z.object({
+    /** Selskapet ble nettopp lagt til med «Nytt selskap». */
+    ny: z.boolean().optional().catch(undefined),
+  }),
   loader: async ({ params }) => {
     const company = await fetchEditableCompany({ data: { slug: params.slug } })
     if ('movedTo' in company) {
@@ -29,7 +34,55 @@ export const Route = createFileRoute('/_konto/selskaper/$slug/rediger')({
 
 function EditCompany() {
   const company = Route.useLoaderData()
+  const { ny } = Route.useSearch()
   const router = useRouter()
+  // Et tomt selskap: det viktigste er hva selskapet gjør, så skjemaet kommer først.
+  const bare =
+    !company.tagline &&
+    !company.description &&
+    !company.website &&
+    !company.location &&
+    !company.industries.length
+
+  const logo = (
+    <div className={bare ? 'mt-4' : 'mb-4'}>
+      <Section title="Logo" description="Endringer i logoen lagres med en gang.">
+        <LogoUpload companyId={company.id} name={company.name} logo={company.logo} />
+      </Section>
+    </div>
+  )
+  // Et selskap som nettopp ble lagt til, har ikke byttet navn.
+  const formerNames = !ny && (
+    <div className={bare ? 'mt-4' : 'mb-4'}>
+      <FormerNames
+        key={company.formerNames.join('\n')}
+        companyId={company.id}
+        name={company.name}
+        initial={company.formerNames}
+      />
+    </div>
+  )
+  const form = (
+    <CompanyForm
+      initial={companyFormValues(company)}
+      submitLabel="Lagre endringer"
+      autoFocusTagline={bare}
+      onSubmit={async (values) => {
+        const { slug } = await saveCompany({ data: { companyId: company.id, values } })
+        await router.invalidate()
+        await router.navigate({ to: '/selskaper/$slug', params: { slug } })
+      }}
+      cancel={
+        <Link
+          to="/selskaper/$slug"
+          params={{ slug: company.slug }}
+          className="inline-flex h-10 items-center px-3 text-sm text-stone-600 hover:text-stone-900"
+        >
+          {ny ? 'Gjør det senere' : 'Avbryt'}
+        </Link>
+      }
+    />
+  )
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -44,11 +97,24 @@ function EditCompany() {
         <CompanyLogo name={company.name} logo={company.logo} size="lg" />
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold tracking-tight text-stone-950">
-            Rediger {company.name}
+            {bare ? `Fyll ut ${company.name}` : `Rediger ${company.name}`}
           </h1>
           <p className="text-sm text-stone-500">Synlig for godkjente ESAF-medlemmer.</p>
         </div>
       </div>
+
+      {ny && (
+        <div
+          className="mb-4 flex gap-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-900 ring-1 ring-emerald-200 ring-inset"
+          role="status"
+        >
+          <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            <span className="font-medium">{company.name} er lagt til på profilen din.</span> Fortell
+            andre ES-ere hva dere driver med. En linje holder, resten kan du fylle ut senere.
+          </p>
+        </div>
+      )}
 
       {company.adminEdit && (
         <div className="mb-4 flex gap-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
@@ -57,39 +123,20 @@ function EditCompany() {
         </div>
       )}
 
-      {/* Utenfor skjemaet: logoen og tidligere navn lagres for seg, ikke med «Lagre endringer». */}
-      <div className="mb-4">
-        <Section title="Logo" description="Endringer i logoen lagres med en gang.">
-          <LogoUpload companyId={company.id} name={company.name} logo={company.logo} />
-        </Section>
-      </div>
-      <div className="mb-4">
-        <FormerNames
-          key={company.formerNames.join('\n')}
-          companyId={company.id}
-          name={company.name}
-          initial={company.formerNames}
-        />
-      </div>
-
-      <CompanyForm
-        initial={companyFormValues(company)}
-        submitLabel="Lagre endringer"
-        onSubmit={async (values) => {
-          const { slug } = await saveCompany({ data: { companyId: company.id, values } })
-          await router.invalidate()
-          await router.navigate({ to: '/selskaper/$slug', params: { slug } })
-        }}
-        cancel={
-          <Link
-            to="/selskaper/$slug"
-            params={{ slug: company.slug }}
-            className="inline-flex h-10 items-center px-3 text-sm text-stone-600 hover:text-stone-900"
-          >
-            Avbryt
-          </Link>
-        }
-      />
+      {/* Logoen og tidligere navn lagres for seg, ikke med «Lagre endringer». */}
+      {bare ? (
+        <>
+          {form}
+          {logo}
+          {formerNames}
+        </>
+      ) : (
+        <>
+          {logo}
+          {formerNames}
+          {form}
+        </>
+      )}
 
       {company.canMerge && <Merge targetId={company.id} targetName={company.name} />}
     </div>

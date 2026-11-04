@@ -1,5 +1,5 @@
 import type { CohortSummary, CommunityOverview, CompanyToFill } from '@esaf/core'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import {
   ArrowRight,
   Flame,
@@ -15,9 +15,9 @@ import { useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { PostCard } from '#/components/PostCard.tsx'
 import { FeaturedQuote } from '#/components/Quotes.tsx'
-import { Avatar, buttonClass, Card, CompanyLogo, cx, EmptyState } from '#/components/ui.tsx'
+import { Avatar, Button, buttonClass, Card, CompanyLogo, cx, EmptyState } from '#/components/ui.tsx'
 import { channelKeys, channelOrder, channels } from '#/lib/channels.ts'
-import { fetchCompaniesToFill } from '#/lib/contributions.functions.ts'
+import { fetchCompaniesToFill, snoozeCompanyToFill } from '#/lib/contributions.functions.ts'
 import { fetchCommunity, fetchPosts } from '#/lib/feed.functions.ts'
 import { esPeriod, plural } from '#/lib/format.ts'
 import { fetchRandomQuote } from '#/lib/quotes.functions.ts'
@@ -159,58 +159,86 @@ function Welcome({
 }
 
 /**
- * Selskaper den innloggede kan fylle ut, og som står tomme. Forsvinner av seg
- * selv når selskapet har fått info.
+ * Selskaper den innloggede har grunnlagt eller hadde på ES, og som står tomme.
+ * Forsvinner når selskapet har fått info, eller i 30 dager med «Ikke nå».
  */
 function FillCompanies({ companies }: { companies: CompanyToFill[] }) {
-  const [first] = companies
+  const router = useRouter()
+  const [hidden, setHidden] = useState<string[]>([])
+  const shown = companies.filter((c) => !hidden.includes(c.id))
+  const [first] = shown
   if (!first) return null
+
+  const snooze = (companyId: string) => {
+    setHidden((h) => [...h, companyId])
+    void snoozeCompanyToFill({ data: { companyId } }).then(() => router.invalidate())
+  }
+
+  if (shown.length === 1) {
+    return (
+      <Card className="mb-5 flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-start gap-3.5">
+          <CompanyLogo name={first.name} logo={first.logo} />
+          <div className="min-w-0">
+            <p className="font-semibold text-stone-950">Fortell nettverket om {first.name}</p>
+            <p className="mt-0.5 text-sm text-stone-500">
+              Selskapssiden er tom. En linje om hva dere gjør, nettside og bransje er nok til at
+              andre ES-ere finner dere.
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-2 max-sm:pl-[3.625rem]">
+          <Button variant="ghost" size="sm" onClick={() => snooze(first.id)}>
+            Ikke nå
+          </Button>
+          <Link
+            to="/selskaper/$slug/rediger"
+            params={{ slug: first.slug }}
+            className={buttonClass({ variant: 'brand', size: 'sm' })}
+          >
+            Fyll ut
+          </Link>
+        </div>
+      </Card>
+    )
+  }
+
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl bg-brand-50 p-4 ring-1 ring-brand-200 ring-inset">
-      <div className="flex -space-x-2">
-        {companies.slice(0, 3).map((c) => (
-          <CompanyLogo
-            key={c.id}
-            name={c.name}
-            logo={c.logo}
-            size="sm"
-            className="ring-2 ring-brand-50"
-          />
-        ))}
-      </div>
-      <p className="min-w-0 flex-1 text-sm text-brand-900">
-        {companies.length === 1 ? (
-          <>
-            <span className="font-medium">{first.name}</span> mangler info. Fortell andre ES-ere hva
-            dere driver med.
-          </>
-        ) : (
-          <>
-            {companies.length} av selskapene dine mangler info:{' '}
-            {companies.map((c, i) => (
-              <span key={c.id}>
-                {i > 0 && ', '}
-                <Link
-                  to="/selskaper/$slug/rediger"
-                  params={{ slug: c.slug }}
-                  className="font-medium underline-offset-2 hover:underline"
-                >
-                  {c.name}
-                </Link>
-              </span>
-            ))}
-            .
-          </>
-        )}
+    <Card className="mb-5 p-4">
+      <p className="font-semibold text-stone-950">Fortell nettverket om selskapene dine</p>
+      <p className="mt-0.5 text-sm text-stone-500">
+        Selskapssidene er tomme. En linje om hva dere gjør, nettside og bransje er nok til at andre
+        ES-ere finner dere.
       </p>
-      <Link
-        to="/selskaper/$slug/rediger"
-        params={{ slug: first.slug }}
-        className={buttonClass({ variant: 'brand', size: 'sm' })}
-      >
-        Fyll ut{companies.length > 1 ? ` ${first.name}` : ''}
-      </Link>
-    </div>
+      <ul className="mt-3 divide-y divide-stone-100">
+        {shown.map((c) => (
+          <li key={c.id} className="flex items-center gap-3 py-2.5 last:pb-0">
+            <CompanyLogo name={c.name} logo={c.logo} size="sm" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-stone-900">{c.name}</span>
+              <span className="block text-xs text-stone-500">
+                {c.role === 'es' ? 'ES-selskapet ditt' : 'Du er gründer'}
+              </span>
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => snooze(c.id)}
+              aria-label={`Ikke nå for ${c.name}`}
+            >
+              Ikke nå
+            </Button>
+            <Link
+              to="/selskaper/$slug/rediger"
+              params={{ slug: c.slug }}
+              className={buttonClass({ variant: 'secondary', size: 'sm' })}
+            >
+              Fyll ut
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   )
 }
 

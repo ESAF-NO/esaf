@@ -6,7 +6,7 @@ import {
   type ContributionStatus,
   type Db,
 } from '@esaf/db'
-import { and, asc, count, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
@@ -14,7 +14,6 @@ import {
   companyForEdit,
   companyInput,
   deleteOrphanCompanies,
-  isBoardTitle,
   isConnected,
   lockCompany,
   pgCode,
@@ -271,12 +270,19 @@ export async function startCompany(
   }
 }
 
-export type CompanyToFill = { id: string; slug: string; name: string; logo: CompanyLogoUrls | null }
+export type CompanyToFill = {
+  id: string
+  slug: string
+  name: string
+  logo: CompanyLogoUrls | null
+  /** Hvordan den innloggede er knyttet til selskapet. */
+  role: 'founder' | 'es'
+}
 
 /**
- * Selskapene den innloggede kan fylle ut, og som ikke har noe info ennå: der de
- * er gründer, i ES-teamet eller jobber nå. Styreverv er ikke med; der er det
- * selskapet selv som bør skrive.
+ * Selskapene den innloggede har grunnlagt eller hadde på ES, og som ikke har noe
+ * info ennå. Der er det de som bør fortelle hva selskapet gjør. Ansatte kan også
+ * fylle ut, men får ingen påminnelse; et stort selskap er ikke deres ansvar.
  */
 export async function companiesToFill(db: Db, viewer: Viewer): Promise<CompanyToFill[]> {
   assertMember(viewer)
@@ -287,38 +293,33 @@ export async function companiesToFill(db: Db, viewer: Viewer): Promise<CompanyTo
     isNull(company.location),
     sql`cardinality(${company.industries}) = 0`,
   )
-  const [jobs, es] = await Promise.all([
+  const columns = {
+    id: company.id,
+    slug: company.slug,
+    name: company.name,
+    logoKey: company.logoKey,
+  }
+  const [founded, es] = await Promise.all([
     db
-      .select({ id: company.id, title: experience.title })
+      .select(columns)
       .from(experience)
       .innerJoin(company, eq(company.id, experience.companyId))
-      .where(
-        and(
-          eq(experience.personId, viewer.personId),
-          or(eq(experience.founder, true), isNull(experience.endYear)),
-          bare,
-        ),
-      ),
+      .where(and(eq(experience.personId, viewer.personId), eq(experience.founder, true), bare)),
     db
-      .select({ id: company.id })
+      .select(columns)
       .from(person)
       .innerJoin(company, eq(company.id, person.esCompanyId))
       .where(and(eq(person.id, viewer.personId), bare)),
   ])
-  const ids = [
-    ...new Set([
-      ...jobs.filter((j) => !isBoardTitle(j.title)).map((j) => j.id),
-      ...es.map((e) => e.id),
-    ]),
-  ]
-  if (!ids.length) return []
-  const rows = await db
-    .select({ id: company.id, slug: company.slug, name: company.name, logoKey: company.logoKey })
-    .from(company)
-    .where(inArray(company.id, ids))
-  return rows
-    .map(({ logoKey, ...row }) => ({ ...row, logo: logoUrls(logoKey) }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'nb'))
+  const byId = new Map<string, CompanyToFill>()
+  for (const [rows, role] of [
+    [es, 'es'],
+    [founded, 'founder'],
+  ] as const) {
+    for (const { logoKey, ...row } of rows)
+      byId.set(row.id, { ...row, logo: logoUrls(logoKey), role })
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'nb'))
 }
 
 /**

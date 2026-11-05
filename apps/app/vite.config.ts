@@ -13,10 +13,10 @@ export default defineConfig({
         rolldownOptions: {
           // Lengden er byttet fra 8 for å gi alle filene nye navn: 404-svar på de gamle
           // navnene ligger lagret som `immutable` hos nettlesere og Cloudflare. Se plugins/asset-errors.ts.
+          // Ikke `assetFileNames`: serverbygget har sitt eget navn på CSS-en, og de må være like.
           output: {
             entryFileNames: 'assets/[name]-[hash:10].js',
             chunkFileNames: 'assets/[name]-[hash:10].js',
-            assetFileNames: 'assets/[name]-[hash:10][extname]',
           },
         },
       },

@@ -28,6 +28,7 @@ import {
   mergeCompanies,
   mergePeople,
   previewPeopleMerge,
+  removeFieldSource,
   removePersonEmail,
   requestCompanyLink,
   reviewCounts,
@@ -365,6 +366,76 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       expect((await review('sources')).total).toBe(0)
       const [cleared] = await audit('company.admin_clear_field')
       expect(cleared!.details).toMatchObject({ companyId, field: 'website' })
+    })
+
+    it('fjerner én kilde og lar feltet og de andre kildene stå', async () => {
+      const personId = kari!.personId!
+      const brreg = (orgnr: string) => `https://virksomhet.brreg.no/oppslag/enheter/${orgnr}`
+      const source = {
+        entityType: 'person' as const,
+        entityId: personId,
+        field: 'experience',
+        sourceLabel: 'Brønnøysundregistrene',
+        confidence: 'medium' as const,
+      }
+      await db.insert(schema.fieldSource).values([
+        { ...source, sourceUrl: brreg('111111111'), sourceKey: brreg('111111111') },
+        { ...source, sourceUrl: brreg('222222222'), sourceKey: brreg('222222222') },
+        { ...source, sourceLabel: 'entreprenorskolen.no', sourceKey: '' },
+        { ...source, field: 'city', sourceLabel: 'kullisten' },
+      ])
+      const rows = () =>
+        db.select().from(schema.fieldSource).where(eq(schema.fieldSource.entityId, personId))
+      const wrong = {
+        entityType: 'person' as const,
+        entityId: personId,
+        field: 'experience',
+        label: 'Brønnøysundregistrene',
+      }
+
+      await expect(
+        removeFieldSource(db, kari, { ...wrong, url: brreg('111111111') }),
+      ).rejects.toThrow(AccessDeniedError)
+      await expect(removeFieldSource(db, admin, wrong)).rejects.toThrow(/Oppgi lenken/)
+      await expect(
+        removeFieldSource(db, admin, { ...wrong, url: brreg('333333333') }),
+      ).rejects.toThrow(/Fant ikke kilden/)
+      await expect(
+        removeFieldSource(db, admin, { ...wrong, field: 'phone', url: brreg('111111111') }),
+      ).rejects.toThrow(/Ukjent felt/)
+      expect(await rows()).toHaveLength(4)
+
+      await removeFieldSource(db, admin, { ...wrong, url: brreg('111111111') })
+      const left = await rows()
+      expect(left.map((s) => s.sourceUrl).sort()).toEqual([brreg('222222222'), null, null])
+      // Ellers eier importen fortsatt feltet og legger kilden inn igjen.
+      expect(left.filter((s) => s.field === 'experience').every((s) => s.reviewedAt)).toBe(true)
+      expect(left.find((s) => s.field === 'city')!.reviewedAt).toBeNull()
+
+      // `null` er kilden uten lenke, selv om en annen med samme navn har lenke.
+      await db.insert(schema.fieldSource).values({
+        ...source,
+        sourceLabel: 'entreprenorskolen.no',
+        sourceUrl: 'https://entreprenorskolen.no/alumni',
+        sourceKey: 'https://entreprenorskolen.no/alumni',
+      })
+      await removeFieldSource(db, admin, { ...wrong, label: 'entreprenorskolen.no', url: null })
+      expect((await rows()).filter((s) => s.sourceLabel === 'entreprenorskolen.no')).toEqual([
+        expect.objectContaining({ sourceUrl: 'https://entreprenorskolen.no/alumni' }),
+      ])
+
+      const logged = await audit('source.remove')
+      expect(logged.map((e) => e.details)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ field: 'experience', url: brreg('111111111') }),
+          expect.objectContaining({
+            field: 'experience',
+            label: 'entreprenorskolen.no',
+            url: null,
+          }),
+        ]),
+      )
+      expect(logged).toHaveLength(2)
     })
 
     it('forslag og tilknytninger til profiler uten konto står i køen', async () => {

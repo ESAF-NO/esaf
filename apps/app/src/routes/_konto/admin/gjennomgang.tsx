@@ -28,6 +28,7 @@ import { z } from 'zod'
 import { LinkRequestCard, SuggestionCard, useAction } from '#/components/Contributions.tsx'
 import { PersonMergeDialog } from '#/components/PersonMergeDialog.tsx'
 import { EditQuoteDialog } from '#/components/Quotes.tsx'
+import { RemoveSourceButton } from '#/components/SourceNote.tsx'
 import {
   Avatar,
   Button,
@@ -474,8 +475,9 @@ function SourceGroup({ group: g }: { group: ReviewSourceGroup }) {
               </p>
               <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-stone-500">
                 {f.sources.map((s) => (
-                  <span key={s.label}>
-                    <SourceLink source={s} /> · {confidenceLabels[s.confidence]}
+                  <span key={`${s.label}|${s.url}`}>
+                    <SourceLink source={s} /> · {confidenceLabels[s.confidence]}{' '}
+                    <RemoveSourceButton {...entity} field={f.field} source={s} />
                   </span>
                 ))}
               </p>

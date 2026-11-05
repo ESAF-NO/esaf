@@ -1,6 +1,6 @@
 import emojibase from 'emojibase-data/nb/data.json' with { type: 'json' }
 import { describe, expect, it } from 'vitest'
-import { isReactionEmoji, MAX_REACTIONS_PER_COMMENT } from '@esaf/core'
+import { isReactionEmoji, MAX_REACTIONS } from '@esaf/core'
 import {
   commentThreads,
   maxReactions,
@@ -65,7 +65,7 @@ describe('quickReactionsFor', () => {
 describe('emoji i reaksjoner', () => {
   it('har snarveier serveren godtar, og samme tak som serveren', () => {
     expect(quickReactions.every((r) => isReactionEmoji(r.emoji))).toBe(true)
-    expect(maxReactions).toBe(MAX_REACTIONS_PER_COMMENT)
+    expect(maxReactions).toBe(MAX_REACTIONS)
   })
 
   it('tilbyr i velgeren bare emoji serveren godtar, med hudfarger', () => {

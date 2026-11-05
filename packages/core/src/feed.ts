@@ -1,5 +1,6 @@
 import { schema, type Db, type PostChannel } from '@esaf/db'
 import { and, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
+import { unionAll } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import {
@@ -19,11 +20,20 @@ import { personIdsInCohort, type Tx } from './members.ts'
 import { mentionsToPlainText, resolveMentions } from './mentions.ts'
 import { notifyComment, notifyMentions } from './notifications.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
-import { FAVORITE_REACTIONS, isReactionEmoji, MAX_REACTIONS_PER_COMMENT } from './reactions.ts'
+import { FAVORITE_REACTIONS, isReactionEmoji, MAX_REACTIONS } from './reactions.ts'
 import type { ObjectStorage } from './storage.ts'
 
-const { auditEvent, cohort, comment, commentReaction, person, personCohort, post, postVote } =
-  schema
+const {
+  auditEvent,
+  cohort,
+  comment,
+  commentReaction,
+  person,
+  personCohort,
+  post,
+  postReaction,
+  postVote,
+} = schema
 
 export const postChannels = schema.postChannel.enumValues
 
@@ -99,7 +109,7 @@ export type PostSummary = {
   attachments: { images: number; documents: number; thumbnail: string | null }
 }
 
-/** Én emoji på en kommentar. Bare de som noen har gitt, er med. */
+/** Én emoji på et innlegg eller en kommentar. Bare de som noen har gitt, er med. */
 export type ReactionView = {
   emoji: string
   count: number
@@ -139,6 +149,7 @@ export type PostView = Omit<PostSummary, 'attachments'> & {
   /** Bilder og dokumenter, i rekkefølgen forfatteren valgte. */
   attachments: AssetView[]
   commentList: CommentView[]
+  reactions: ReactionView[]
   /** Det den innloggede reagerer mest med, oftest brukt først. */
   favoriteReactions: string[]
 }
@@ -320,13 +331,15 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
     .from(comment)
     .where(and(eq(comment.postId, postId), isNull(comment.deletedAt)))
     .orderBy(comment.createdAt)
-  const [authors, reactions, favoriteReactions] = await Promise.all([
+  const [authors, reactions, postReactions, favoriteReactions] = await Promise.all([
     loadAuthors(db, [row.authorPersonId, ...comments.map((c) => c.authorPersonId)]),
     loadReactions(
       db,
       viewer,
+      onComments,
       comments.map((c) => c.id),
     ),
+    loadReactions(db, viewer, onPosts, [row.id]),
     loadFavoriteReactions(db, viewer.personId),
   ])
   const moderator = can(viewer, 'content.moderate')
@@ -359,6 +372,7 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
     canDelete: isOwn || moderator,
     canPin: moderator,
     attachments: attachments.get(row.id) ?? [],
+    reactions: postReactions.get(row.id) ?? [],
     favoriteReactions,
     commentList: comments.map((c) => {
       const own = c.authorPersonId === viewer.personId
@@ -378,40 +392,72 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
   }
 }
 
-/** Emojiene personen bruker mest. Ved likt antall kommer den sist brukte først. */
+/**
+ * Emojiene personen bruker mest, på innlegg og kommentarer samlet. Ved likt antall
+ * kommer den sist brukte først.
+ */
 async function loadFavoriteReactions(db: Db, personId: string): Promise<string[]> {
+  const given = unionAll(
+    db
+      .select({ emoji: commentReaction.emoji, createdAt: commentReaction.createdAt })
+      .from(commentReaction)
+      .where(eq(commentReaction.personId, personId)),
+    db
+      .select({ emoji: postReaction.emoji, createdAt: postReaction.createdAt })
+      .from(postReaction)
+      .where(eq(postReaction.personId, personId)),
+  ).as('given')
   const rows = await db
-    .select({ emoji: commentReaction.emoji })
-    .from(commentReaction)
-    .where(eq(commentReaction.personId, personId))
-    .groupBy(commentReaction.emoji)
-    .orderBy(sql`count(*) desc`, sql`max(${commentReaction.createdAt}) desc`, commentReaction.emoji)
+    .select({ emoji: given.emoji })
+    .from(given)
+    .groupBy(given.emoji)
+    .orderBy(sql`count(*) desc`, sql`max(${given.createdAt}) desc`, given.emoji)
     .limit(FAVORITE_REACTIONS)
   return rows.map((r) => r.emoji)
 }
 
-/** Reaksjonene per kommentar, i rekkefølgen de først ble gitt. */
+/** Det som skiller reaksjoner på kommentarer fra reaksjoner på innlegg. */
+const onComments = {
+  table: commentReaction,
+  target: commentReaction.commentId,
+  full: 'Kommentaren har nok ulike reaksjoner.',
+  add: (tx: Tx, commentId: string, personId: string, emoji: string) =>
+    tx.insert(commentReaction).values({ commentId, personId, emoji }).onConflictDoNothing(),
+}
+
+const onPosts = {
+  table: postReaction,
+  target: postReaction.postId,
+  full: 'Innlegget har nok ulike reaksjoner.',
+  add: (tx: Tx, postId: string, personId: string, emoji: string) =>
+    tx.insert(postReaction).values({ postId, personId, emoji }).onConflictDoNothing(),
+}
+
+type ReactionKind = typeof onComments | typeof onPosts
+
+/** Reaksjonene per kommentar eller innlegg, i rekkefølgen de først ble gitt. */
 async function loadReactions(
   db: Db | Tx,
   viewer: { personId: string },
-  commentIds: string[],
+  { table, target }: ReactionKind,
+  ids: string[],
 ): Promise<Map<string, ReactionView[]>> {
-  if (!commentIds.length) return new Map()
+  if (!ids.length) return new Map()
   const rows = await db
     .select({
-      commentId: commentReaction.commentId,
-      emoji: commentReaction.emoji,
-      personId: commentReaction.personId,
+      targetId: target,
+      emoji: table.emoji,
+      personId: table.personId,
       fullName: person.fullName,
     })
-    .from(commentReaction)
-    .innerJoin(person, eq(person.id, commentReaction.personId))
-    .where(inArray(commentReaction.commentId, commentIds))
-    .orderBy(commentReaction.createdAt, commentReaction.emoji)
-  const byComment = new Map<string, ReactionView[]>()
+    .from(table)
+    .innerJoin(person, eq(person.id, table.personId))
+    .where(inArray(target, ids))
+    .orderBy(table.createdAt, table.emoji)
+  const byTarget = new Map<string, ReactionView[]>()
   for (const r of rows) {
-    const list = byComment.get(r.commentId) ?? []
-    byComment.set(r.commentId, list)
+    const list = byTarget.get(r.targetId) ?? []
+    byTarget.set(r.targetId, list)
     let entry = list.find((e) => e.emoji === r.emoji)
     if (!entry) {
       entry = { emoji: r.emoji, count: 0, viewerReacted: false, people: [] }
@@ -421,7 +467,7 @@ async function loadReactions(
     entry.people.push(r.fullName)
     if (r.personId === viewer.personId) entry.viewerReacted = true
   }
-  return byComment
+  return byTarget
 }
 
 /**
@@ -776,27 +822,47 @@ export async function toggleCommentReaction(
       .innerJoin(post, eq(post.id, comment.postId))
       .where(and(eq(comment.id, commentId), isNull(comment.deletedAt), isNull(post.deletedAt)))
     if (!target) throw new NotFoundError('Fant ikke kommentaren.')
-    const mine = and(
-      eq(commentReaction.commentId, commentId),
-      eq(commentReaction.personId, viewer.personId),
-      eq(commentReaction.emoji, emoji),
-    )
-    const removed = await tx.delete(commentReaction).where(mine).returning()
-    if (!removed.length) {
-      const given = await tx
-        .selectDistinct({ emoji: commentReaction.emoji })
-        .from(commentReaction)
-        .where(eq(commentReaction.commentId, commentId))
-      if (given.length >= MAX_REACTIONS_PER_COMMENT && !given.some((g) => g.emoji === emoji)) {
-        throw new DomainError('Kommentaren har nok ulike reaksjoner.')
-      }
-      await tx
-        .insert(commentReaction)
-        .values({ commentId, personId: viewer.personId, emoji })
-        .onConflictDoNothing()
-    }
-    return (await loadReactions(tx, viewer, [commentId])).get(commentId) ?? []
+    return toggleReaction(tx, viewer, onComments, commentId, emoji)
   })
+}
+
+/** Som `toggleCommentReaction`, men på selve innlegget. */
+export async function togglePostReaction(
+  db: Db,
+  viewer: Viewer,
+  postId: string,
+  emoji: string,
+): Promise<ReactionView[]> {
+  assertMember(viewer)
+  if (!isReactionEmoji(emoji)) throw new DomainError('Ugyldig reaksjon.')
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({ id: post.id })
+      .from(post)
+      .where(and(eq(post.id, postId), isNull(post.deletedAt)))
+    if (!target) throw new NotFoundError('Fant ikke innlegget.')
+    return toggleReaction(tx, viewer, onPosts, postId, emoji)
+  })
+}
+
+async function toggleReaction(
+  tx: Tx,
+  viewer: { personId: string },
+  kind: ReactionKind,
+  id: string,
+  emoji: string,
+): Promise<ReactionView[]> {
+  const { table, target } = kind
+  const mine = and(eq(target, id), eq(table.personId, viewer.personId), eq(table.emoji, emoji))
+  const removed = await tx.delete(table).where(mine).returning()
+  if (!removed.length) {
+    const given = await tx.selectDistinct({ emoji: table.emoji }).from(table).where(eq(target, id))
+    if (given.length >= MAX_REACTIONS && !given.some((g) => g.emoji === emoji)) {
+      throw new DomainError(kind.full)
+    }
+    await kind.add(tx, id, viewer.personId, emoji)
+  }
+  return (await loadReactions(tx, viewer, kind, [id])).get(id) ?? []
 }
 
 /** Gir eller fjerner stemmen til den innloggede. */

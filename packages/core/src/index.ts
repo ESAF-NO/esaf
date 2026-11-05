@@ -275,7 +275,6 @@ export {
   listPosts,
   postChannels,
   postInput,
-  commentReactionKinds,
   setPostPinned,
   toggleCommentReaction,
   toggleVote,
@@ -291,6 +290,7 @@ export {
   type ReactionView,
 } from './feed.ts'
 export { markdownToPlainText } from './markdown.ts'
+export { isReactionEmoji, MAX_REACTIONS_PER_COMMENT } from './reactions.ts'
 export {
   formatMention,
   listMentionable,

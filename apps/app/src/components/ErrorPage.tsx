@@ -1,4 +1,5 @@
 import { Link, useRouter, type ErrorComponentProps } from '@tanstack/react-router'
+import { isChunkLoadError } from '../lib/preload-recovery.ts'
 import { AuthCard, AuthShell } from './AuthLayout.tsx'
 import { Button, buttonClass } from './ui.tsx'
 
@@ -10,6 +11,11 @@ import { Button, buttonClass } from './ui.tsx'
 export function ErrorPage({ error, reset }: ErrorComponentProps) {
   const router = useRouter()
   const retry = () => {
+    // En feilet import prøves ikke på nytt uten at hele siden lastes inn igjen.
+    if (isChunkLoadError(error)) {
+      window.location.reload()
+      return
+    }
     reset()
     void router.invalidate()
   }

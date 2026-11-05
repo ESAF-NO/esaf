@@ -267,6 +267,13 @@
       "when": 1793892779349,
       "tag": "0037_kommentarsvar",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793908402139,
+      "tag": "0038_reaksjoner_med_alle_emoji",
+      "breakpoints": true
     }
   ]
 }

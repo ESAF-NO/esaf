@@ -14,6 +14,7 @@ import {
   type DocumentType,
 } from './file-types.ts'
 import {
+  animatedReadOptions,
   deleteImageFiles,
   IMAGE_CONTENT_TYPE,
   inspectUpload,
@@ -35,7 +36,8 @@ const { asset, auditEvent, comment, event, eventParticipation, person, post } = 
  * - Hvilke filer som slippes inn, avgjøres av innholdet (`file-types.ts`). Bilder
  *   behandles som profilbilder: rotert etter EXIF, ALL metadata fjernet (også
  *   GPS), og lagret som WebP i 400 og 1600 piksler på den lengste siden, uten
- *   beskjæring. Dokumenter lagres som de er. Maks 25 MB per fil.
+ *   beskjæring. GIF-er og animert WebP lagres som animert WebP, høyst 800 piksler.
+ *   Dokumenter lagres som de er. Maks 25 MB per fil.
  * - Alle aktive medlemmer kan legge ved filer i innlegg og kommentarer (maks 10
  *   per innlegg eller kommentar). Bilder på et arrangement kan lastes opp av dem
  *   som var der og av admins, når arrangementet har startet. Dokumenter på et
@@ -70,6 +72,9 @@ export const UPLOAD_LIMITS = {
 } as const
 /** Filer som aldri ble festet til noe, ryddes bort etter så lang tid. */
 export const ORPHAN_AFTER_MS = 24 * 60 * 60 * 1000
+
+/** Den lengste siden på animasjoner: de vises aldri større, og hvert bilde koster. */
+const ANIMATED_LARGE_SIDE = 800
 
 /** Mindre enn dette er neppe et bilde noen vil vise. */
 const MIN_SIDE = 16
@@ -312,12 +317,13 @@ export type ProcessedAssetImage = Record<ImageSize, Buffer> & { width: number; h
  * om gangen i prosessen (`oneImageAtATime`).
  */
 export async function processAssetImage(file: Uint8Array): Promise<ProcessedAssetImage> {
-  const { width, height } = await inspectUpload(file, ASSET_MAX_BYTES)
+  const { width, height, frames } = await inspectUpload(file, ASSET_MAX_BYTES, { animation: true })
   if (Math.min(width, height) < MIN_SIDE) {
     throw new DomainError(`Bildet er for lite. Bruk et bilde på minst ${MIN_SIDE} piksler.`)
   }
   return oneImageAtATime(async () => {
     try {
+      if (frames > 1) return await processAnimation(file)
       // Uten `keepMetadata()` skriver sharp verken EXIF (med GPS), XMP, IPTC eller
       // fargeprofil, og fargene gjøres om til sRGB. Testene sjekker det.
       const large = await sharp(file, readOptions)
@@ -342,6 +348,25 @@ export async function processAssetImage(file: Uint8Array): Promise<ProcessedAsse
   })
 }
 
+/** Som over, men alle bildene i animasjonen beholdes, med tidene mellom dem. */
+async function processAnimation(file: Uint8Array): Promise<ProcessedAssetImage> {
+  const scaled = (input: Uint8Array, side: number) =>
+    sharp(input, animatedReadOptions)
+      .timeout({ seconds: 30 })
+      .resize(side, side, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 75 })
+      .toBuffer({ resolveWithObject: true })
+  const large = await scaled(file, ANIMATED_LARGE_SIDE)
+  const small = await scaled(large.data, ASSET_IMAGE_SIZES.small)
+  return {
+    small: small.data,
+    large: large.data,
+    width: large.info.width,
+    // Bildene ligger under hverandre, så `height` er høyden på hele stabelen.
+    height: large.info.pageHeight ?? large.info.height,
+  }
+}
+
 const label = (fileKey: string) => `vedlegget ${fileKey}`
 
 /**
@@ -357,6 +382,8 @@ export async function uploadAsset(
   target: AssetTarget,
   file: Uint8Array,
   fileName: string,
+  /** GIF-er fra søket, så de kan finnes igjen (`gifs.ts`). */
+  gif?: { id: string; title: string },
 ): Promise<AssetView> {
   // Før den tunge jobben, så manglende tilgang eller en full kvote ikke koster en bildebehandling.
   await assertCanUpload(db, viewer, target)
@@ -368,7 +395,7 @@ export async function uploadAsset(
   }
   const sniffed = sniffFile(file, fileName)
   if (target.purpose === 'event_photo' && sniffed.kind !== 'image') {
-    throw new DomainError('Albumet tar bare bilder i JPEG, PNG eller WebP.')
+    throw new DomainError('Albumet tar bare bilder i JPEG, PNG, WebP eller GIF.')
   }
 
   const fileKey = newImageKey()
@@ -429,6 +456,8 @@ export async function uploadAsset(
         .insert(asset)
         .values({
           ...values,
+          gifId: gif?.id ?? null,
+          gifTitle: gif?.title ?? null,
           fileKey,
           ownerPersonId: viewer.personId,
           purpose: target.purpose,
@@ -559,6 +588,22 @@ export async function deleteAssetsOf(
 // Sletting og opprydding
 // ---------------------------------------------------------------------------
 
+/**
+ * En moderator har fjernet disse filene. Er noen av dem GIF-er fra søket, skal de
+ * ikke kunne velges fra de lagrede GIF-ene igjen, heller ikke fra andres kopier.
+ */
+export async function forgetGifs(tx: Tx, assetIds: string[]) {
+  if (!assetIds.length) return
+  const rows = await tx
+    .select({ gifId: asset.gifId })
+    .from(asset)
+    .where(and(inArray(asset.id, assetIds), isNotNull(asset.gifId)))
+  const ids = rows.flatMap((r) => r.gifId ?? [])
+  if (ids.length) {
+    await tx.update(asset).set({ gifId: null, gifTitle: null }).where(inArray(asset.gifId, ids))
+  }
+}
+
 export type PurgeTarget = { id: string; storageKeys: Record<string, string> }
 
 /**
@@ -640,6 +685,7 @@ export async function removeAsset(
     }
     await tx.update(asset).set({ deletedAt: new Date() }).where(eq(asset.id, row.id))
     if (!own) {
+      await forgetGifs(tx, [row.id])
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'content.remove_attachment',

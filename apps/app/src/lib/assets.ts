@@ -9,7 +9,7 @@ export const ASSET_MAX_BYTES = 25 * 1024 * 1024
 /** Høyst så mange vedlegg i ett innlegg eller én kommentar. */
 export const MAX_ATTACHMENTS = 10
 
-export const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp'
+export const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
 export const DOCUMENT_ACCEPT =
   'application/pdf,.pdf,.docx,.xlsx,.pptx,.txt,.csv,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation'
 export const ATTACHMENT_ACCEPT = `${IMAGE_ACCEPT},${DOCUMENT_ACCEPT}`
@@ -35,9 +35,9 @@ export function checkAssetFile(file: File, { imagesOnly = false } = {}): string 
   }
   const image = IMAGE_ACCEPT.split(',').includes(file.type)
   if (imagesOnly && file.type && !image)
-    return `${file.name} er ikke et bilde i JPEG, PNG eller WebP.`
+    return `${file.name} er ikke et bilde i JPEG, PNG, WebP eller GIF.`
   if (['svg', 'html', 'htm', 'xml', 'zip', 'exe', 'js'].includes(ext)) {
-    return `${file.name} kan ikke lastes opp. Bilder (JPEG, PNG, WebP) og dokumenter (PDF, Word, Excel, PowerPoint, tekst, CSV) går fint.`
+    return `${file.name} kan ikke lastes opp. Bilder (JPEG, PNG, WebP, GIF) og dokumenter (PDF, Word, Excel, PowerPoint, tekst, CSV) går fint.`
   }
   return null
 }

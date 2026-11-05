@@ -18,6 +18,9 @@ import {
   deleteEvent,
   deletePost,
   DomainError,
+  findGifs,
+  GifsUnavailableError,
+  importGif,
   getCompany,
   getEditablePost,
   getEvent,
@@ -243,6 +246,163 @@ describe.skipIf(!url)('vedlegg', () => {
       expect([view.width, view.height]).toEqual([64, 48])
       const meta = await sharp((await read(ola, view, 'small')).body).metadata()
       expect(meta).toMatchObject({ width: 64, height: 48, hasAlpha: true })
+    })
+
+    it('en GIF blir animert WebP, og lastes opp, festes og leses som andre bilder', async () => {
+      const frames = await Promise.all(
+        [20, 120, 220].map((r) =>
+          sharp({
+            create: { width: 300, height: 200, channels: 3, background: { r, g: 40, b: 90 } },
+          })
+            .png()
+            .toBuffer(),
+        ),
+      )
+      const gif = await sharp(frames, { join: { animated: true } })
+        .gif({ delay: 100 })
+        .toBuffer()
+      const view = await upload(ola, { purpose: 'comment' }, gif, 'dans.gif')
+      expect(view).toMatchObject({
+        kind: 'image',
+        name: 'dans.webp',
+        contentType: 'image/webp',
+        width: 300,
+        height: 200,
+      })
+      const postId = await createPost(db, ola, question)
+      await addComment(db, ola, postId, { body: '', attachmentIds: [view.id] })
+      for (const size of ['small', 'large'] as const) {
+        const { body } = await read(kari, view, size)
+        expect(await sharp(Buffer.from(body)).metadata()).toMatchObject({
+          format: 'webp',
+          pages: 3,
+        })
+      }
+    })
+
+    it('en GIF fra søket blir et vedlegg, og teller med i grensen', async () => {
+      const gif = await sharp({
+        create: { width: 100, height: 100, channels: 3, background: '#357' },
+      })
+        .gif()
+        .toBuffer()
+      const gifs = {
+        search: () => Promise.reject(new Error('brukes ikke')),
+        download: async () => ({ bytes: gif, title: 'Dans <b>' }),
+      }
+      const view = await importGif(db, storage, ola, gifs, 'abc', 'comment')
+      expect(view.kind).toBe('image')
+      expect(view.name).toBe('Dans _b_.webp')
+      expect((await rowOf(view.id)).ownerPersonId).toBe(ola!.personId)
+
+      const download = vi.spyOn(gifs, 'download')
+      await db
+        .update(schema.asset)
+        .set({ byteSize: UPLOAD_LIMITS.member.bytes + 1 })
+        .where(eq(schema.asset.id, view.id))
+      await expect(importGif(db, storage, ola, gifs, 'abc', 'comment')).rejects.toBeInstanceOf(
+        UploadLimitError,
+      )
+      expect(download).not.toHaveBeenCalled()
+      vi.restoreAllMocks()
+    })
+
+    describe('lagrede GIF-er', () => {
+      const unavailable = {
+        search: () => Promise.reject(new GifsUnavailableError()),
+        download: () => Promise.reject(new GifsUnavailableError()),
+      }
+
+      async function gifFile(r: number) {
+        const frames = await Promise.all(
+          [r, r + 20].map((red) =>
+            sharp({
+              create: { width: 120, height: 80, channels: 3, background: { r: red, g: 9, b: 9 } },
+            })
+              .png()
+              .toBuffer(),
+          ),
+        )
+        return sharp(frames, { join: { animated: true } })
+          .gif({ delay: 100 })
+          .toBuffer()
+      }
+
+      /** Velger en GIF fra GIPHY og legger den i en kommentar. */
+      async function send(viewer: Viewer, id: string, title: string, r = 40) {
+        const bytes = await gifFile(r)
+        const gifs = { ...unavailable, download: async () => ({ bytes, title }) }
+        const view = await importGif(db, storage, viewer, gifs, id, 'comment')
+        const postId = await createPost(db, viewer, question)
+        const commentId = await addComment(db, viewer, postId, {
+          body: '',
+          attachmentIds: [view.id],
+        })
+        return { view, commentId }
+      }
+
+      it('vises når GIPHY ikke kan brukes, sist brukt først, og kan søkes opp', async () => {
+        await send(ola, 'aaa', 'Happy dance')
+        await send(kari, 'bbb', 'Sad cat', 90)
+        await send(ola, 'aaa', 'Happy dance')
+
+        const all = await findGifs(db, kari, unavailable, '')
+        expect(all.stored).toBe(true)
+        expect(all.results.map((g) => [g.id, g.title])).toEqual([
+          ['lagret:aaa', 'Happy dance'],
+          ['lagret:bbb', 'Sad cat'],
+        ])
+        expect(all.results[0]!.preview.url).toMatch(/^\/api\/vedlegg\/.+-400\.webp$/)
+
+        const found = await findGifs(db, kari, unavailable, 'CAT')
+        expect(found.results.map((g) => g.title)).toEqual(['Sad cat'])
+        expect((await findGifs(db, kari, unavailable, '100%')).results).toEqual([])
+      })
+
+      it('kan velges uten GIPHY, som en ny kopi som lever sitt eget liv', async () => {
+        const { commentId } = await send(ola, 'aaa', 'Happy dance')
+        const copy = await importGif(db, storage, kari, unavailable, 'lagret:aaa', 'comment')
+        expect(copy.own).toBe(true)
+        expect((await rowOf(copy.id)).gifId).toBe('aaa')
+        const postId = await createPost(db, kari, question)
+        await addComment(db, kari, postId, { body: '', attachmentIds: [copy.id] })
+
+        await deleteComment(db, ola, commentId, storage)
+        const { body } = await read(kari, copy)
+        expect(await sharp(Buffer.from(body)).metadata()).toMatchObject({ pages: 2 })
+        expect((await findGifs(db, kari, unavailable, '')).results).toHaveLength(1)
+      })
+
+      it('en GIF som finnes hos oss, hentes ikke fra GIPHY igjen', async () => {
+        await send(ola, 'aaa', 'Happy dance')
+        const gifs = { ...unavailable, download: vi.fn(unavailable.download) }
+        await importGif(db, storage, kari, gifs, 'aaa', 'comment')
+        expect(gifs.download).not.toHaveBeenCalled()
+      })
+
+      it('ikke-festede og slettede vises ikke', async () => {
+        const bytes = await gifFile(40)
+        const gifs = { ...unavailable, download: async () => ({ bytes, title: 'Utkast' }) }
+        await importGif(db, storage, ola, gifs, 'utkast', 'comment')
+        const { commentId } = await send(ola, 'aaa', 'Happy dance')
+        await deleteComment(db, ola, commentId, storage)
+        expect((await findGifs(db, kari, unavailable, '')).results).toEqual([])
+        await expect(
+          importGif(db, storage, kari, unavailable, 'lagret:aaa', 'comment'),
+        ).rejects.toThrow('finnes ikke lenger')
+      })
+
+      it('fjerner en moderator en GIF, forsvinner den også fra andres kopier', async () => {
+        const { commentId } = await send(ola, 'aaa', 'Stygg')
+        await send(kari, 'aaa', 'Stygg')
+        await deleteComment(db, moderator, commentId, storage)
+        expect((await findGifs(db, kari, unavailable, '')).results).toEqual([])
+      })
+
+      it('opplastede GIF-er vises ikke her', async () => {
+        await upload(ola, { purpose: 'comment' }, await gifFile(40), 'ferie.gif')
+        expect((await findGifs(db, kari, unavailable, '')).results).toEqual([])
+      })
     })
 
     it('albumet tar bare bilder', async () => {

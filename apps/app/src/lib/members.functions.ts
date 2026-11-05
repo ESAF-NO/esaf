@@ -18,6 +18,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { rethrowForClient } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
+import { gifs } from '#/server/gifs.server.ts'
 import { getRequestViewer } from '#/server/viewer.server.ts'
 
 /**
@@ -37,6 +38,8 @@ export const getViewerSummary = createServerFn({ method: 'GET' }).handler(async 
   const strong = viewer ? strongAuth(viewer) : false
   return {
     level,
+    /** Søket etter GIF-er i skrivefeltet er slått på. */
+    gifSearch: gifs !== null,
     /** Rollen til et aktivt medlem. */
     role,
     /** Rettighetene den innloggede kan bruke nå. Bare for visning; serveren sjekker selv. */

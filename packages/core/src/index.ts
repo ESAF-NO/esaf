@@ -275,7 +275,9 @@ export {
   listPosts,
   postChannels,
   postInput,
+  commentReactionKinds,
   setPostPinned,
+  toggleCommentReaction,
   toggleVote,
   updateComment,
   updatePost,
@@ -286,7 +288,18 @@ export {
   type PostInput,
   type PostSummary,
   type PostView,
+  type ReactionView,
 } from './feed.ts'
+export {
+  createGifSearch,
+  findGifs,
+  GifsUnavailableError,
+  importGif,
+  listStoredGifs,
+  type GifPage,
+  type GifResult,
+  type GifSearch,
+} from './gifs.ts'
 export { markdownToPlainText } from './markdown.ts'
 export {
   formatMention,

@@ -5,10 +5,11 @@ import {
   type EmailStatus,
   type MemberRole,
 } from '@esaf/db'
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
 import { z } from 'zod'
 import { accessLevel, assertCan, assertMember, type Viewer } from './access.ts'
 import { EmailError, type Mailer } from './email.ts'
+import { emailKindAvailable } from './email-switch.ts'
 import { welcomeEmail } from './email-templates.ts'
 import { AccessDeniedError, DomainError } from './errors.ts'
 import { ensurePersonForVerifiedUser, linkAccountInTx, normalizeEmail, type Tx } from './members.ts'
@@ -252,7 +253,11 @@ export type AccessRequestView = {
   email: string
   /** Profilen personen sier er dem. */
   profile: CandidateProfile | null
-  /** Sterk: den bekreftede adressen står på den valgte profilen i kullisten. */
+  /**
+   * Sterk: den bekreftede adressen stod på den valgte profilen i kullisten. Sant
+   * også etter godkjenning, for kilden sier om adressen kom fra lista eller fra
+   * registreringen (godkjenning flytter registreringsadressen til profilen).
+   */
   emailOnProfile: boolean
   /** Profiler med likt navn (samme kull først), når personen ikke fant seg selv. */
   suggestions: CandidateProfile[]
@@ -261,7 +266,15 @@ export type AccessRequestView = {
    * det gikk, eller null om ingen er sendt (e-postloggen begynte 3. november 2026).
    */
   welcomeEmail: { status: EmailStatus; at: Date } | null
+  /**
+   * Nettopp godkjent, og den automatiske velkomsten er på vei: e-postjobben går
+   * hvert minutt. Admin skal ikke sende den selv imens, da får personen to.
+   */
+  welcomePending: boolean
 }
+
+/** Så lenge venter vi på den automatiske velkomsten før admin får sende den selv. */
+export const WELCOME_PENDING_MS = 5 * 60 * 1000
 
 const fold = (s: string) => s.toLocaleLowerCase('nb').normalize('NFD').replace(/[̀-ͯ]/g, '')
 const words = (s: string) =>
@@ -316,7 +329,7 @@ export async function listAccessRequests(
       ? db
           .select({ email: personEmail.email, personId: personEmail.personId })
           .from(personEmail)
-          .where(inArray(personEmail.personId, chosen))
+          .where(and(inArray(personEmail.personId, chosen), ne(personEmail.source, 'signup')))
       : [],
   ])
 
@@ -337,6 +350,34 @@ export async function listAccessRequests(
         .orderBy(person.userId, desc(emailLog.createdAt))
     : []
   const welcomeOf = new Map(welcomes.map((w) => [w.userId, { status: w.status, at: w.at }]))
+
+  // Nettopp godkjente uten velkomst: er den i køen, og kan e-postjobben sende den nå?
+  const recent = new Date(Date.now() - WELCOME_PENDING_MS)
+  const waiting = rows
+    .filter(
+      (r) =>
+        r.request.status === 'approved' &&
+        r.request.decidedAt &&
+        r.request.decidedAt > recent &&
+        !welcomeOf.has(r.request.userId),
+    )
+    .map((r) => r.request.userId)
+  const queued =
+    waiting.length && (await emailKindAvailable(db, 'welcome'))
+      ? await db
+          .select({ userId: person.userId, payload: notification.payload })
+          .from(notification)
+          .innerJoin(person, eq(person.id, notification.recipientPersonId))
+          .where(
+            and(
+              eq(notification.type, 'welcome'),
+              isNull(notification.emailedAt),
+              isNull(notification.readAt),
+              inArray(person.userId, waiting),
+            ),
+          )
+      : []
+  const welcomeQueued = new Set(queued.filter((q) => q.payload.emailWelcome).map((q) => q.userId))
 
   return rows.map(({ request, email }) => {
     const address = normalizeEmail(email)
@@ -364,6 +405,7 @@ export async function listAccessRequests(
         )
         .slice(0, 4),
       welcomeEmail: welcomeOf.get(request.userId) ?? null,
+      welcomePending: welcomeQueued.has(request.userId),
     }
   })
 }

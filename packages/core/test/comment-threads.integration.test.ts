@@ -15,6 +15,7 @@ import {
   listNotifications,
   listPosts,
   loadViewer,
+  MAX_REACTIONS_PER_COMMENT,
   mergePeople,
   NotFoundError,
   previewPeopleMerge,
@@ -198,32 +199,32 @@ describe.skipIf(!url)('svar og reaksjoner på kommentarer', () => {
   describe('reaksjoner', () => {
     it('gis og tas bort, med tall, navn og hva den innloggede har gitt', async () => {
       const id = await say(kari, 'Hei')
-      await toggleCommentReaction(db, ola, id, 'heart')
-      await toggleCommentReaction(db, per, id, 'heart')
-      const after = await toggleCommentReaction(db, ola, id, 'like')
+      await toggleCommentReaction(db, ola, id, '❤️')
+      await toggleCommentReaction(db, per, id, '❤️')
+      const after = await toggleCommentReaction(db, ola, id, '👍')
       expect(after).toMatchObject([
-        { kind: 'like', count: 1, viewerReacted: true },
-        { kind: 'heart', count: 2, viewerReacted: true },
+        { emoji: '❤️', count: 2, viewerReacted: true },
+        { emoji: '👍', count: 1, viewerReacted: true },
       ])
-      expect(after[1]!.people).toHaveLength(2)
+      expect(after[0]!.people).toHaveLength(2)
 
       const seenByKari = (await getPost(db, kari, postId)).commentList[0]!.reactions
       expect(seenByKari.map((r) => r.viewerReacted)).toEqual([false, false])
 
-      expect(await toggleCommentReaction(db, ola, id, 'like')).toMatchObject([{ kind: 'heart' }])
+      expect(await toggleCommentReaction(db, ola, id, '👍')).toMatchObject([{ emoji: '❤️' }])
     })
 
     it('gir ingen varsler', async () => {
       const id = await say(kari, 'Hei')
-      await toggleCommentReaction(db, per, id, 'party')
+      await toggleCommentReaction(db, per, id, '🎉')
       expect(await typesFor(kari)).toEqual([])
     })
 
     it('tåler to like trykk samtidig', async () => {
       const id = await say(kari, 'Hei')
       await Promise.allSettled([
-        toggleCommentReaction(db, per, id, 'like'),
-        toggleCommentReaction(db, per, id, 'like'),
+        toggleCommentReaction(db, per, id, '👍'),
+        toggleCommentReaction(db, per, id, '👍'),
       ])
       const count = await db.$count(
         schema.commentReaction,
@@ -236,12 +237,10 @@ describe.skipIf(!url)('svar og reaksjoner på kommentarer', () => {
       const id = await say(kari, 'Hei')
       const gone = await say(kari, 'Borte')
       await deleteComment(db, moderator, gone)
-      await expect(toggleCommentReaction(db, per, gone, 'like')).rejects.toBeInstanceOf(
-        NotFoundError,
-      )
-      await expect(toggleCommentReaction(db, pending, id, 'like')).rejects.toThrow()
+      await expect(toggleCommentReaction(db, per, gone, '👍')).rejects.toBeInstanceOf(NotFoundError)
+      await expect(toggleCommentReaction(db, pending, id, '👍')).rejects.toThrow()
       await deletePost(db, ola, postId)
-      await expect(toggleCommentReaction(db, per, id, 'like')).rejects.toBeInstanceOf(NotFoundError)
+      await expect(toggleCommentReaction(db, per, id, '👍')).rejects.toBeInstanceOf(NotFoundError)
     })
 
     it('følger med når to personer slås sammen, uten å telle dobbelt', async () => {
@@ -259,10 +258,10 @@ describe.skipIf(!url)('svar og reaksjoner på kommentarer', () => {
 
       const both = await say(kari, 'Begge reagerte')
       const onlyProfile = await say(kari, 'Bare profilen reagerte')
-      await toggleCommentReaction(db, per, both, 'like')
+      await toggleCommentReaction(db, per, both, '👍')
       await db.insert(schema.commentReaction).values([
-        { commentId: both, personId: profile!.id, kind: 'like' },
-        { commentId: onlyProfile, personId: profile!.id, kind: 'heart' },
+        { commentId: both, personId: profile!.id, emoji: '👍' },
+        { commentId: onlyProfile, personId: profile!.id, emoji: '❤️' },
       ])
 
       const preview = await previewPeopleMerge(db, admin, {
@@ -277,17 +276,65 @@ describe.skipIf(!url)('svar og reaksjoner på kommentarer', () => {
       })
 
       const list = (await getPost(db, per, postId)).commentList
-      expect(list.map((c) => c.reactions.map((r) => [r.kind, r.count, r.viewerReacted]))).toEqual([
-        [['like', 1, true]],
-        [['heart', 1, true]],
+      expect(list.map((c) => c.reactions.map((r) => [r.emoji, r.count, r.viewerReacted]))).toEqual([
+        [['👍', 1, true]],
+        [['❤️', 1, true]],
       ])
     })
 
-    it('avviser ukjente reaksjoner', async () => {
+    it('tar alle emoji, med hudfarge, flagg og sammensatte', async () => {
       const id = await say(kari, 'Hei')
-      await expect(
-        toggleCommentReaction(db, per, id, 'hemmelig' as unknown as 'like'),
-      ).rejects.toThrow('Ugyldig reaksjon')
+      for (const emoji of ['🦄', '👍🏽', '🇳🇴', '👩‍💻', '1️⃣']) {
+        await toggleCommentReaction(db, per, id, emoji)
+      }
+      const list = await toggleCommentReaction(db, ola, id, '🦄')
+      expect(list.map((r) => [r.emoji, r.count])).toEqual([
+        ['🦄', 2],
+        ['👍🏽', 1],
+        ['🇳🇴', 1],
+        ['👩‍💻', 1],
+        ['1️⃣', 1],
+      ])
+    })
+
+    it('husker hva hver person bruker mest, med den sist brukte først ved likt antall', async () => {
+      const [a, b, c] = [await say(kari, 'A'), await say(kari, 'B'), await say(kari, 'C')]
+      expect((await getPost(db, per, postId)).favoriteReactions).toEqual([])
+
+      await toggleCommentReaction(db, per, a, '🦄')
+      await toggleCommentReaction(db, per, a, '🚀')
+      await toggleCommentReaction(db, per, a, '🔥')
+      await toggleCommentReaction(db, per, b, '🔥')
+      await toggleCommentReaction(db, per, c, '🔥')
+      await toggleCommentReaction(db, per, b, '🦄')
+      await toggleCommentReaction(db, ola, a, '🌮')
+
+      expect((await getPost(db, per, postId)).favoriteReactions).toEqual(['🔥', '🦄', '🚀'])
+      expect((await getPost(db, ola, postId)).favoriteReactions).toEqual(['🌮'])
+    })
+
+    it('gir aldri flere favoritter enn det er snarveier', async () => {
+      const id = await say(kari, 'Hei')
+      for (const e of [...'😀😁😂😃😄😅😆']) await toggleCommentReaction(db, per, id, e)
+      expect((await getPost(db, per, postId)).favoriteReactions).toHaveLength(5)
+    })
+
+    it('avviser alt som ikke er akkurat én emoji', async () => {
+      const id = await say(kari, 'Hei')
+      for (const value of ['', 'hemmelig', 'a', '1', '👍👍', '👍 ', '❤', '<b>']) {
+        await expect(toggleCommentReaction(db, per, id, value)).rejects.toThrow('Ugyldig reaksjon')
+      }
+    })
+
+    it('tar ikke flere ulike emoji enn taket, men lar folk bli med på dem som er der', async () => {
+      const id = await say(kari, 'Hei')
+      const emoji = [...'😀😁😂😃😄😅😆😇😈😉😊😋😌😍😎😏😐😑😒😓']
+      expect(emoji).toHaveLength(MAX_REACTIONS_PER_COMMENT)
+      for (const e of emoji) await toggleCommentReaction(db, per, id, e)
+
+      await expect(toggleCommentReaction(db, ola, id, '🦄')).rejects.toThrow('nok ulike reaksjoner')
+      const list = await toggleCommentReaction(db, ola, id, '😀')
+      expect(list[0]).toMatchObject({ emoji: '😀', count: 2 })
     })
   })
 })

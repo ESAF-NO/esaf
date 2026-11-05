@@ -744,10 +744,10 @@ export async function previewPeopleMerge(
         .orderBy(asc(postVote.postId)),
     () =>
       db
-        .select({ commentId: commentReaction.commentId, kind: commentReaction.kind })
+        .select({ commentId: commentReaction.commentId, emoji: commentReaction.emoji })
         .from(commentReaction)
         .where(eq(commentReaction.personId, from))
-        .orderBy(asc(commentReaction.commentId), asc(commentReaction.kind)),
+        .orderBy(asc(commentReaction.commentId), asc(commentReaction.emoji)),
   ] as const)
   const companies = await db
     .select({ id: schema.company.id, name: schema.company.name })
@@ -1034,7 +1034,7 @@ export async function mergePeople(
     )
     await tx.delete(postVote).where(eq(postVote.personId, from))
     await tx.execute(
-      sql`insert into ${commentReaction} (comment_id, person_id, kind, created_at) select comment_id, ${into}, kind, created_at from ${commentReaction} where person_id = ${from} on conflict do nothing`,
+      sql`insert into ${commentReaction} (comment_id, person_id, emoji, created_at) select comment_id, ${into}, emoji, created_at from ${commentReaction} where person_id = ${from} on conflict do nothing`,
     )
     await tx.delete(commentReaction).where(eq(commentReaction.personId, from))
     await tx

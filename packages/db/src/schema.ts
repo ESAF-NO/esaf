@@ -1470,16 +1470,7 @@ export const comment = pgTable(
   (t) => [index().on(t.postId, t.createdAt), index().on(t.parentCommentId)],
 )
 
-/** Reaksjonene på en kommentar. Hver reaksjon er ett tegn i appen (`reactionEmoji`). */
-export const commentReactionKind = pgEnum('comment_reaction_kind', [
-  'like',
-  'heart',
-  'laugh',
-  'party',
-  'eyes',
-])
-
-/** En person kan gi flere ulike reaksjoner på samme kommentar, men hver bare én gang. */
+/** En person kan gi flere ulike emoji på samme kommentar, men hver bare én gang. */
 export const commentReaction = pgTable(
   'comment_reaction',
   {
@@ -1489,13 +1480,12 @@ export const commentReaction = pgTable(
     personId: uuid()
       .notNull()
       .references(() => person.id, { onDelete: 'cascade' }),
-    kind: commentReactionKind().notNull(),
+    /** Én emoji, slik `isReactionEmoji` i @esaf/core krever det. */
+    emoji: text().notNull(),
     createdAt: timestamps.createdAt,
   },
-  (t) => [primaryKey({ columns: [t.commentId, t.personId, t.kind] }), index().on(t.personId)],
+  (t) => [primaryKey({ columns: [t.commentId, t.personId, t.emoji] }), index().on(t.personId)],
 )
-
-export type CommentReactionKind = (typeof commentReactionKind.enumValues)[number]
 
 export const postVote = pgTable(
   'post_vote',

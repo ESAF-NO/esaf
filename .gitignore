@@ -23,6 +23,9 @@ coverage
 # Datasettbunter (pnpm data:bundle) inneholder persondata og skal aldri committes
 *.tar.gz
 
+# Emoji-dataene lages av apps/app/scripts/emoji-data.ts
+apps/app/public/emoji/
+
 # Worktrees for parallelle agenter
 .claude/worktrees/
 # Opplastede filer i utvikling (profilbilder), se UPLOAD_DIR

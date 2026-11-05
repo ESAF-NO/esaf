@@ -172,7 +172,7 @@ export function registerContentTools(server: McpServer, ctx: ToolContext) {
           body: c.body,
           createdAt: c.createdAt,
           author: { personId: c.author.personId, fullName: c.author.fullName },
-          reactions: c.reactions.map((r) => ({ kind: r.kind, count: r.count })),
+          reactions: c.reactions.map((r) => ({ emoji: r.emoji, count: r.count })),
         })),
       }
     },

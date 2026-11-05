@@ -1,4 +1,4 @@
-import type { CommentView, ReactionView } from '@esaf/core'
+import type { CommentView } from '@esaf/core'
 import { createFileRoute, Link, useLocation, useRouter } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -7,10 +7,20 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Plus,
   SmilePlus,
   Trash2,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import { AttachmentList, useAttachments } from '#/components/Attachments.tsx'
 import { Composer } from '#/components/Composer.tsx'
 import { Markdown } from '#/components/Markdown.tsx'
@@ -27,7 +37,8 @@ import {
 } from '#/lib/feed.functions.ts'
 import {
   commentThreads,
-  reactions,
+  maxReactions,
+  quickReactionsFor,
   toggleReaction,
   type CommentThread as CommentThreadData,
 } from '#/lib/comments.ts'
@@ -41,6 +52,8 @@ export const Route = createFileRoute('/_konto/feed/$postId')({
   head: ({ loaderData }) => ({ meta: [{ title: `${loaderData?.title ?? 'Innlegg'} – ESAF` }] }),
   component: PostPage,
 })
+
+const EmojiPicker = lazy(() => import('#/components/EmojiPicker.tsx'))
 
 const errorText = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message : fallback
@@ -369,18 +382,17 @@ function Reactions({ comment: c }: { comment: CommentView }) {
   }
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
-  const menu = useRef<HTMLDivElement>(null)
   const close = useCallback(() => setPicking(false), [])
 
-  async function toggle(kind: ReactionView['kind']) {
+  async function toggle(emoji: string) {
     close()
     if (busy) return
     setBusy(true)
     const before = list
     // Optimistisk: oppdater med en gang, rett opp med svaret fra serveren.
-    setList(toggleReaction(list, kind, viewer.fullName ?? ''))
+    setList(toggleReaction(list, emoji, viewer.fullName ?? ''))
     try {
-      setList(await reactToComment({ data: { commentId: c.id, kind } }))
+      setList(await reactToComment({ data: { commentId: c.id, emoji } }))
     } catch {
       setList(before)
     } finally {
@@ -390,76 +402,122 @@ function Reactions({ comment: c }: { comment: CommentView }) {
 
   return (
     <>
-      {reactions.flatMap((r) => {
-        const given = list.find((e) => e.kind === r.kind)
-        if (!given) return []
-        return (
-          <button
-            key={r.kind}
-            type="button"
-            onClick={() => void toggle(r.kind)}
-            aria-pressed={given.viewerReacted}
-            aria-label={`${r.label}: ${given.count}`}
-            title={names.format(given.people)}
-            className={cx(
-              'inline-flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium tabular-nums ring-1 transition ring-inset',
-              given.viewerReacted
-                ? 'bg-brand-50 text-brand-700 ring-brand-200'
-                : 'bg-white text-stone-600 ring-stone-200 hover:bg-stone-50',
-            )}
-          >
-            <span aria-hidden>{r.emoji}</span>
-            {given.count}
-          </button>
-        )
-      })}
-      <div className="relative">
+      {list.map((r) => (
         <button
+          key={r.emoji}
           type="button"
-          onClick={() => setPicking((p) => !p)}
-          aria-expanded={picking}
-          aria-label="Reager på kommentaren"
-          title="Reager"
-          className={commentAction}
+          onClick={() => void toggle(r.emoji)}
+          aria-pressed={r.viewerReacted}
+          aria-label={`${r.emoji}: ${r.count}`}
+          title={names.format(r.people)}
+          className={cx(
+            'inline-flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium tabular-nums ring-1 transition ring-inset',
+            r.viewerReacted
+              ? 'bg-brand-50 text-brand-700 ring-brand-200'
+              : 'bg-white text-stone-600 ring-stone-200 hover:bg-stone-50',
+          )}
         >
-          <SmilePlus className="size-4" aria-hidden />
+          <span aria-hidden>{r.emoji}</span>
+          {r.count}
         </button>
-        {picking && <ReactionMenu box={menu} onClose={close} onPick={(k) => void toggle(k)} />}
-      </div>
+      ))}
+      {list.length < maxReactions && (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setPicking((p) => !p)}
+            aria-expanded={picking}
+            aria-label="Reager på kommentaren"
+            title="Reager"
+            className={commentAction}
+          >
+            <SmilePlus className="size-4" aria-hidden />
+          </button>
+          {picking && <ReactionMenu onClose={close} onPick={(e) => void toggle(e)} />}
+        </div>
+      )}
     </>
   )
 }
 
+/** Snarveiene, og alle emoji når de ikke er nok. */
 function ReactionMenu({
-  box,
   onClose,
   onPick,
 }: {
-  box: RefObject<HTMLDivElement | null>
   onClose: () => void
-  onPick: (kind: ReactionView['kind']) => void
+  onPick: (emoji: string) => void
 }) {
+  const { favoriteReactions } = Route.useLoaderData()
+  const box = useRef<HTMLDivElement>(null)
+  const [all, setAll] = useState(false)
+  const [shift, setShift] = useState(0)
+  const [above, setAbove] = useState(false)
   useDismiss(box, onClose)
+
+  // Knappen kan stå hvor som helst i raden: hold menyen inne på skjermen. Målt fra
+  // knappen, for menyen flytter seg selv, og fra clientWidth, som den ikke kan blåse opp.
+  useLayoutEffect(() => {
+    const menu = box.current
+    const button = menu?.parentElement?.getBoundingClientRect()
+    if (!menu || !button) return
+    const { clientWidth, clientHeight } = document.documentElement
+    const margin = 8
+    const header = 64
+    setShift(Math.min(0, clientWidth - margin - button.left - menu.offsetWidth))
+    setAbove(
+      button.bottom + menu.offsetHeight + margin > clientHeight &&
+        button.top - menu.offsetHeight - margin > header,
+    )
+  }, [all])
+
   return (
     <div
       ref={box}
-      role="menu"
-      aria-label="Reaksjoner"
-      className="absolute top-full left-0 z-20 mt-1 flex animate-in rounded-xl bg-white p-1 shadow-lift ring-1 ring-stone-200"
+      role={all ? 'dialog' : 'menu'}
+      aria-label={all ? 'Alle emoji' : 'Reaksjoner'}
+      style={{ transform: `translateX(${shift}px)` }}
+      className={cx(
+        'absolute left-0 z-20 animate-in rounded-xl bg-white shadow-lift ring-1 ring-stone-200',
+        above ? 'bottom-full mb-1' : 'top-full mt-1',
+        all ? 'h-88 w-80 max-w-[calc(100vw-1rem)] overflow-hidden' : 'flex p-1',
+      )}
     >
-      {reactions.map((r) => (
-        <button
-          key={r.kind}
-          type="button"
-          role="menuitem"
-          onClick={() => onPick(r.kind)}
-          aria-label={r.label}
-          title={r.label}
-          className="grid size-9 place-items-center rounded-lg text-lg transition hover:bg-stone-100"
+      {all ? (
+        <Suspense
+          fallback={
+            <p className="grid h-full place-items-center text-sm text-stone-500">Laster …</p>
+          }
         >
-          <span aria-hidden>{r.emoji}</span>
-        </button>
-      ))}
+          <EmojiPicker onPick={onPick} />
+        </Suspense>
+      ) : (
+        <>
+          {quickReactionsFor(favoriteReactions).map((r) => (
+            <button
+              key={r.emoji}
+              type="button"
+              role="menuitem"
+              onClick={() => onPick(r.emoji)}
+              aria-label={r.label}
+              title={r.label}
+              className="grid size-9 place-items-center rounded-lg text-lg transition hover:bg-stone-100"
+            >
+              <span aria-hidden>{r.emoji}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => setAll(true)}
+            aria-label="Alle emoji"
+            title="Alle emoji"
+            className="grid size-9 place-items-center rounded-lg text-stone-500 transition hover:bg-stone-100 hover:text-stone-900"
+          >
+            <Plus className="size-4" aria-hidden />
+          </button>
+        </>
+      )}
     </div>
   )
 }

@@ -412,6 +412,7 @@ export {
   dismissDuplicate,
   listReview,
   markSourcesReviewed,
+  removeFieldSource,
   REVIEW_PAGE_SIZE,
   reviewCounts,
   reviewKinds,

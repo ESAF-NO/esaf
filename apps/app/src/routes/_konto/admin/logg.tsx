@@ -679,6 +679,12 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       </>
     )
   },
+  'source.remove': ({ actor, subject, details }) => (
+    <>
+      {actor} fjernet kilden {text(details.label) ?? 'uten navn'} fra {fieldName(details.field)}{' '}
+      {details.entityType === 'person' ? <>på profilen til {subject}</> : 'på et selskap'}.
+    </>
+  ),
   'profile.search_topics': ({ actor, subject, details }) => (
     <>
       {actor} satte søkeordene til {subject}: {list(details.topics)}.

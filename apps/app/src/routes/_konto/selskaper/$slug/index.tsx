@@ -24,6 +24,7 @@ import { CompanyArticles } from '#/components/CompanyArticles.tsx'
 import { CompanyTimeline } from '#/components/CompanyTimeline.tsx'
 import { LinkRequestCard, SuggestionCard, useAction } from '#/components/Contributions.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
+import { RemoveSourceButton } from '#/components/SourceNote.tsx'
 import {
   Avatar,
   Button,
@@ -371,7 +372,7 @@ function CompanyPage() {
                 : 'Alle medlemmer kan laste ned. PDF, Word, Excel, PowerPoint, tekst, CSV eller bilder, maks 25 MB.'
             }
           />
-          {c.sources.length > 0 && <Sources sources={c.sources} />}
+          {c.sources.length > 0 && <Sources companyId={c.id} sources={c.sources} />}
         </aside>
       </div>
     </div>
@@ -383,7 +384,13 @@ function CompanyPage() {
  * kilden og om noen knyttet til selskapet har bekreftet feltet; admins ser også
  * hvor sikker kilden er.
  */
-function Sources({ sources }: { sources: CompanyDetails['sources'] }) {
+function Sources({
+  companyId,
+  sources,
+}: {
+  companyId: string
+  sources: CompanyDetails['sources']
+}) {
   const fields = [...new Set(sources.map((s) => s.field))] as CompanySourceField[]
   return (
     <Card className="p-5">
@@ -421,6 +428,17 @@ function Sources({ sources }: { sources: CompanyDetails['sources'] }) {
                     {' · '}
                     {s.confirmed ? 'bekreftet' : 'ikke bekreftet'}
                     {s.confidence && ` · ${confidenceLabels[s.confidence]}`}
+                    {s.confidence && (
+                      <>
+                        {' '}
+                        <RemoveSourceButton
+                          entityType="company"
+                          entityId={companyId}
+                          field={s.field}
+                          source={s}
+                        />
+                      </>
+                    )}
                     {s.fetchedAt && (
                       <span className="block text-stone-400">Hentet {longDay(s.fetchedAt)}</span>
                     )}

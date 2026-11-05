@@ -513,7 +513,9 @@ export function registerPeopleTools(server: McpServer, ctx: ToolContext) {
   defineTool(server, ctx, {
     name: 'remove_experience',
     title: 'Remove experience',
-    description: 'Remove one experience entry (experienceId from get_person).',
+    description:
+      'Remove one experience entry (experienceId from get_person). Its source stays on the field; ' +
+      'remove it with remove_field_source if it only covered this entry.',
     input: z.object({ personId: id('The person'), experienceId: id('The experience entry') }),
     effect: 'destructive',
     run: async ({ personId, experienceId }, ctx) => {

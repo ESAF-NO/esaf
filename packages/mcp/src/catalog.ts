@@ -118,6 +118,7 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
       'mark_sources_reviewed',
       'accept_all_review',
       'clear_imported_field',
+      'remove_field_source',
       'dismiss_duplicate',
       'decide_suggestion',
       'decide_company_link',

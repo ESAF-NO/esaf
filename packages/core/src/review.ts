@@ -538,6 +538,69 @@ export async function clearImportedField(
   })
 }
 
+/**
+ * Fjerner én kilde som ikke stemmer, og lar verdien i feltet stå. Brukes når én
+ * oppføring i en liste er rettet, men kilden til den står igjen på feltet.
+ * Uten `url` må navnet være entydig; `null` betyr kilden uten lenke.
+ *
+ * Resten av kildene på feltet regnes som sett over. Står de åpne, eier importen
+ * fortsatt feltet, og neste import legger kilden inn igjen. Logges som `source.remove`.
+ */
+export async function removeFieldSource(
+  db: Db,
+  viewer: Viewer,
+  input: {
+    entityType: FieldSourceEntity
+    entityId: string
+    field: string
+    label: string
+    url?: string | null
+  },
+): Promise<void> {
+  assertCan(viewer, 'profiles.edit')
+  if (!entityFields(input.entityType).includes(input.field)) {
+    throw new DomainError('Ukjent felt.')
+  }
+  await db.transaction(async (tx) => {
+    const onField = and(
+      eq(fieldSource.entityType, input.entityType),
+      eq(fieldSource.entityId, input.entityId),
+      eq(fieldSource.field, input.field),
+    )
+    const named = await tx
+      .select({ id: fieldSource.id, url: fieldSource.sourceUrl })
+      .from(fieldSource)
+      .where(and(onField, eq(fieldSource.sourceLabel, input.label)))
+      .for('update')
+    const matches =
+      input.url === undefined
+        ? named
+        : named.filter((s) => s.url === input.url || safeHttpUrl(s.url) === input.url)
+    if (!matches.length) throw new NotFoundError('Fant ikke kilden.')
+    if (matches.length > 1) {
+      throw new DomainError('Flere kilder har dette navnet. Oppgi lenken til den som skal bort.')
+    }
+    const [source] = matches
+    await tx.delete(fieldSource).where(eq(fieldSource.id, source!.id))
+    await tx
+      .update(fieldSource)
+      .set({ reviewedAt: new Date() })
+      .where(and(onField, isNull(fieldSource.reviewedAt)))
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'source.remove',
+      subjectPersonId: input.entityType === 'person' ? input.entityId : null,
+      details: {
+        entityType: input.entityType,
+        ...(input.entityType === 'company' ? { companyId: input.entityId } : {}),
+        field: input.field,
+        label: input.label,
+        url: source!.url,
+      },
+    })
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Duplikater
 // ---------------------------------------------------------------------------

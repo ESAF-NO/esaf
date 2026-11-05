@@ -1,8 +1,9 @@
 import type { FieldSource, ProfileSourceField } from '@esaf/core'
 import { useRouter } from '@tanstack/react-router'
-import { Check } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { Fragment, useState } from 'react'
 import { confirmProfile } from '#/lib/profiles.functions.ts'
+import { removeSource } from '#/lib/review.functions.ts'
 import { confidenceLabels, unconfirmed } from '#/lib/sources.ts'
 import { cx } from './ui.tsx'
 
@@ -29,6 +30,57 @@ export function SourceNames({ sources }: { sources: FieldSource[] }) {
           )}
         </Fragment>
       ))}
+    </>
+  )
+}
+
+/**
+ * Fjerner én kilde som ikke stemmer, for admins. Verdien i feltet står. Bare
+ * admins får vite hvor sikker kilden er, så `confidence` sier om knappen skal vises.
+ */
+export function RemoveSourceButton({
+  entityType,
+  entityId,
+  field,
+  source,
+}: {
+  entityType: 'person' | 'company'
+  entityId: string
+  field: string
+  source: { label: string; url: string | null }
+}) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(false)
+  const name = source.url ? `${source.label} (${source.url})` : source.label
+
+  async function remove() {
+    if (!window.confirm(`Fjerne kilden ${name}? Feltet står som før, og det logges.`)) return
+    setBusy(true)
+    setError(false)
+    try {
+      await removeSource({ data: { entityType, entityId, field, ...source } })
+      await router.invalidate()
+    } catch {
+      setError(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={remove}
+        disabled={busy}
+        title={`Fjern kilden ${name}`}
+        aria-label={`Fjern kilden ${source.label}`}
+        className="inline-flex size-4 items-center justify-center rounded-full align-middle text-stone-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+      >
+        <X className="size-3" aria-hidden />
+      </button>
+      {error && <span className="text-red-600">Kunne ikke fjerne kilden.</span>}
     </>
   )
 }
@@ -96,6 +148,16 @@ export function SourceNote({
           <Check className="size-3" aria-hidden /> Stemmer
         </button>
       )}
+      {confidence &&
+        sources.map((s) => (
+          <RemoveSourceButton
+            key={`${s.label}|${s.url}`}
+            entityType="person"
+            entityId={personId}
+            field={field}
+            source={s}
+          />
+        ))}
       {error && <span className="text-red-600">Kunne ikke bekrefte. Prøv igjen.</span>}
     </p>
   )

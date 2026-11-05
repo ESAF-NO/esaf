@@ -7,8 +7,8 @@
 /** Så mange av personens mest brukte emoji følger med et innlegg, til snarveiene. */
 export const FAVORITE_REACTIONS = 5
 
-/** Så mange ulike emoji kan en kommentar ha, så en rad ikke kan spammes full. */
-export const MAX_REACTIONS_PER_COMMENT = 20
+/** Så mange ulike emoji kan et innlegg eller en kommentar ha, så en rad ikke kan spammes full. */
+export const MAX_REACTIONS = 20
 
 // Flagget v finnes ikke i TypeScript-målet vårt, men i Node 24.
 const rgiEmoji = new RegExp('^\\p{RGI_Emoji}$', 'v')

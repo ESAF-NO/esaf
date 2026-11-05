@@ -1754,12 +1754,6 @@ export const asset = pgTable(
     position: integer().notNull().default(0),
     /** Filnavnet slik det vises og lastes ned, renset og med riktig filendelse. */
     originalName: text().notNull(),
-    /**
-     * GIF-er fra søket: id-en hos GIPHY og tittelen. De kan søkes opp igjen her når
-     * GIPHY ikke svarer. Settes til null når en moderator fjerner GIF-en.
-     */
-    gifId: text(),
-    gifTitle: text(),
     /** Typen fila serveres med, avgjort ut fra innholdet. */
     contentType: text().notNull(),
     /** Størrelsen på fila som ble lastet opp. */
@@ -1781,9 +1775,6 @@ export const asset = pgTable(
   (t) => [
     index().on(t.postId),
     index().on(t.commentId),
-    index('asset_gif_index')
-      .on(t.gifId)
-      .where(sql`${t.gifId} is not null`),
     index().on(t.eventId),
     index().on(t.companyId),
     // Grensen per døgn teller det personen har lastet opp.

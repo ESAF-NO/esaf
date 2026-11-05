@@ -5,7 +5,6 @@ import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import {
   attachAssets,
   deleteAssetsOf,
-  forgetGifs,
   groupAssets,
   loadAssets,
   MAX_ATTACHMENTS,
@@ -551,10 +550,6 @@ export async function deletePost(
     })
     // Når noen fjerner andres innhold, skal det kunne etterprøves.
     if (!own) {
-      await forgetGifs(
-        tx,
-        files.map((f) => f.id),
-      )
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'content.remove_post',
@@ -660,10 +655,6 @@ export async function deleteComment(
     await tx.update(comment).set({ deletedAt: new Date() }).where(eq(comment.id, commentId))
     const files = await deleteAssetsOf(tx, { commentIds: [commentId] })
     if (!own) {
-      await forgetGifs(
-        tx,
-        files.map((f) => f.id),
-      )
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'content.remove_comment',

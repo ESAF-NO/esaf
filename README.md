@@ -218,16 +218,6 @@ Bilder og dokumenter utover profilbilder og logoer. Migrering `0025_assets` la t
 
 Testene: `file-types.test.ts` dekker godtatte og avviste filtyper (også forfalskede filendelser, SVG, HTML, zip som ikke er Office, makroer, kryptering, HEIC, programfiler og tegnsett), filnavn, `Content-Disposition` og svarhodene. `assets.integration.test.ts` dekker at EXIF og GPS fjernes og bildet roteres uten beskjæring, størrelsesgrensen, grensen per døgn, at filene ryddes når databasen feiler, festing, rekkefølge og fjerning i innlegg og kommentarer, at bare den som lastet opp ser filer som ikke er festet, rettigheter for medlem, ikke-medlem, uploader, arrangør, moderator og admin (også uten sterk innlogging), logging, sletting av innlegg, kommentarer, arrangementer og selskaper, sammenslåing og oppryddingen.
 
-## GIF-er
-
-Knappen «GIF» i skrivefeltet søker hos [GIPHY](https://developers.giphy.com/) (Tenor stengte API-et sitt 30. juni 2026). Den vises bare når `GIPHY_API_KEY` er satt; GIF-er kan alltid lastes opp som filer. Reglene står i `packages/core/src/gifs.ts`.
-
-- **Personvern:** Søkene går gjennom serveren, så GIPHY ser ikke hvem som søker eller hva de skriver. Den som har velgeren åpen, henter forhåndsvisningene rett fra GIPHY (uten referrer), så GIPHY ser IP-adressen deres.
-- **Lagring:** En valgt GIF hentes av serveren og lagres som et vanlig vedlegg (se «Vedlegg»), med samme behandling, grenser og moderering. De som leser, henter ingenting fra GIPHY, og GIF-en blir stående om GIPHY fjerner den. Nettleseren sender bare id-en, og serveren henter bare fra `media*.giphy.com`, uten å følge omdirigeringer.
-- **Når grensen er nådd:** Svarer GIPHY `429`, spørres de ikke på fem minutter (ett minutt ved andre feil). Imens gis gamle svar på samme søk (opptil et døgn), ellers GIF-er som allerede er brukt på ESAF, sist brukt først og søkbare på tittel, med en melding i velgeren. De ligger hos oss, så de kan velges uten GIPHY (`asset.gif_id`). Slettede GIF-er står ikke der, og fjerner en moderator en GIF, forsvinner den også fra andres kopier. GIF-er medlemmer laster opp selv, står ikke der.
-- **Aldersgrense:** Bare `y`, `g` og `pg`, sjekket både i søket og når en GIF velges.
-- **Nøkkelen:** Lag en app i GIPHY-dashbordet og sett `GIPHY_API_KEY`. Nye nøkler er beta-nøkler med 100 kall i timen; søk produksjonsnøkkel når funksjonen er i bruk. «Powered by GIPHY» står i velgeren fordi vilkårene krever det. Svar mellomlagres i ti minutter per søk (populære i en time), å velge en GIF fra et søk koster ingen kall, og hver person kan gjøre 30 kall i minuttet.
-
 ## Selskaper
 
 Selskapssiden (`/selskaper/:slug`) viser navn, kort beskrivelse, status (aktiv, oppkjøpt, nedlagt, ukjent status), nettside, grunnlagt, sted, bransjer og «om selskapet». Under «Fra ES» står gründerne, ES-teamet (med kull), de som jobber der nå og de som har jobbet der, med stilling og år, og lenker til profilene. Bare aktive medlemmer vises.

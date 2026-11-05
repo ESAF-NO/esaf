@@ -1,5 +1,5 @@
 {
-  "id": "ab531dc2-27fe-402e-bc5a-020d66bad6ce",
+  "id": "70942b2d-cab9-45f9-a3f5-6fc9d75d69eb",
   "prevId": "0d17ad9f-b45f-4741-bc77-fd1904bc2cda",
   "version": "7",
   "dialect": "postgresql",
@@ -527,18 +527,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "gif_id": {
-          "name": "gif_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gif_title": {
-          "name": "gif_title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "content_type": {
           "name": "content_type",
           "type": "text",
@@ -628,22 +616,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "asset_gif_index": {
-          "name": "asset_gif_index",
-          "columns": [
-            {
-              "expression": "gif_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"asset\".\"gif_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

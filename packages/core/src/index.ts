@@ -290,16 +290,6 @@ export {
   type PostView,
   type ReactionView,
 } from './feed.ts'
-export {
-  createGifSearch,
-  findGifs,
-  GifsUnavailableError,
-  importGif,
-  listStoredGifs,
-  type GifPage,
-  type GifResult,
-  type GifSearch,
-} from './gifs.ts'
 export { markdownToPlainText } from './markdown.ts'
 export {
   formatMention,

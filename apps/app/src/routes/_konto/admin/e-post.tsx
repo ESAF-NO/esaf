@@ -410,6 +410,8 @@ const offNotes: Record<EmailTemplate['kind'], string> = {
   password_link: 'Lenkene lages, men du må dele dem selv.',
   notification: 'Varsler som kommer mens den er av, sendes ikke når den slås på igjen.',
   digest: 'Det som kommer mens den er av, kommer ikke med når den slås på igjen.',
+  access_request:
+    'Adminene får ikke beskjed om nye forespørsler. Dem som fortsatt venter, får de høre om når den slås på igjen.',
 }
 
 function Templates({

@@ -42,6 +42,7 @@ export const switchableEmailKinds = [
   'password_link',
   'notification',
   'digest',
+  'access_request',
 ] as const satisfies readonly EmailKind[]
 export type SwitchableEmailKind = (typeof switchableEmailKinds)[number]
 

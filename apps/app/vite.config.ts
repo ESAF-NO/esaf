@@ -7,6 +7,21 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   resolve: { tsconfigPaths: true },
   server: { port: 3000 },
+  environments: {
+    client: {
+      build: {
+        rolldownOptions: {
+          // Lengden er byttet fra 8 for å gi alle filene nye navn: 404-svar på de gamle
+          // navnene ligger lagret som `immutable` hos nettlesere og Cloudflare. Se plugins/asset-errors.ts.
+          output: {
+            entryFileNames: 'assets/[name]-[hash:10].js',
+            chunkFileNames: 'assets/[name]-[hash:10].js',
+            assetFileNames: 'assets/[name]-[hash:10][extname]',
+          },
+        },
+      },
+    },
+  },
   ssr: {
     // better-auth bakes Vite inn i serverbundelen, men pluginene ville ellers
     // blitt pakket av Nitro etterpå, med sin egen kopi av @better-auth/core. Da
@@ -20,6 +35,7 @@ export default defineConfig({
     nitro({
       plugins: [
         './src/server/plugins/validate-env.ts',
+        './src/server/plugins/asset-errors.ts',
         './src/server/plugins/cleanup-assets.ts',
         './src/server/plugins/cleanup-oauth.ts',
         './src/server/plugins/sync-badges.ts',

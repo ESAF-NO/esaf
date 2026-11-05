@@ -1,7 +1,16 @@
-import type { CommentView } from '@esaf/core'
+import type { CommentView, ReactionView } from '@esaf/core'
 import { createFileRoute, Link, useLocation, useRouter } from '@tanstack/react-router'
-import { ArrowLeft, ExternalLink, MessageCircle, Pencil, Pin, PinOff, Trash2 } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import {
+  ArrowLeft,
+  ExternalLink,
+  MessageCircle,
+  Pencil,
+  Pin,
+  PinOff,
+  SmilePlus,
+  Trash2,
+} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
 import { AttachmentList, useAttachments } from '#/components/Attachments.tsx'
 import { Composer } from '#/components/Composer.tsx'
 import { Markdown } from '#/components/Markdown.tsx'
@@ -11,12 +20,21 @@ import {
   editComment,
   fetchPost,
   pinPost,
+  reactToComment,
   removeComment,
   removePost,
   submitComment,
 } from '#/lib/feed.functions.ts'
+import {
+  commentThreads,
+  reactions,
+  toggleReaction,
+  type CommentThread as CommentThreadData,
+} from '#/lib/comments.ts'
 import { useDraft } from '#/lib/drafts.ts'
 import { plural } from '#/lib/format.ts'
+import { insertMention } from '#/lib/mentions.ts'
+import { useDismiss } from '#/lib/use-dismiss.ts'
 
 export const Route = createFileRoute('/_konto/feed/$postId')({
   loader: ({ params }) => fetchPost({ data: { postId: params.postId } }),
@@ -27,10 +45,17 @@ export const Route = createFileRoute('/_konto/feed/$postId')({
 const errorText = (err: unknown, fallback: string) =>
   err instanceof Error ? err.message : fallback
 
+const names = new Intl.ListFormat('nb', { type: 'conjunction' })
+
+const commentAction =
+  'inline-flex h-7 items-center rounded-md px-1.5 text-xs font-medium text-stone-500 transition hover:bg-stone-100 hover:text-stone-900'
+
 function PostPage() {
   const post = Route.useLoaderData()
   const router = useRouter()
   const [pinning, setPinning] = useState(false)
+  const threads = commentThreads(post.commentList)
+  const people = [post.author, ...post.commentList.map((c) => c.author)]
 
   async function onDeletePost() {
     if (!confirm('Slette innlegget?')) return
@@ -160,13 +185,10 @@ function PostPage() {
         <h2 id="kommentarer" className="sr-only">
           Kommentarer
         </h2>
-        <CommentForm
-          postId={post.id}
-          people={[post.author, ...post.commentList.map((c) => c.author)]}
-        />
-        <ol className="space-y-4">
-          {post.commentList.map((c) => (
-            <CommentItem key={c.id} comment={c} />
+        <CommentForm postId={post.id} people={people} />
+        <ol className="space-y-5">
+          {threads.map((thread) => (
+            <Thread key={thread.id} thread={thread} postId={post.id} people={people} />
           ))}
         </ol>
       </section>
@@ -175,15 +197,45 @@ function PostPage() {
 }
 
 /** Egen komponent, så det du skriver ikke tegner hele kommentarlisten på nytt. */
-function CommentForm({ postId, people }: { postId: string; people: { personId: string }[] }) {
+function CommentForm({
+  postId,
+  people,
+  replyTo,
+  onClose,
+}: {
+  postId: string
+  people: { personId: string }[]
+  /** Kommentaren det svares på. Uten den er det en ny kommentar til innlegget. */
+  replyTo?: CommentView
+  onClose?: () => void
+}) {
   const { viewer } = Route.useRouteContext()
   const router = useRouter()
+  // Svar på et svar begynner med navnet, så det er tydelig hvem det er til.
+  const opening =
+    replyTo?.parentId && replyTo.author.personId !== viewer.personId
+      ? insertMention('', 0, 0, {
+          personId: replyTo.author.personId,
+          name: replyTo.author.fullName,
+        }).markup
+      : ''
+  const id = replyTo ? `svar-${replyTo.id}` : 'ny-kommentar'
   // Kommentaren huskes som utkast til den er sendt, også om du går fra siden.
-  const [body, setBody, clearDraft] = useDraft(`kommentar:${postId}`, '')
+  const [body, setBody, clearDraft] = useDraft(
+    replyTo ? `svar:${replyTo.id}` : `kommentar:${postId}`,
+    opening,
+  )
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const attachments = useAttachments({ til: 'kommentar' })
   const empty = !body.trim() && !attachments.items.length
+
+  // Markøren skal stå etter navnet, ikke foran det.
+  useEffect(() => {
+    if (!replyTo) return
+    const field = document.getElementById(id) as HTMLTextAreaElement | null
+    field?.setSelectionRange(field.value.length, field.value.length)
+  }, [id, replyTo])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -191,10 +243,13 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
     setSending(true)
     setError(null)
     try {
-      await submitComment({ data: { postId, body, attachmentIds: attachments.ids } })
+      await submitComment({
+        data: { postId, body, attachmentIds: attachments.ids, replyTo: replyTo?.id },
+      })
       clearDraft()
       attachments.reset()
       await router.invalidate()
+      onClose?.()
     } catch (err) {
       setError(errorText(err, 'Kunne ikke publisere kommentaren.'))
     } finally {
@@ -203,36 +258,50 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
   }
 
   return (
-    <form onSubmit={onSubmit} {...attachments.drop.props} className="mb-8 flex gap-3">
+    <form
+      onSubmit={onSubmit}
+      {...attachments.drop.props}
+      className={cx('flex gap-3', !replyTo && 'mb-8')}
+    >
       {viewer.fullName && (
         <Avatar
           name={viewer.fullName}
           photo={viewer.photo}
-          size="md"
+          size={replyTo ? 'sm' : 'md'}
           className="mt-0.5 hidden sm:inline-grid"
         />
       )}
       <div className="min-w-0 flex-1 space-y-2">
         <Composer
-          id="ny-kommentar"
-          label="Skriv en kommentar"
+          id={id}
+          label={replyTo ? `Svar ${replyTo.author.fullName}` : 'Skriv en kommentar'}
           value={body}
           onChange={setBody}
-          placeholder="Skriv en kommentar …"
+          placeholder={replyTo ? 'Skriv et svar …' : 'Skriv en kommentar …'}
           maxLength={5000}
           attachments={attachments}
           suggestFirst={people}
-          compact
+          compact={!replyTo}
+          autoFocus={Boolean(replyTo)}
+          minRows={replyTo ? 2 : undefined}
+          onEscape={onClose}
           dragging={attachments.drop.dragging}
           actions={
-            <Button
-              type="submit"
-              variant="brand"
-              size="sm"
-              disabled={sending || empty || attachments.busy}
-            >
-              {sending ? 'Sender …' : attachments.busy ? 'Laster opp …' : 'Send'}
-            </Button>
+            <>
+              {onClose && (
+                <Button variant="ghost" size="sm" onClick={onClose}>
+                  Avbryt
+                </Button>
+              )}
+              <Button
+                type="submit"
+                variant="brand"
+                size="sm"
+                disabled={sending || empty || attachments.busy}
+              >
+                {sending ? 'Sender …' : attachments.busy ? 'Laster opp …' : 'Send'}
+              </Button>
+            </>
           }
         />
         {error && <ErrorText>{error}</ErrorText>}
@@ -241,7 +310,170 @@ function CommentForm({ postId, people }: { postId: string; people: { personId: s
   )
 }
 
-function CommentItem({ comment: c }: { comment: CommentView }) {
+/** En kommentar med svarene under, og skrivefeltet når noen svarer. */
+function Thread({
+  thread,
+  postId,
+  people,
+}: {
+  thread: CommentThreadData<CommentView>
+  postId: string
+  people: { personId: string }[]
+}) {
+  const [replyTo, setReplyTo] = useState<CommentView | null>(null)
+  const close = useCallback(() => setReplyTo(null), [])
+  return (
+    <li>
+      {thread.root ? (
+        <CommentItem comment={thread.root} onReply={setReplyTo} />
+      ) : (
+        <p className="rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-500">
+          Kommentaren er slettet.
+        </p>
+      )}
+      {(thread.replies.length > 0 || replyTo) && (
+        <div className="mt-3 ml-4 space-y-3 border-l-2 border-stone-200/70 pl-3 sm:ml-5 sm:pl-5">
+          {thread.replies.length > 0 && (
+            <ol className="space-y-3" aria-label="Svar">
+              {thread.replies.map((c) => (
+                <li key={c.id}>
+                  <CommentItem comment={c} onReply={setReplyTo} reply />
+                </li>
+              ))}
+            </ol>
+          )}
+          {replyTo && (
+            <CommentForm
+              key={replyTo.id}
+              postId={postId}
+              people={[replyTo.author, ...people]}
+              replyTo={replyTo}
+              onClose={close}
+            />
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
+/** Reaksjonene på en kommentar, og knappen for å gi en ny. */
+function Reactions({ comment: c }: { comment: CommentView }) {
+  const { viewer } = Route.useRouteContext()
+  const [list, setList] = useState(c.reactions)
+  // Når siden hentes på nytt, er det serverens tall som gjelder.
+  const [seen, setSeen] = useState(c.reactions)
+  if (seen !== c.reactions) {
+    setSeen(c.reactions)
+    setList(c.reactions)
+  }
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const menu = useRef<HTMLDivElement>(null)
+  const close = useCallback(() => setPicking(false), [])
+
+  async function toggle(kind: ReactionView['kind']) {
+    close()
+    if (busy) return
+    setBusy(true)
+    const before = list
+    // Optimistisk: oppdater med en gang, rett opp med svaret fra serveren.
+    setList(toggleReaction(list, kind, viewer.fullName ?? ''))
+    try {
+      setList(await reactToComment({ data: { commentId: c.id, kind } }))
+    } catch {
+      setList(before)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {reactions.flatMap((r) => {
+        const given = list.find((e) => e.kind === r.kind)
+        if (!given) return []
+        return (
+          <button
+            key={r.kind}
+            type="button"
+            onClick={() => void toggle(r.kind)}
+            aria-pressed={given.viewerReacted}
+            aria-label={`${r.label}: ${given.count}`}
+            title={names.format(given.people)}
+            className={cx(
+              'inline-flex h-7 items-center gap-1 rounded-full px-2 text-xs font-medium tabular-nums ring-1 transition ring-inset',
+              given.viewerReacted
+                ? 'bg-brand-50 text-brand-700 ring-brand-200'
+                : 'bg-white text-stone-600 ring-stone-200 hover:bg-stone-50',
+            )}
+          >
+            <span aria-hidden>{r.emoji}</span>
+            {given.count}
+          </button>
+        )
+      })}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setPicking((p) => !p)}
+          aria-expanded={picking}
+          aria-label="Reager på kommentaren"
+          title="Reager"
+          className={commentAction}
+        >
+          <SmilePlus className="size-4" aria-hidden />
+        </button>
+        {picking && <ReactionMenu box={menu} onClose={close} onPick={(k) => void toggle(k)} />}
+      </div>
+    </>
+  )
+}
+
+function ReactionMenu({
+  box,
+  onClose,
+  onPick,
+}: {
+  box: RefObject<HTMLDivElement | null>
+  onClose: () => void
+  onPick: (kind: ReactionView['kind']) => void
+}) {
+  useDismiss(box, onClose)
+  return (
+    <div
+      ref={box}
+      role="menu"
+      aria-label="Reaksjoner"
+      className="absolute top-full left-0 z-20 mt-1 flex animate-in rounded-xl bg-white p-1 shadow-lift ring-1 ring-stone-200"
+    >
+      {reactions.map((r) => (
+        <button
+          key={r.kind}
+          type="button"
+          role="menuitem"
+          onClick={() => onPick(r.kind)}
+          aria-label={r.label}
+          title={r.label}
+          className="grid size-9 place-items-center rounded-lg text-lg transition hover:bg-stone-100"
+        >
+          <span aria-hidden>{r.emoji}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function CommentItem({
+  comment: c,
+  onReply,
+  reply = false,
+}: {
+  comment: CommentView
+  onReply: (comment: CommentView) => void
+  /** Står under en annen kommentar. */
+  reply?: boolean
+}) {
   const router = useRouter()
   // Varsler lenker til #kommentar-<id>; den kommentaren markeres når siden åpnes.
   const highlighted = useLocation({ select: (l) => l.hash === `kommentar-${c.id}` })
@@ -284,12 +516,12 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
   const action = 'rounded-md p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700'
 
   return (
-    <li id={`kommentar-${c.id}`} className="group flex scroll-mt-24 gap-3">
+    <div id={`kommentar-${c.id}`} className="group flex scroll-mt-24 gap-3">
       <Link to="/medlemmer/$personId" params={{ personId: c.author.personId }} className="mt-0.5">
         <Avatar
           name={c.author.fullName}
           photo={c.author.photo}
-          size="md"
+          size={reply ? 'sm' : 'md'}
           muted={!c.author.claimed}
         />
       </Link>
@@ -370,11 +602,18 @@ function CommentItem({ comment: c }: { comment: CommentView }) {
             <AttachmentList
               attachments={c.attachments}
               removable={(a) => a.canRemove && !c.canEdit}
+              layout="comment"
               className="mt-2"
             />
+            <div className="mt-2 -ml-1 flex flex-wrap items-center gap-1">
+              <Reactions comment={c} />
+              <button type="button" onClick={() => onReply(c)} className={commentAction}>
+                Svar
+              </button>
+            </div>
           </>
         )}
       </div>
-    </li>
+    </div>
   )
 }

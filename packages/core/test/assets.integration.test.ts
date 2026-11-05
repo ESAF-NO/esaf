@@ -245,6 +245,38 @@ describe.skipIf(!url)('vedlegg', () => {
       expect(meta).toMatchObject({ width: 64, height: 48, hasAlpha: true })
     })
 
+    it('en GIF blir animert WebP, og lastes opp, festes og leses som andre bilder', async () => {
+      const frames = await Promise.all(
+        [20, 120, 220].map((r) =>
+          sharp({
+            create: { width: 300, height: 200, channels: 3, background: { r, g: 40, b: 90 } },
+          })
+            .png()
+            .toBuffer(),
+        ),
+      )
+      const gif = await sharp(frames, { join: { animated: true } })
+        .gif({ delay: 100 })
+        .toBuffer()
+      const view = await upload(ola, { purpose: 'comment' }, gif, 'dans.gif')
+      expect(view).toMatchObject({
+        kind: 'image',
+        name: 'dans.webp',
+        contentType: 'image/webp',
+        width: 300,
+        height: 200,
+      })
+      const postId = await createPost(db, ola, question)
+      await addComment(db, ola, postId, { body: '', attachmentIds: [view.id] })
+      for (const size of ['small', 'large'] as const) {
+        const { body } = await read(kari, view, size)
+        expect(await sharp(Buffer.from(body)).metadata()).toMatchObject({
+          format: 'webp',
+          pages: 3,
+        })
+      }
+    })
+
     it('albumet tar bare bilder', async () => {
       const eventId = await pastEvent()
       await setOwnParticipation(db, ola, eventId, true)

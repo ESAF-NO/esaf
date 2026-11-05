@@ -1,4 +1,4 @@
-import { schema, type Db, type PostChannel } from '@esaf/db'
+import { schema, type CommentReactionKind, type Db, type PostChannel } from '@esaf/db'
 import { and, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
@@ -15,15 +15,18 @@ import {
 import { AccessDeniedError, DomainError, NotFoundError } from './errors.ts'
 import { currentRole, loadExperience } from './experience.ts'
 import { markdownToPlainText } from './markdown.ts'
-import { personIdsInCohort } from './members.ts'
+import { personIdsInCohort, type Tx } from './members.ts'
 import { mentionsToPlainText, resolveMentions } from './mentions.ts'
 import { notifyComment, notifyMentions } from './notifications.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import type { ObjectStorage } from './storage.ts'
 
-const { auditEvent, cohort, comment, person, personCohort, post, postVote } = schema
+const { auditEvent, cohort, comment, commentReaction, person, personCohort, post, postVote } =
+  schema
 
 export const postChannels = schema.postChannel.enumValues
+
+export const commentReactionKinds = schema.commentReactionKind.enumValues
 
 const httpUrl = z
   .string()
@@ -97,8 +100,22 @@ export type PostSummary = {
   attachments: { images: number; documents: number; thumbnail: string | null }
 }
 
+/** Én slags reaksjon på en kommentar. Bare de som noen har gitt, er med. */
+export type ReactionView = {
+  kind: CommentReactionKind
+  count: number
+  viewerReacted: boolean
+  /** Hvem som reagerte, i rekkefølgen de gjorde det. */
+  people: string[]
+}
+
 export type CommentView = {
   id: string
+  /**
+   * Kommentaren dette er et svar på, eller null for en vanlig kommentar. Svar har
+   * ett nivå. Er den slettet, står den ikke i lista, men svarene gjør det.
+   */
+  parentId: string | null
   /** Markdown. */
   body: string
   createdAt: Date
@@ -108,6 +125,7 @@ export type CommentView = {
   canDelete: boolean
   /** Bilder og dokumenter, i rekkefølgen forfatteren valgte. */
   attachments: AssetView[]
+  reactions: ReactionView[]
 }
 
 export type PostView = Omit<PostSummary, 'attachments'> & {
@@ -301,9 +319,13 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
     .from(comment)
     .where(and(eq(comment.postId, postId), isNull(comment.deletedAt)))
     .orderBy(comment.createdAt)
-  const authors = await loadAuthors(db, [
-    row.authorPersonId,
-    ...comments.map((c) => c.authorPersonId),
+  const [authors, reactions] = await Promise.all([
+    loadAuthors(db, [row.authorPersonId, ...comments.map((c) => c.authorPersonId)]),
+    loadReactions(
+      db,
+      viewer,
+      comments.map((c) => c.id),
+    ),
   ])
   const moderator = can(viewer, 'content.moderate')
   const isOwn = row.authorPersonId === viewer.personId
@@ -339,6 +361,7 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
       const own = c.authorPersonId === viewer.personId
       return {
         id: c.id,
+        parentId: c.parentCommentId,
         body: c.body,
         createdAt: c.createdAt,
         editedAt: c.editedAt,
@@ -346,9 +369,47 @@ export async function getPost(db: Db, viewer: Viewer, postId: string): Promise<P
         canEdit: own,
         canDelete: own || moderator,
         attachments: attachments.get(c.id) ?? [],
+        reactions: reactions.get(c.id) ?? [],
       }
     }),
   }
+}
+
+/** Reaksjonene per kommentar, i rekkefølgen de finnes i `commentReactionKinds`. */
+async function loadReactions(
+  db: Db | Tx,
+  viewer: { personId: string },
+  commentIds: string[],
+): Promise<Map<string, ReactionView[]>> {
+  if (!commentIds.length) return new Map()
+  const rows = await db
+    .select({
+      commentId: commentReaction.commentId,
+      kind: commentReaction.kind,
+      personId: commentReaction.personId,
+      fullName: person.fullName,
+    })
+    .from(commentReaction)
+    .innerJoin(person, eq(person.id, commentReaction.personId))
+    .where(inArray(commentReaction.commentId, commentIds))
+    .orderBy(commentReaction.createdAt)
+  const byComment = new Map<string, ReactionView[]>()
+  for (const r of rows) {
+    const list = byComment.get(r.commentId) ?? []
+    byComment.set(r.commentId, list)
+    let entry = list.find((e) => e.kind === r.kind)
+    if (!entry) {
+      entry = { kind: r.kind, count: 0, viewerReacted: false, people: [] }
+      list.push(entry)
+    }
+    entry.count++
+    entry.people.push(r.fullName)
+    if (r.personId === viewer.personId) entry.viewerReacted = true
+  }
+  for (const list of byComment.values()) {
+    list.sort((a, b) => commentReactionKinds.indexOf(a.kind) - commentReactionKinds.indexOf(b.kind))
+  }
+  return byComment
 }
 
 /**
@@ -501,11 +562,16 @@ export async function deletePost(
   if (storage) await purgeAssets(db, storage, removed)
 }
 
+/**
+ * Ny kommentar. Med `replyTo` er det et svar på den kommentaren. Svar har ett nivå:
+ * et svar på et svar havner i samme tråd, og begge forfatterne får beskjed.
+ */
 export async function addComment(
   db: Db,
   viewer: Viewer,
   postId: string,
   input: z.input<typeof commentInput>,
+  { replyTo }: { replyTo?: string } = {},
 ): Promise<string> {
   assertMember(viewer)
   const { attachmentIds, ...data } = parse(commentInput, input)
@@ -515,10 +581,16 @@ export async function addComment(
       .from(post)
       .where(and(eq(post.id, postId), isNull(post.deletedAt)))
     if (!target) throw new NotFoundError('Fant ikke innlegget.')
+    const thread = replyTo ? await replyTarget(tx, postId, replyTo) : null
     const { text: body, personIds } = await resolveMentions(tx, data.body)
     const [created] = await tx
       .insert(comment)
-      .values({ postId, authorPersonId: viewer.personId, body })
+      .values({
+        postId,
+        authorPersonId: viewer.personId,
+        body,
+        parentCommentId: thread?.rootId ?? null,
+      })
       .returning({ id: comment.id })
     if (attachmentIds?.length) {
       await attachAssets(tx, viewer, { commentId: created!.id }, attachmentIds)
@@ -528,9 +600,40 @@ export async function addComment(
       commentId: created!.id,
       actorPersonId: viewer.personId,
       mentioned: personIds,
+      repliedTo: thread?.authors ?? [],
     })
     return created!.id
   })
+}
+
+/**
+ * Tråden et svar havner i, og hvem som skal ha beskjed: forfatteren av kommentaren
+ * det svares på, og av den øverste i tråden. Låses, så kommentaren ikke slettes
+ * mens svaret lagres. Den øverste kan være slettet; da fortsetter tråden under
+ * «Kommentaren er slettet», men den forfatteren får ingen beskjed.
+ */
+async function replyTarget(tx: Tx, postId: string, commentId: string) {
+  const [parent] = await tx
+    .select({
+      id: comment.id,
+      authorPersonId: comment.authorPersonId,
+      parentCommentId: comment.parentCommentId,
+    })
+    .from(comment)
+    .where(and(eq(comment.id, commentId), eq(comment.postId, postId), isNull(comment.deletedAt)))
+    .for('share')
+  if (!parent) throw new NotFoundError('Kommentaren du svarer på, er slettet.')
+  if (!parent.parentCommentId) {
+    return { rootId: parent.id, authors: [parent.authorPersonId] }
+  }
+  const [root] = await tx
+    .select({ authorPersonId: comment.authorPersonId })
+    .from(comment)
+    .where(and(eq(comment.id, parent.parentCommentId), isNull(comment.deletedAt)))
+  return {
+    rootId: parent.parentCommentId,
+    authors: [parent.authorPersonId, ...(root ? [root.authorPersonId] : [])],
+  }
 }
 
 /** Som `deletePost`, for én kommentar og vedleggene i den. */
@@ -639,6 +742,41 @@ export async function setPostPinned(
       subjectPersonId: row.authorPersonId,
       details: { postId, title: row.title },
     })
+  })
+}
+
+/**
+ * Gir eller fjerner en reaksjon fra den innloggede, og gir reaksjonene på
+ * kommentaren slik de står nå. Reaksjoner gir ingen varsler: de er for små til det.
+ */
+export async function toggleCommentReaction(
+  db: Db,
+  viewer: Viewer,
+  commentId: string,
+  kind: CommentReactionKind,
+): Promise<ReactionView[]> {
+  assertMember(viewer)
+  const parsed = parse(z.enum(commentReactionKinds, 'Ugyldig reaksjon.'), kind)
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({ id: comment.id })
+      .from(comment)
+      .innerJoin(post, eq(post.id, comment.postId))
+      .where(and(eq(comment.id, commentId), isNull(comment.deletedAt), isNull(post.deletedAt)))
+    if (!target) throw new NotFoundError('Fant ikke kommentaren.')
+    const mine = and(
+      eq(commentReaction.commentId, commentId),
+      eq(commentReaction.personId, viewer.personId),
+      eq(commentReaction.kind, parsed),
+    )
+    const removed = await tx.delete(commentReaction).where(mine).returning()
+    if (!removed.length) {
+      await tx
+        .insert(commentReaction)
+        .values({ commentId, personId: viewer.personId, kind: parsed })
+        .onConflictDoNothing()
+    }
+    return (await loadReactions(tx, viewer, [commentId])).get(commentId) ?? []
   })
 }
 

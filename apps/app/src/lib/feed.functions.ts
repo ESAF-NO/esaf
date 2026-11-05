@@ -9,6 +9,7 @@ import {
   listCohorts,
   listPosts,
   setPostPinned,
+  toggleCommentReaction,
   toggleVote,
   updateComment,
   updatePost,
@@ -16,6 +17,7 @@ import {
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { channelKeys } from '#/lib/channels.ts'
+import { reactionKinds } from '#/lib/comments.ts'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
 import { storage } from '#/server/photos.server.ts'
@@ -72,9 +74,11 @@ export const pinPost = createServerFn({ method: 'POST' })
   .handler(({ data }) => run((viewer) => setPostPinned(db, viewer, data.postId, data.pinned)))
 
 export const submitComment = createServerFn({ method: 'POST' })
-  .validator(z.object({ postId: z.uuid(), body: z.string(), attachmentIds }))
-  .handler(({ data: { postId, ...input } }) =>
-    run((viewer) => addComment(db, viewer, postId, input)),
+  .validator(
+    z.object({ postId: z.uuid(), body: z.string(), attachmentIds, replyTo: z.uuid().optional() }),
+  )
+  .handler(({ data: { postId, replyTo, ...input } }) =>
+    run((viewer) => addComment(db, viewer, postId, input, { replyTo })),
   )
 
 export const editComment = createServerFn({ method: 'POST' })
@@ -86,6 +90,12 @@ export const editComment = createServerFn({ method: 'POST' })
 export const removeComment = createServerFn({ method: 'POST' })
   .validator(z.object({ commentId: z.uuid() }))
   .handler(({ data }) => run((viewer) => deleteComment(db, viewer, data.commentId, storage)))
+
+export const reactToComment = createServerFn({ method: 'POST' })
+  .validator(z.object({ commentId: z.uuid(), kind: z.enum(reactionKinds) }))
+  .handler(({ data }) =>
+    run((viewer) => toggleCommentReaction(db, viewer, data.commentId, data.kind)),
+  )
 
 export const vote = createServerFn({ method: 'POST' })
   .validator(z.object({ postId: z.uuid() }))

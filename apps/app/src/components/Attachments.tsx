@@ -375,8 +375,8 @@ export function AttachmentEditor({
           </PickButton>
           {!compact && (
             <p className="text-xs text-stone-500">
-              Bilder (JPEG, PNG, WebP) og dokumenter (PDF, Word, Excel, PowerPoint, tekst, CSV),
-              maks 25 MB og {MAX_ATTACHMENTS} filer. Dra filer hit, eller lim inn et bilde.
+              Bilder (JPEG, PNG, WebP, GIF) og dokumenter (PDF, Word, Excel, PowerPoint, tekst,
+              CSV), maks 25 MB og {MAX_ATTACHMENTS} filer. Dra filer hit, eller lim inn et bilde.
             </p>
           )}
         </div>
@@ -630,7 +630,8 @@ export function ImageGrid({
   caption,
 }: {
   images: AssetView[]
-  layout?: 'post' | 'album'
+  /** `comment`: ett bilde vises lite og til venstre, så det ikke tar over tråden. */
+  layout?: 'post' | 'comment' | 'album'
   /** Om den innloggede kan slette eller fjerne et bilde her. */
   removable?: (asset: AssetView) => boolean
   caption?: (asset: AssetView) => ReactNode
@@ -638,7 +639,8 @@ export function ImageGrid({
   const [open, setOpen] = useState<number | null>(null)
   const { remove, removing, error } = useRemoveAsset()
   if (!images.length) return null
-  const single = layout === 'post' && images.length === 1
+  const single = layout !== 'album' && images.length === 1
+  const small = single && layout === 'comment'
   return (
     <>
       <ul
@@ -656,7 +658,10 @@ export function ImageGrid({
             <button
               type="button"
               onClick={() => setOpen(i)}
-              className="block w-full overflow-hidden rounded-xl bg-stone-100 ring-1 ring-stone-200 transition hover:ring-stone-400 focus-visible:ring-2 focus-visible:ring-brand-500"
+              className={cx(
+                'block overflow-hidden rounded-xl bg-stone-100 ring-1 ring-stone-200 transition hover:ring-stone-400 focus-visible:ring-2 focus-visible:ring-brand-500',
+                small ? 'w-fit max-w-full' : 'w-full',
+              )}
               aria-label={`Vis ${img.name} i full størrelse`}
             >
               <img
@@ -671,8 +676,9 @@ export function ImageGrid({
                 width={img.width ?? undefined}
                 height={img.height ?? undefined}
                 className={cx(
-                  'w-full',
-                  single ? 'h-auto max-h-[28rem] object-contain' : 'aspect-square object-cover',
+                  small ? 'h-auto max-h-64 w-auto max-w-full' : 'w-full',
+                  !small &&
+                    (single ? 'h-auto max-h-[28rem] object-contain' : 'aspect-square object-cover'),
                 )}
               />
             </button>
@@ -704,10 +710,12 @@ export function ImageGrid({
 export function AttachmentList({
   attachments,
   removable = () => false,
+  layout = 'post',
   className,
 }: {
   attachments: AssetView[]
   removable?: (asset: AssetView) => boolean
+  layout?: 'post' | 'comment'
   className?: string
 }) {
   const { remove, removing, error } = useRemoveAsset()
@@ -716,7 +724,7 @@ export function AttachmentList({
   const documents = attachments.filter((a) => !a.image)
   return (
     <div className={cx('space-y-2', className)}>
-      <ImageGrid images={images} removable={removable} />
+      <ImageGrid images={images} layout={layout} removable={removable} />
       {documents.length > 0 && (
         <ul className="grid gap-2 sm:grid-cols-2">
           {documents.map((doc) => (

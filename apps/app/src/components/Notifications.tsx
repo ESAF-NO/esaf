@@ -102,6 +102,12 @@ function Sentence({ n }: { n: NotificationView }) {
           {who} kommenterte også {title}
         </>
       )
+    case 'comment_reply':
+      return (
+        <>
+          {who} svarte på kommentaren din til {title}
+        </>
+      )
     case 'mention':
       return n.commentId ? (
         <>

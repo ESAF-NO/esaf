@@ -253,6 +253,13 @@
       "when": 1793716010225,
       "tag": "0035_kilder_per_lenke",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793891483149,
+      "tag": "0036_varsle_admin_om_foresporsler",
+      "breakpoints": true
     }
   ]
 }

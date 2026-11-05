@@ -431,4 +431,132 @@ describe.skipIf(!url)('varsler på e-post', () => {
       sendWelcomeEmail(db, admin, logged, { requestId: request!.id, appUrl: APP }),
     ).rejects.toThrow('bare til godkjente, aktive medlemmer')
   })
+
+  describe('forespørsler om tilgang til adminene', () => {
+    const MIN = 60 * 1000
+    const HOUR = 60 * MIN
+
+    async function request(name: string) {
+      const userId = await account(name)
+      await submitAccessRequest(db, await loadViewer(db, userId), {
+        profilePersonId: null,
+        fullName: name,
+        graduationYear: 2021,
+        linkedinUrl: '',
+        note: '',
+      })
+    }
+    const after = (ms: number) => new Date(Date.now() + ms)
+    const alerts = () => sent.filter((m) => m.log?.kind === 'access_request')
+
+    it('samler det som kommer samtidig i én e-post, som ikke nevner navnet', async () => {
+      await request('Mallory Lenke')
+      await request('Sigrid Sol')
+      expect(await run(new Date())).toMatchObject({ emails: 0 })
+
+      await run(soon())
+      expect(alerts()).toHaveLength(1)
+      const [message] = alerts()
+      expect(message).toMatchObject({
+        to: 'ada.admin@example.test',
+        subject: '2 personer venter på godkjenning i ESAF',
+      })
+      expect(message!.text).toContain(`${APP}/admin`)
+      expect(message!.text).not.toContain('Mallory')
+      expect(message!.subject).not.toContain('Mallory')
+      expect(message!.headers?.['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+    })
+
+    it('høyst én e-post hver sjette time, og bare om det har kommet nye', async () => {
+      await request('Sigrid Sol')
+      await run(soon())
+      expect(alerts()).toHaveLength(1)
+
+      await run(after(5 * MIN))
+      expect(alerts()).toHaveLength(1)
+
+      // Mange nye rett etter: de venter til pausen er over, og kommer samlet.
+      for (const name of ['Nils Nord', 'Eva Vest', 'Siri Syd']) await request(name)
+      await run(after(30 * MIN))
+      await run(after(5 * HOUR))
+      expect(alerts()).toHaveLength(1)
+
+      await run(after(7 * HOUR))
+      expect(alerts()).toHaveLength(2)
+      expect(alerts()[1]!.subject).toBe('4 personer venter på godkjenning i ESAF')
+
+      // Ingen nye siden sist: ingen påminnelse.
+      await run(after(14 * HOUR))
+      expect(alerts()).toHaveLength(2)
+    })
+
+    it('behandlet før e-posten skulle gå, sendes ingenting', async () => {
+      await request('Sigrid Sol')
+      const [open] = await listAccessRequests(db, admin, 'open')
+      await decideAccessRequest(db, admin, { requestId: open!.id, decision: 'reject' })
+      await run(soon())
+      expect(alerts()).toHaveLength(0)
+    })
+
+    it('bare admins får den, og hver admin kan slå den av', async () => {
+      const annen = await member('Anne Admin')
+      await db
+        .update(schema.membership)
+        .set({ role: 'admin' })
+        .where(eq(schema.membership.personId, annen.personId))
+      await db
+        .update(schema.membership)
+        .set({ role: 'moderator' })
+        .where(eq(schema.membership.personId, ola.personId))
+      await setEmailPreference(db, admin, { category: 'access_requests', frequency: 'off' })
+
+      await request('Sigrid Sol')
+      await run(soon())
+      expect(alerts().map((m) => m.to)).toEqual(['anne.admin@example.test'])
+    })
+
+    it('valget vises bare for admins, og er på eller av', async () => {
+      const ids = async (v: Member) =>
+        (await getEmailPreferences(db, v)).categories.map((c) => c.id as string)
+      expect(await ids(admin)).toContain('access_requests')
+      expect(await ids(ola)).not.toContain('access_requests')
+      await expect(
+        setEmailPreference(db, admin, { category: 'access_requests', frequency: 'daily' }),
+      ).rejects.toThrow('Velg «Med en gang» eller «Av».')
+    })
+
+    it('feiler leverandøren før noen fikk den, prøves det igjen neste runde', async () => {
+      await request('Sigrid Sol')
+      failWith = new EmailError('unavailable')
+      expect(await run(soon())).toMatchObject({ failed: 1 })
+      failWith = null
+      await run(after(5 * MIN))
+      expect(alerts()).toHaveLength(1)
+    })
+
+    it('av i bryteren sendes ikke; de som fortsatt venter, kommer når den slås på', async () => {
+      await setEmailKindEnabled(db, admin, {
+        kind: 'access_request',
+        enabled: false,
+        reason: 'test',
+      })
+      await request('Sigrid Sol')
+      await run(soon())
+      expect(alerts()).toHaveLength(0)
+
+      await setEmailKindEnabled(db, admin, {
+        kind: 'access_request',
+        enabled: true,
+        reason: 'test',
+      })
+      await run(after(5 * MIN))
+      expect(alerts()).toHaveLength(1)
+    })
+
+    it('stopper ikke varslene når det ikke er noen forespørsler', async () => {
+      await commentOnOlasPost()
+      expect(await run(soon())).toMatchObject({ emails: 1 })
+      expect(alerts()).toHaveLength(0)
+    })
+  })
 })

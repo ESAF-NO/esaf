@@ -7,6 +7,7 @@ import {
   dismissDuplicate,
   listReview,
   markSourcesReviewed,
+  removeFieldSource,
   reviewCounts,
   reviewKinds,
 } from '@esaf/core'
@@ -42,6 +43,17 @@ export const approveSources = createServerFn({ method: 'POST' })
 export const clearField = createServerFn({ method: 'POST' })
   .validator(z.object({ ...entity, field: z.string().max(40) }))
   .handler(({ data }) => run((viewer) => clearImportedField(db, viewer, data)))
+
+export const removeSource = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      ...entity,
+      field: z.string().max(40),
+      label: z.string().max(200),
+      url: z.string().max(2000).nullable(),
+    }),
+  )
+  .handler(({ data }) => run((viewer) => removeFieldSource(db, viewer, data)))
 
 export const dismissPair = createServerFn({ method: 'POST' })
   .validator(

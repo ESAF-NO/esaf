@@ -15,6 +15,7 @@ import {
   listPeopleIndex,
   listReview,
   markSourcesReviewed,
+  removeFieldSource,
   normalizePersonName,
   profileSourceFields,
   REVIEW_PAGE_SIZE,
@@ -187,6 +188,27 @@ export function registerAdminTools(server: McpServer, ctx: ToolContext) {
     run: async (args, ctx) => {
       await clearImportedField(ctx.db, ctx.viewer, args)
       return { cleared: args.field }
+    },
+  })
+
+  defineTool(server, ctx, {
+    name: 'remove_field_source',
+    title: 'Remove one source from a field',
+    description:
+      'Remove one source that is wrong and keep the value, e.g. the source of a job that was removed from experience. ' +
+      'Label and URL as in get_person or get_company; the URL is needed when several sources share the label. ' +
+      'The other sources on the field count as looked over.',
+    input: z.object({
+      entityType: z.enum(['person', 'company']),
+      entityId: id('The person or company'),
+      field: z.string().max(40),
+      label: z.string().max(80),
+      url: z.string().max(500).optional(),
+    }),
+    effect: 'destructive',
+    run: async (args, ctx) => {
+      await removeFieldSource(ctx.db, ctx.viewer, args)
+      return { removed: args.label, field: args.field }
     },
   })
 

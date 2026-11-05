@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { recoverPreloadError } from '../src/lib/preload-recovery.ts'
+import { isChunkLoadError, recoverPreloadError } from '../src/lib/preload-recovery.ts'
 
 it('reloads once after a missing chunk and guards against reload loops across page loads', () => {
   const values = new Map<string, string>()
@@ -26,4 +26,16 @@ it('does not risk a reload loop when session storage is unavailable', () => {
   }
   expect(recoverPreloadError(storage, reload)).toBe(false)
   expect(reload).not.toHaveBeenCalled()
+})
+
+it('recognises a failed chunk import in every browser, and nothing else', () => {
+  for (const message of [
+    'Importing a module script failed.',
+    'Failed to fetch dynamically imported module: https://app.esaf.no/assets/feed-abc.js',
+    'error loading dynamically imported module: https://app.esaf.no/assets/feed-abc.js',
+  ]) {
+    expect(isChunkLoadError(new TypeError(message))).toBe(true)
+  }
+  expect(isChunkLoadError(new Error('Fant ikke profilen'))).toBe(false)
+  expect(isChunkLoadError('Importing a module script failed.')).toBe(false)
 })

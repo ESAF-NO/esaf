@@ -61,14 +61,17 @@ type Template = {
   action: { label: string; url: string }
   /** Avsnittene etter knappen. */
   outro: string[]
+  /** Små lenker nederst, for eksempel for å melde seg av. */
+  links?: { label: string; url: string }[]
 }
 
-function render({ subject, name, intro, action, outro }: Template): EmailContent {
+function render({ subject, name, intro, action, outro, links = [] }: Template): EmailContent {
   const text = [
     greeting(name),
     ...intro,
     `${action.label}:\n${action.url}`,
     ...outro,
+    ...links.map((l) => `${l.label}:\n${l.url}`),
     SIGNATURE,
   ].join('\n\n')
 
@@ -90,6 +93,7 @@ ${intro.map(p).join('\n')}
 <p style="margin:24px 0"><a href="${url}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#ea580c;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none">${escapeHtml(action.label)}</a></p>
 <p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#78716c">Virker ikke knappen? Kopier lenken inn i nettleseren:<br><a href="${url}" style="color:#c2410c;word-break:break-all">${url}</a></p>
 ${outro.map(p).join('\n')}
+${links.map((l) => `<p style="margin:0 0 8px;font-size:13px;line-height:1.5"><a href="${escapeHtml(l.url)}" style="color:#78716c">${escapeHtml(l.label)}</a></p>`).join('\n')}
 <p style="margin:24px 0 0;font-size:13px;color:#78716c">${escapeHtml(SIGNATURE)}</p>
 </div>
 </body>
@@ -206,6 +210,41 @@ export function welcomeEmail(
     action: { label: 'Logg inn', url: input.url },
     outro: [
       'Du logger inn med samme e-postadresse og passord eller passkey som da du registrerte deg.',
+    ],
+  })
+}
+
+/**
+ * Til adminene når noen venter på godkjenning. Bare antallet: navnet skriver den
+ * som ber om tilgang selv, så det hører ikke hjemme i en e-post til adminene.
+ */
+export function accessRequestEmail(
+  input: {
+    /** Hvor mange som venter nå. */
+    waiting: number
+    url: string
+    settingsUrl: string
+    unsubscribeUrl: string
+    /** Hvor mange timer det minst går mellom hver slik e-post. */
+    cooldownHours: number
+  } & To,
+): EmailContent {
+  const one = input.waiting === 1
+  return render({
+    name: input.name,
+    subject: one
+      ? 'En person venter på godkjenning i ESAF'
+      : `${input.waiting} personer venter på godkjenning i ESAF`,
+    intro: [
+      `${one ? 'En person' : `${input.waiting} personer`} har bedt om tilgang til ESAF-appen. Se hva som er bekreftet før du godkjenner eller avslår.`,
+    ],
+    action: { label: one ? 'Se forespørselen' : 'Se forespørslene', url: input.url },
+    outro: [
+      `Alle admins får denne e-posten, så en annen kan ha rukket å svare. Kommer det flere, samles de, så du får høyst én slik e-post hver ${input.cooldownHours}. time.`,
+    ],
+    links: [
+      { label: 'Endre hvilke varsler du får på e-post', url: input.settingsUrl },
+      { label: 'Slutt å få forespørsler om tilgang på e-post', url: input.unsubscribeUrl },
     ],
   })
 }

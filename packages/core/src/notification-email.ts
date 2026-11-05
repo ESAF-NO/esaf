@@ -2,15 +2,21 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { schema, type Db, type NotificationEmailFrequency, type NotificationType } from '@esaf/db'
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { assertMember, type Viewer } from './access.ts'
+import { assertMember, can, permissions, roleAtLeast, roles, type Viewer } from './access.ts'
 import { EmailError, type Mailer } from './email.ts'
 import { getEmailSwitch, resumedAt, type SwitchableEmailKind } from './email-switch.ts'
-import { notificationEmail, welcomeEmail, type NotificationEmailItem } from './email-templates.ts'
+import {
+  accessRequestEmail,
+  notificationEmail,
+  welcomeEmail,
+  type NotificationEmailItem,
+} from './email-templates.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 import { selectNotificationViews, type NotificationView } from './notifications.ts'
 
-const { membership, notification, notificationEmailPreference, person, user } = schema
+const { accessRequest, membership, notification, notificationEmailPreference, person, user } =
+  schema
 
 /**
  * Varsler på e-post. Reglene:
@@ -36,6 +42,12 @@ const { membership, notification, notificationEmailPreference, person, user } = 
  *   (neste runde), til alle: personen venter på svaret og er ikke i appen. Den
  *   er ikke et varsel man kan melde seg av, og har ingen avmelding. Velkomsten
  *   etter en invitasjon sendes ikke: den som tok imot, er i appen.
+ * - Adminene får e-post når noen venter på godkjenning, men aldri én per
+ *   forespørsel. Den første venter noen minutter, så det som kommer samtidig blir
+ *   én e-post, og en admin som er i appen rekker å svare først. Etter en e-post går
+ *   det minst seks timer til neste, uansett hvor mange som kommer, og den neste
+ *   sendes bare om det har kommet nye som fortsatt venter. E-posten sier bare hvor
+ *   mange som venter. Hver admin kan slå den av; den er ikke et varsel i appen.
  */
 
 export const notificationEmailFrequencies = [
@@ -58,6 +70,8 @@ export type NotificationCategory = {
   help: string
   types: readonly NotificationType[]
   default: NotificationEmailFrequency
+  /** Bare for dem som behandler forespørsler, og bare på eller av: e-posten har egne regler. */
+  reviewersOnly?: boolean
 }
 
 /** Kategoriene medlemmene velger for, i rekkefølgen de vises. */
@@ -103,6 +117,14 @@ export const notificationCategories = [
     types: ['cohort_joined'],
     default: 'weekly',
   },
+  {
+    id: 'access_requests',
+    label: 'Forespørsler om tilgang',
+    help: 'Når noen venter på godkjenning. Høyst én e-post hver sjette time.',
+    types: [],
+    default: 'instant',
+    reviewersOnly: true,
+  },
 ] as const satisfies readonly NotificationCategory[]
 
 export type NotificationCategoryId = (typeof notificationCategories)[number]['id']
@@ -111,6 +133,9 @@ const categoryIds = notificationCategories.map((c) => c.id) as [
   NotificationCategoryId,
   ...NotificationCategoryId[],
 ]
+
+/** Kategoriene uten de særegne feltene til hver enkelt, så de kan leses likt. */
+export const allNotificationCategories: readonly NotificationCategory[] = notificationCategories
 
 const categoryOf = new Map<NotificationType, NotificationCategory>(
   notificationCategories.flatMap((c) => c.types.map((t) => [t, c] as const)),
@@ -160,7 +185,9 @@ export async function getEmailPreferences(db: Db, viewer: Viewer): Promise<Email
   const own = (await frequencies(db, [viewer.personId])).get(viewer.personId)
   return {
     email: account?.email ?? '',
-    categories: notificationCategories.map((c) => ({ ...c, frequency: frequencyFor(own, c) })),
+    categories: allNotificationCategories
+      .filter((c) => !c.reviewersOnly || can(viewer, 'members.review'))
+      .map((c) => ({ ...c, frequency: frequencyFor(own, c) })),
   }
 }
 
@@ -194,7 +221,12 @@ export async function setEmailPreference(
   assertMember(viewer)
   const parsed = preferenceInput.safeParse(input)
   if (!parsed.success) throw new DomainError(parsed.error.issues[0]?.message ?? 'Ugyldig valg.')
-  await setFrequency(db, viewer.personId, parsed.data.category, parsed.data.frequency)
+  const { category, frequency } = parsed.data
+  const reviewersOnly = allNotificationCategories.find((c) => c.id === category)?.reviewersOnly
+  if (reviewersOnly && frequency !== 'instant' && frequency !== 'off') {
+    throw new DomainError('Velg «Med en gang» eller «Av».')
+  }
+  await setFrequency(db, viewer.personId, category, frequency)
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +306,8 @@ export async function unsubscribe(
 export const INSTANT_DELAY_MS = 3 * 60 * 1000
 /** Varsler eldre enn dette sendes ikke (en uke og litt, så ukesoppsummeringen rekker dem). */
 export const EMAIL_WINDOW_MS = 8 * 24 * 60 * 60 * 1000
+/** Minst så lenge mellom to e-poster til adminene om forespørsler om tilgang. */
+export const ACCESS_REQUEST_COOLDOWN_HOURS = 6
 /** Klokkeslettet oppsummeringene sendes, norsk tid. */
 export const DIGEST_HOUR = 7
 
@@ -454,6 +488,11 @@ export async function sendNotificationEmails(
     if (toggle.paused) return { ...run, skipped: true, paused: true }
     const kindOn = (kind: SwitchableEmailKind) => toggle.kinds.find((k) => k.kind === kind)!.enabled
 
+    if (kindOn('access_request')) {
+      const delivered = await alertReviewers(tx, options, now, log, run)
+      if (!delivered) return run
+    }
+
     // Uleste, ikke sendte varsler innenfor vinduet, til aktive medlemmer med bekreftet konto.
     const candidates = await tx
       .select({
@@ -606,6 +645,110 @@ export async function sendNotificationEmails(
     }
     return run
   })
+}
+
+/**
+ * Forteller adminene at noen venter på godkjenning, etter reglene øverst. Gir
+ * `false` om leverandøren feilet før noen fikk e-posten, så forespørslene ikke
+ * merkes og alt prøves igjen neste runde. Fikk noen den, merkes de: da vet minst
+ * én admin om det, og de andre skal ikke få den to ganger.
+ */
+async function alertReviewers(
+  tx: Tx,
+  options: { mailer: Mailer; appUrl: string; secret: string },
+  now: Date,
+  log: Pick<Console, 'error'>,
+  run: NotificationEmailRun,
+): Promise<boolean> {
+  const requests = await tx
+    .select({
+      id: accessRequest.id,
+      status: accessRequest.status,
+      createdAt: accessRequest.createdAt,
+      adminAlertedAt: accessRequest.adminAlertedAt,
+    })
+    .from(accessRequest)
+  const waiting = requests.filter((r) => r.status === 'open')
+  const fresh = waiting.filter((r) => !r.adminAlertedAt)
+  const settled = fresh.some((r) => now.getTime() - r.createdAt.getTime() >= INSTANT_DELAY_MS)
+  if (!settled) return true
+  const lastAlert = Math.max(0, ...requests.map((r) => r.adminAlertedAt?.getTime() ?? 0))
+  if (now.getTime() - lastAlert < ACCESS_REQUEST_COOLDOWN_HOURS * 3600 * 1000) return true
+
+  const reviewerRoles = roles.filter((r) => roleAtLeast(r, permissions['members.review']))
+  const reviewers = await tx
+    .select({ personId: person.id, email: user.email, fullName: person.fullName })
+    .from(person)
+    .innerJoin(user, eq(user.id, person.userId))
+    .innerJoin(membership, eq(membership.personId, person.id))
+    .where(
+      and(
+        eq(membership.status, 'active'),
+        inArray(membership.role, reviewerRoles),
+        eq(user.emailVerified, true),
+      ),
+    )
+  const prefs = await frequencies(
+    tx,
+    reviewers.map((r) => r.personId),
+  )
+  const category = allNotificationCategories.find((c) => c.id === 'access_requests')!
+  const wanted = reviewers.filter((r) => frequencyFor(prefs.get(r.personId), category) !== 'off')
+
+  let delivered = 0
+  let down = false
+  for (const reviewer of wanted) {
+    const token = unsubscribeToken(options.secret, reviewer.personId, 'access_requests')
+    const content = accessRequestEmail({
+      name: reviewer.fullName,
+      waiting: waiting.length,
+      url: new URL('/admin', options.appUrl).href,
+      settingsUrl: new URL('/konto#varsler', options.appUrl).href,
+      unsubscribeUrl: new URL(`/avmeld?t=${token}`, options.appUrl).href,
+      cooldownHours: ACCESS_REQUEST_COOLDOWN_HOURS,
+    })
+    try {
+      await options.mailer.send({
+        to: reviewer.email,
+        ...content,
+        log: {
+          kind: 'access_request',
+          personId: reviewer.personId,
+          category: category.id,
+          items: waiting.length,
+        },
+        headers: {
+          'List-Unsubscribe': `<${new URL(`/api/varsler/avmeld?t=${token}`, options.appUrl).href}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      })
+      delivered++
+      run.emails++
+    } catch (error) {
+      run.failed++
+      // En adresse som ikke tar imot e-post, skal ikke stoppe de andre.
+      if (
+        error instanceof EmailError &&
+        (error.reason === 'bounced' || error.reason === 'blocked')
+      ) {
+        continue
+      }
+      if (!(error instanceof EmailError)) log.error('[esaf/varsler] Forespørselen feilet:', error)
+      down = true
+      break
+    }
+  }
+  if (down && !delivered) return false
+  await tx
+    .update(accessRequest)
+    .set({ adminAlertedAt: now })
+    .where(
+      inArray(
+        accessRequest.id,
+        fresh.map((r) => r.id),
+      ),
+    )
+  return !down
 }
 
 /**

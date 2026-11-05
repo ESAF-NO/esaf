@@ -215,6 +215,18 @@ export {
   type ProcessedLogo,
 } from './logos.ts'
 export {
+  assertCanChangeBadgeImage,
+  BADGE_IMAGE_CONTENT_TYPE,
+  BADGE_IMAGE_SIZES,
+  badgeImageUrls,
+  processBadgeImage,
+  readBadgeImage,
+  removeBadgeImage,
+  setBadgeImage,
+  type BadgeImage,
+  type ProcessedBadgeImage,
+} from './badge-images.ts'
+export {
   ASSET_IMAGE_SIZES,
   ASSET_MAX_BYTES,
   assertCanUpload,

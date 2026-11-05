@@ -59,6 +59,7 @@ import { Route as ApiImportKullrepresentanterRouteImport } from './routes/api/im
 import { Route as ApiLogoerKeyRouteImport } from './routes/api/logoer/$key'
 import { Route as ApiMcpOauthGodkjennRouteImport } from './routes/api/mcp-oauth/godkjenn'
 import { Route as ApiMcpOauthLoggInnRouteImport } from './routes/api/mcp-oauth/logg-inn'
+import { Route as ApiMerkebilderKeyRouteImport } from './routes/api/merkebilder/$key'
 import { Route as ApiVarslerAvmeldRouteImport } from './routes/api/varsler/avmeld'
 import { Route as ApiVedleggIndexRouteImport } from './routes/api/vedlegg/index'
 import { Route as ApiVedleggNameRouteImport } from './routes/api/vedlegg/$name'
@@ -73,6 +74,7 @@ import { Route as KontoSelskaperSlugIndexRouteImport } from './routes/_konto/sel
 import { Route as KontoSelskaperSlugForeslaRouteImport } from './routes/_konto/selskaper/$slug/foresla'
 import { Route as KontoSelskaperSlugRedigerRouteImport } from './routes/_konto/selskaper/$slug/rediger'
 import { Route as ApiMedlemmerPersonIdBildeRouteImport } from './routes/api/medlemmer/$personId/bilde'
+import { Route as ApiMerkerBadgeIdBildeRouteImport } from './routes/api/merker/$badgeId/bilde'
 import { Route as ApiSelskaperCompanyIdLogoRouteImport } from './routes/api/selskaper/$companyId/logo'
 
 const IndexRoute = IndexRouteImport.update({
@@ -327,6 +329,11 @@ const ApiMcpOauthLoggInnRoute = ApiMcpOauthLoggInnRouteImport.update({
   path: '/api/mcp-oauth/logg-inn',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMerkebilderKeyRoute = ApiMerkebilderKeyRouteImport.update({
+  id: '/api/merkebilder/$key',
+  path: '/api/merkebilder/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiVarslerAvmeldRoute = ApiVarslerAvmeldRouteImport.update({
   id: '/api/varsler/avmeld',
   path: '/api/varsler/avmeld',
@@ -406,6 +413,11 @@ const ApiMedlemmerPersonIdBildeRoute =
     path: '/api/medlemmer/$personId/bilde',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiMerkerBadgeIdBildeRoute = ApiMerkerBadgeIdBildeRouteImport.update({
+  id: '/api/merker/$badgeId/bilde',
+  path: '/api/merker/$badgeId/bilde',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSelskaperCompanyIdLogoRoute =
   ApiSelskaperCompanyIdLogoRouteImport.update({
     id: '/api/selskaper/$companyId/logo',
@@ -456,6 +468,7 @@ export interface FileRoutesByFullPath {
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
   '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
+  '/api/merkebilder/$key': typeof ApiMerkebilderKeyRoute
   '/api/varsler/avmeld': typeof ApiVarslerAvmeldRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin/': typeof KontoAdminIndexRoute
@@ -474,6 +487,7 @@ export interface FileRoutesByFullPath {
   '/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
   '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/merker/$badgeId/bilde': typeof ApiMerkerBadgeIdBildeRoute
   '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
   '/arrangementer/$typeSlug/': typeof KontoArrangementerTypeSlugIndexRoute
   '/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
@@ -521,6 +535,7 @@ export interface FileRoutesByTo {
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
   '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
+  '/api/merkebilder/$key': typeof ApiMerkebilderKeyRoute
   '/api/varsler/avmeld': typeof ApiVarslerAvmeldRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/admin': typeof KontoAdminIndexRoute
@@ -539,6 +554,7 @@ export interface FileRoutesByTo {
   '/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
   '/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/merker/$badgeId/bilde': typeof ApiMerkerBadgeIdBildeRoute
   '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
   '/arrangementer/$typeSlug': typeof KontoArrangementerTypeSlugIndexRoute
   '/medlemmer/$personId': typeof KontoMedlemmerPersonIdIndexRoute
@@ -589,6 +605,7 @@ export interface FileRoutesById {
   '/api/logoer/$key': typeof ApiLogoerKeyRoute
   '/api/mcp-oauth/godkjenn': typeof ApiMcpOauthGodkjennRoute
   '/api/mcp-oauth/logg-inn': typeof ApiMcpOauthLoggInnRoute
+  '/api/merkebilder/$key': typeof ApiMerkebilderKeyRoute
   '/api/varsler/avmeld': typeof ApiVarslerAvmeldRoute
   '/api/vedlegg/$name': typeof ApiVedleggNameRoute
   '/_konto/admin/': typeof KontoAdminIndexRoute
@@ -607,6 +624,7 @@ export interface FileRoutesById {
   '/_konto/selskaper/$slug/foresla': typeof KontoSelskaperSlugForeslaRoute
   '/_konto/selskaper/$slug/rediger': typeof KontoSelskaperSlugRedigerRoute
   '/api/medlemmer/$personId/bilde': typeof ApiMedlemmerPersonIdBildeRoute
+  '/api/merker/$badgeId/bilde': typeof ApiMerkerBadgeIdBildeRoute
   '/api/selskaper/$companyId/logo': typeof ApiSelskaperCompanyIdLogoRoute
   '/_konto/arrangementer/$typeSlug/': typeof KontoArrangementerTypeSlugIndexRoute
   '/_konto/medlemmer/$personId/': typeof KontoMedlemmerPersonIdIndexRoute
@@ -657,6 +675,7 @@ export interface FileRouteTypes {
     | '/api/logoer/$key'
     | '/api/mcp-oauth/godkjenn'
     | '/api/mcp-oauth/logg-inn'
+    | '/api/merkebilder/$key'
     | '/api/varsler/avmeld'
     | '/api/vedlegg/$name'
     | '/admin/'
@@ -675,6 +694,7 @@ export interface FileRouteTypes {
     | '/selskaper/$slug/foresla'
     | '/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
+    | '/api/merker/$badgeId/bilde'
     | '/api/selskaper/$companyId/logo'
     | '/arrangementer/$typeSlug/'
     | '/medlemmer/$personId/'
@@ -722,6 +742,7 @@ export interface FileRouteTypes {
     | '/api/logoer/$key'
     | '/api/mcp-oauth/godkjenn'
     | '/api/mcp-oauth/logg-inn'
+    | '/api/merkebilder/$key'
     | '/api/varsler/avmeld'
     | '/api/vedlegg/$name'
     | '/admin'
@@ -740,6 +761,7 @@ export interface FileRouteTypes {
     | '/selskaper/$slug/foresla'
     | '/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
+    | '/api/merker/$badgeId/bilde'
     | '/api/selskaper/$companyId/logo'
     | '/arrangementer/$typeSlug'
     | '/medlemmer/$personId'
@@ -789,6 +811,7 @@ export interface FileRouteTypes {
     | '/api/logoer/$key'
     | '/api/mcp-oauth/godkjenn'
     | '/api/mcp-oauth/logg-inn'
+    | '/api/merkebilder/$key'
     | '/api/varsler/avmeld'
     | '/api/vedlegg/$name'
     | '/_konto/admin/'
@@ -807,6 +830,7 @@ export interface FileRouteTypes {
     | '/_konto/selskaper/$slug/foresla'
     | '/_konto/selskaper/$slug/rediger'
     | '/api/medlemmer/$personId/bilde'
+    | '/api/merker/$badgeId/bilde'
     | '/api/selskaper/$companyId/logo'
     | '/_konto/arrangementer/$typeSlug/'
     | '/_konto/medlemmer/$personId/'
@@ -833,10 +857,12 @@ export interface RootRouteChildren {
   ApiLogoerKeyRoute: typeof ApiLogoerKeyRoute
   ApiMcpOauthGodkjennRoute: typeof ApiMcpOauthGodkjennRoute
   ApiMcpOauthLoggInnRoute: typeof ApiMcpOauthLoggInnRoute
+  ApiMerkebilderKeyRoute: typeof ApiMerkebilderKeyRoute
   ApiVarslerAvmeldRoute: typeof ApiVarslerAvmeldRoute
   ApiVedleggNameRoute: typeof ApiVedleggNameRoute
   ApiVedleggIndexRoute: typeof ApiVedleggIndexRoute
   ApiMedlemmerPersonIdBildeRoute: typeof ApiMedlemmerPersonIdBildeRoute
+  ApiMerkerBadgeIdBildeRoute: typeof ApiMerkerBadgeIdBildeRoute
   ApiSelskaperCompanyIdLogoRoute: typeof ApiSelskaperCompanyIdLogoRoute
 }
 
@@ -1192,6 +1218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMcpOauthLoggInnRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/merkebilder/$key': {
+      id: '/api/merkebilder/$key'
+      path: '/api/merkebilder/$key'
+      fullPath: '/api/merkebilder/$key'
+      preLoaderRoute: typeof ApiMerkebilderKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/varsler/avmeld': {
       id: '/api/varsler/avmeld'
       path: '/api/varsler/avmeld'
@@ -1288,6 +1321,13 @@ declare module '@tanstack/react-router' {
       path: '/api/medlemmer/$personId/bilde'
       fullPath: '/api/medlemmer/$personId/bilde'
       preLoaderRoute: typeof ApiMedlemmerPersonIdBildeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/merker/$badgeId/bilde': {
+      id: '/api/merker/$badgeId/bilde'
+      path: '/api/merker/$badgeId/bilde'
+      fullPath: '/api/merker/$badgeId/bilde'
+      preLoaderRoute: typeof ApiMerkerBadgeIdBildeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/selskaper/$companyId/logo': {
@@ -1422,10 +1462,12 @@ const rootRouteChildren: RootRouteChildren = {
   ApiLogoerKeyRoute: ApiLogoerKeyRoute,
   ApiMcpOauthGodkjennRoute: ApiMcpOauthGodkjennRoute,
   ApiMcpOauthLoggInnRoute: ApiMcpOauthLoggInnRoute,
+  ApiMerkebilderKeyRoute: ApiMerkebilderKeyRoute,
   ApiVarslerAvmeldRoute: ApiVarslerAvmeldRoute,
   ApiVedleggNameRoute: ApiVedleggNameRoute,
   ApiVedleggIndexRoute: ApiVedleggIndexRoute,
   ApiMedlemmerPersonIdBildeRoute: ApiMedlemmerPersonIdBildeRoute,
+  ApiMerkerBadgeIdBildeRoute: ApiMerkerBadgeIdBildeRoute,
   ApiSelskaperCompanyIdLogoRoute: ApiSelskaperCompanyIdLogoRoute,
 }
 export const routeTree = rootRouteImport

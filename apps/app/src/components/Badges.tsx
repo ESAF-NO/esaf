@@ -1,6 +1,7 @@
 import type {
   BadgeColor,
   BadgeIcon as BadgeIconName,
+  BadgeImage,
   BadgeRarity,
   BadgeRarityTier,
   BadgeStep,
@@ -146,10 +147,20 @@ export const badgeColorClasses: Record<BadgeColor, { medal: string; soft: string
 }
 
 const medalSizes = {
-  xs: { box: 'size-5 [&_svg]:size-3', ring: 'p-[1.5px]', step: 'hidden' },
-  sm: { box: 'size-7 [&_svg]:size-3.5', ring: 'p-[2px]', step: 'hidden' },
-  md: { box: 'size-12 [&_svg]:size-6', ring: 'p-[3px]', step: 'text-[9px] px-1 -bottom-1' },
-  lg: { box: 'size-20 [&_svg]:size-10', ring: 'p-1', step: 'text-[11px] px-1.5 -bottom-1.5' },
+  xs: { box: 'size-5 [&_svg]:size-3', ring: 'p-[1.5px]', step: 'hidden', width: '20px' },
+  sm: { box: 'size-7 [&_svg]:size-3.5', ring: 'p-[2px]', step: 'hidden', width: '28px' },
+  md: {
+    box: 'size-12 [&_svg]:size-6',
+    ring: 'p-[3px]',
+    step: 'text-[9px] px-1 -bottom-1',
+    width: '48px',
+  },
+  lg: {
+    box: 'size-20 [&_svg]:size-10',
+    ring: 'p-1',
+    step: 'text-[11px] px-1.5 -bottom-1.5',
+    width: '80px',
+  },
 }
 
 /**
@@ -190,9 +201,9 @@ const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
 const colorOf = (color: string) => badgeColorClasses[color as BadgeColor] ?? badgeColorClasses.stone
 
 /**
- * Merket: ikonet i fargen sin, med en kant som viser hvor sjeldent det er, og
- * trinnet i serien (I, II, III). Uten `earned` er det grått, som et merke man
- * ikke har ennå.
+ * Merket: ikonet (eller merkets eget bilde) i fargen sin, med en kant som viser
+ * hvor sjeldent det er, og trinnet i serien (I, II, III). Uten `earned` er det
+ * grått, som et merke man ikke har ennå.
  */
 export function BadgeMedal({
   badge,
@@ -204,7 +215,7 @@ export function BadgeMedal({
   delay = 0,
   className,
 }: {
-  badge: { icon: string; color: string }
+  badge: { icon: string; color: string; image?: BadgeImage | null }
   earned?: boolean
   rarity?: BadgeRarityTier
   step?: BadgeStep | null
@@ -216,6 +227,9 @@ export function BadgeMedal({
 }) {
   const Icon = badgeIconComponents[badge.icon as BadgeIconName] ?? Award
   const s = medalSizes[size]
+  // Bildet som ikke lot seg laste, f.eks. ett som nettopp ble byttet. Da vises ikonet.
+  const [broken, setBroken] = useState<string | null>(null)
+  const image = badge.image && badge.image.small !== broken ? badge.image : null
   return (
     <span
       aria-hidden
@@ -237,7 +251,29 @@ export function BadgeMedal({
             : 'bg-stone-100 text-stone-400 outline-1 -outline-offset-4 outline-stone-300 outline-dashed',
         )}
       >
-        <Icon strokeWidth={2} className="relative" />
+        {image ? (
+          <img
+            // Størrelsene er de samme som BADGE_IMAGE_SIZES i @esaf/core.
+            src={image.small}
+            srcSet={`${image.small} 96w, ${image.large} 256w`}
+            sizes={s.width}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            onError={() => setBroken(image.small)}
+            // Feilet bildet før siden ble interaktiv, kommer det ingen error-hendelse.
+            ref={(img) => {
+              if (img?.complete && img.naturalWidth === 0) setBroken(image.small)
+            }}
+            className={cx(
+              'relative size-full object-cover select-none',
+              !earned && 'opacity-60 grayscale',
+            )}
+          />
+        ) : (
+          <Icon strokeWidth={2} className="relative" />
+        )}
         {earned && rarity === 'legendary' && (
           <span className="pointer-events-none absolute inset-y-[-50%] left-0 w-1/3 animate-shine bg-white/45 blur-[2px] motion-reduce:hidden" />
         )}

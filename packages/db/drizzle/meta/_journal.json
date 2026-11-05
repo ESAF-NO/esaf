@@ -274,6 +274,13 @@
       "when": 1793908402139,
       "tag": "0038_reaksjoner_med_alle_emoji",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793910292491,
+      "tag": "0039_merkebilder",
+      "breakpoints": true
     }
   ]
 }

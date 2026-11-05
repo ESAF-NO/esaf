@@ -198,6 +198,7 @@ describe.skipIf(!url)('varsler på e-post', () => {
     expect(prefs.email).toBe('ola.hansen@example.test')
     expect(Object.fromEntries(prefs.categories.map((c) => [c.id, c.frequency]))).toEqual({
       post_comments: 'instant',
+      comment_replies: 'instant',
       mentions: 'instant',
       thread_comments: 'daily',
       companies: 'instant',

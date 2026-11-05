@@ -50,12 +50,19 @@ const postEvent = (postId: string) => `post:${postId}`
 
 /**
  * En ny kommentar varsler forfatteren av innlegget, alle som har kommentert
- * innlegget før og alle som er nevnt. Omtale går foran kommentar på eget
- * innlegg, som går foran kommentar der man selv har kommentert.
+ * innlegget før og alle som er nevnt. Et svar varsler også dem det svares på
+ * (`repliedTo`). Rekkefølgen er omtale, svar, kommentar på eget innlegg og til
+ * sist kommentar der man selv har kommentert.
  */
 export async function notifyComment(
   tx: Tx,
-  input: { postId: string; commentId: string; actorPersonId: string; mentioned: string[] },
+  input: {
+    postId: string
+    commentId: string
+    actorPersonId: string
+    mentioned: string[]
+    repliedTo?: string[]
+  },
 ): Promise<void> {
   const [target] = await tx
     .select({ authorPersonId: post.authorPersonId })
@@ -74,6 +81,7 @@ export async function notifyComment(
   const types = new Map<string, NotificationType>()
   for (const { personId } of earlier) types.set(personId, 'comment_on_thread')
   if (target) types.set(target.authorPersonId, 'comment_on_post')
+  for (const personId of input.repliedTo ?? []) types.set(personId, 'comment_reply')
   for (const personId of input.mentioned) types.set(personId, 'mention')
   await deliver(
     tx,

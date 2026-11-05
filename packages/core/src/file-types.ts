@@ -7,7 +7,7 @@ import { sniffImageFormat, type ImageFormat } from './images.ts'
  * og typen nettleseren oppgir, brukes aldri til å bestemme hva fila er; filnavnet
  * får i stedet filendelsen som passer innholdet. Reglene:
  *
- * - Bilder: JPEG, PNG og WebP (behandles videre i `assets.ts`). HEIC fra iPhone
+ * - Bilder: JPEG, PNG, WebP og GIF (behandles videre i `assets.ts`). HEIC fra iPhone
  *   kan ikke leses av bildebiblioteket på serveren og avvises med en forklaring.
  * - Dokumenter: PDF; Word, Excel og PowerPoint i de nye formatene (.docx, .xlsx,
  *   .pptx), der zip-strukturen sjekkes og makroer avvises; og ren tekst (.txt,
@@ -41,7 +41,7 @@ export function documentTypeOf(contentType: string): DocumentType | null {
 
 export const unsupportedFile = () =>
   new DomainError(
-    'Filtypen støttes ikke. Last opp bilder (JPEG, PNG eller WebP) eller dokumenter (PDF, Word, Excel, PowerPoint, tekst eller CSV).',
+    'Filtypen støttes ikke. Last opp bilder (JPEG, PNG, WebP eller GIF) eller dokumenter (PDF, Word, Excel, PowerPoint, tekst eller CSV).',
   )
 
 const ascii = (bytes: Uint8Array, from: number, to: number) =>
@@ -269,18 +269,17 @@ export function sniffFile(bytes: Uint8Array, fileName: string): SniffedFile {
       )
     }
     if (brand === 'avif' || brand === 'avis') {
-      throw new DomainError('Bildet må være JPEG, PNG eller WebP.')
+      throw new DomainError('Bildet må være JPEG, PNG, WebP eller GIF.')
     }
     // Video og lyd (mp4, mov, m4a) er heller ikke tillatt.
     throw unsupportedFile()
   }
   if (
-    ascii(bytes, 0, 4) === 'GIF8' ||
     ascii(bytes, 0, 2) === 'BM' ||
     startsWith(bytes, [0x49, 0x49, 0x2a, 0x00]) ||
     startsWith(bytes, [0x4d, 0x4d, 0x00, 0x2a])
   ) {
-    throw new DomainError('Bildet må være JPEG, PNG eller WebP.')
+    throw new DomainError('Bildet må være JPEG, PNG, WebP eller GIF.')
   }
 
   if (ascii(bytes, 0, 5) === '%PDF-') return document('pdf')

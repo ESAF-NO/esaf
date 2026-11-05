@@ -257,7 +257,13 @@ export function MentionTextarea({
       </p>
       <p
         aria-live="polite"
-        className={cx('text-xs text-stone-500', mentioned.length > 0 && 'mt-1.5', noteClassName)}
+        className={cx(
+          'text-xs text-stone-500',
+          mentioned.length > 0 && 'mt-1.5',
+          // I en `Composer` kommer vedlegg eller verktøylinja rett under.
+          mentioned.length > 0 && bare && 'pb-3',
+          noteClassName,
+        )}
       >
         {mentioned.length > 0 && `Varsler ${names.format(mentioned.map((p) => p.name))}.`}
       </p>

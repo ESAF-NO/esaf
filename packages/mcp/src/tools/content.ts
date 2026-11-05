@@ -168,9 +168,11 @@ export function registerContentTools(server: McpServer, ctx: ToolContext) {
         pinned: p.pinned,
         comments: p.commentList.map((c) => ({
           commentId: c.id,
+          parentCommentId: c.parentId,
           body: c.body,
           createdAt: c.createdAt,
           author: { personId: c.author.personId, fullName: c.author.fullName },
+          reactions: c.reactions.map((r) => ({ kind: r.kind, count: r.count })),
         })),
       }
     },

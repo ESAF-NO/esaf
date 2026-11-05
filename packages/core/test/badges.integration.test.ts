@@ -154,7 +154,7 @@ describe.skipIf(!url)('merker', () => {
       ['createBadge', (v) => createBadge(db, v, badgeFields({ name: 'Annet' }))],
       ['updateBadge', (v) => updateBadge(db, v, id, { name: 'Nytt' })],
       ['setBadgeStatus', (v) => setBadgeStatus(db, v, id, 'published')],
-      ['deleteBadge', (v) => deleteBadge(db, v, id)],
+      ['deleteBadge', (v) => deleteBadge(db, storage, v, id)],
       ['previewBadgeRule', (v) => previewBadgeRule(db, v, { kind: 'manual' })],
       ['listBadgesForAdmin', (v) => listBadgesForAdmin(db, v)],
       ['awardBadge', (v) => awardBadge(db, v, id, { personIds: [ola!.personId!] })],
@@ -358,7 +358,7 @@ describe.skipIf(!url)('merker', () => {
     // Admins ser fortsatt hvem som hadde det.
     expect((await getBadgeForAdmin(db, admin, slug)).awards).toHaveLength(1)
 
-    await deleteBadge(db, admin, id)
+    await deleteBadge(db, storage, admin, id)
     expect(await db.select().from(schema.badgeAward)).toEqual([])
   })
 

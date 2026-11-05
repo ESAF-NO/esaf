@@ -14,7 +14,9 @@ import {
   listBadgesForAdmin,
   loadBadgeStats,
   previewBadgeRule,
+  removeBadgeImage,
   revokeBadge,
+  setBadgeImage,
   setBadgeStatus,
   syncBadges,
   updateBadge,
@@ -23,7 +25,8 @@ import {
 } from '@esaf/core'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import { defineTool, id, type ToolContext } from '../context.ts'
+import { defineTool, id, imageInput, links, readImage, type ToolContext } from '../context.ts'
+import { decodeBase64Image } from '../images.ts'
 
 // Merker (achievements). Reglene og valideringen står i @esaf/core (badges.ts);
 // her er formen og forklaringene for modellen.
@@ -170,7 +173,11 @@ const badgeFields = {
     .describe(
       'One Norwegian sentence on how to earn it, shown to members: "Vært på fem ESAF-helger."',
     ),
-  icon: z.enum(badgeIcons).describe('Lucide icon name (see badge_options.icons).'),
+  icon: z
+    .enum(badgeIcons)
+    .describe(
+      'Lucide icon name (see badge_options.icons). Shown unless the badge has its own image (set_badge_image).',
+    ),
   color: z
     .enum(badgeColors)
     .describe('brand = ESAF red. Use one colour per family (all ESAF-helgen tiers alike).'),
@@ -193,7 +200,7 @@ const badgeFields = {
     ),
 }
 
-function summary(b: AdminBadge, stats?: BadgeStats) {
+function summary(ctx: ToolContext, b: AdminBadge, stats?: BadgeStats) {
   return {
     badgeId: b.id,
     slug: b.slug,
@@ -201,6 +208,8 @@ function summary(b: AdminBadge, stats?: BadgeStats) {
     description: b.description,
     icon: b.icon,
     color: b.color,
+    // Eget bilde, som vises i stedet for ikonet. Adressen krever innlogging.
+    image: links.asset(ctx, b.image?.large),
     status: b.status,
     series: b.series,
     sortOrder: b.sortOrder,
@@ -216,7 +225,7 @@ function summary(b: AdminBadge, stats?: BadgeStats) {
 async function details(ctx: ToolContext, badgeIdOrSlug: string, limit = 200) {
   const b = await getBadgeForAdmin(ctx.db, ctx.viewer, badgeIdOrSlug)
   return {
-    ...summary(b),
+    ...summary(ctx, b),
     holderList: b.awards.slice(0, limit).map((a) => ({
       personId: a.personId,
       fullName: a.fullName,
@@ -242,7 +251,8 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     title: 'Badge options',
     description:
       'Everything needed to design badges: event types and recent events with ids (for rules), the allowed icons ' +
-      'and colours, the rule kinds with what they mean, profile fields and board roles. Call this first.',
+      'and colours, the rule kinds with what they mean, profile fields and board roles. Call this first. A badge ' +
+      'can also have its own image instead of an icon: see set_badge_image.',
     input: z.object({}),
     effect: 'read',
     run: async (_args, ctx) => {
@@ -291,7 +301,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
         listBadgesForAdmin(ctx.db, ctx.viewer),
         loadBadgeStats(ctx.db),
       ])
-      return badges.filter((b) => !status || b.status === status).map((b) => summary(b, stats))
+      return badges.filter((b) => !status || b.status === status).map((b) => summary(ctx, b, stats))
     },
   })
 
@@ -329,7 +339,8 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     title: 'Create badge',
     description:
       'Create a badge. It is a draft (invisible to members, not awarded) unless publish=true. Show the admin the ' +
-      'preview first, and publish when they agree: publishing awards it to everyone who qualifies, on their profiles.',
+      'preview first, and publish when they agree: publishing awards it to everyone who qualifies, on their profiles. ' +
+      'For a badge with its own image: create it as a draft, call set_badge_image, then publish with set_badge_status.',
     input: z.object({
       ...badgeFields,
       rule: badgeRuleInput,
@@ -408,7 +419,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
           { publish },
         )
         const b = await getBadgeForAdmin(ctx.db, ctx.viewer, id)
-        created.push(summary(b))
+        created.push(summary(ctx, b))
       }
       return created
     },
@@ -441,6 +452,38 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
   })
 
   defineTool(server, ctx, {
+    name: 'set_badge_image',
+    title: 'Set badge image',
+    description:
+      'Give a badge its own image, from a public image URL (JPEG, PNG or WebP; not SVG) or base64. It is shown instead ' +
+      'of the icon, right away on a published badge. The image is cropped to a square from the centre and shown in a ' +
+      'circle, so keep the subject in the middle. At least 96 × 96 pixels; 256 × 256 or more looks best. Transparent ' +
+      'parts show the badge colour. Each tier of a series needs its own call. Only use artwork ESAF may use.',
+    input: z.object({ badge: badgeRef, ...imageInput }),
+    effect: 'write',
+    run: async ({ badge, ...image }, ctx) => {
+      const badgeId = await resolveId(ctx, badge)
+      const file = await readImage(ctx, image, decodeBase64Image)
+      await setBadgeImage(ctx.db, ctx.storage, ctx.viewer, badgeId, file)
+      return details(ctx, badgeId, 25)
+    },
+  })
+
+  defineTool(server, ctx, {
+    name: 'remove_badge_image',
+    title: 'Remove badge image',
+    description: 'Remove the image from a badge, so it shows its icon again.',
+    input: z.object({ badge: badgeRef }),
+    effect: 'destructive',
+    idempotent: true,
+    run: async ({ badge }, ctx) => {
+      const badgeId = await resolveId(ctx, badge)
+      await removeBadgeImage(ctx.db, ctx.storage, ctx.viewer, badgeId)
+      return details(ctx, badgeId, 25)
+    },
+  })
+
+  defineTool(server, ctx, {
     name: 'set_badge_status',
     title: 'Publish or archive badge',
     description:
@@ -461,12 +504,12 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     name: 'delete_badge',
     title: 'Delete badge',
     description:
-      'Delete a badge for good, with everyone who has it. Prefer archiving. Confirm ' +
+      'Delete a badge for good, with its image and everyone who has it. Prefer archiving. Confirm ' +
       'with the admin first.',
     input: z.object({ badge: badgeRef }),
     effect: 'destructive',
     run: async ({ badge }, ctx) => {
-      await deleteBadge(ctx.db, ctx.viewer, await resolveId(ctx, badge))
+      await deleteBadge(ctx.db, ctx.storage, ctx.viewer, await resolveId(ctx, badge))
       return { deleted: true }
     },
   })

@@ -11,11 +11,13 @@ const {
   apiToken,
   auditEvent,
   cohort,
+  invitation,
   membership,
   oauthClient,
   passkey,
   person,
   personCohort,
+  personEmail,
   session,
   user,
 } = schema
@@ -35,6 +37,24 @@ const {
  *   MCP-nøklene til kontoen (se `api-tokens.ts`). Antallet står i loggen.
  */
 
+/**
+ * Hvordan personen kom inn, så admin kan se det i ettertid. `by` er navnet på
+ * den som godkjente eller inviterte, og null om det var en lokal operatør eller
+ * personen er slettet.
+ */
+export type AccountAdmission =
+  | { via: 'invitation'; by: string | null }
+  | {
+      via: 'request'
+      by: string | null
+      /**
+       * Adressen stod i kullisten før personen registrerte seg. Usant betyr at
+       * admin godkjente på annet grunnlag. Godkjenning flytter registrerings-
+       * adressen til profilen, så det er kilden som teller, ikke at den står der.
+       */
+      emailOnList: boolean
+    }
+
 export type AccountView = {
   personId: string
   fullName: string
@@ -52,11 +72,14 @@ export type AccountView = {
   claimedAt: Date | null
   /** Siste aktivitet i en innlogget økt. */
   lastSeenAt: Date | null
+  /** Null for dem som hverken ble godkjent eller invitert i appen. */
+  admission: AccountAdmission | null
 }
 
 /** Alle med konto som er eller har vært medlem. Ventende og avslåtte ligger under forespørsler. */
 export async function listAccounts(db: Db, viewer: Viewer): Promise<AccountView[]> {
   assertCan(viewer, 'members.manage')
+  const decider = alias(person, 'decider')
   const rows = await db
     .select({
       personId: person.id,
@@ -68,11 +91,16 @@ export async function listAccounts(db: Db, viewer: Viewer): Promise<AccountView[
       role: membership.role,
       status: membership.status,
       claimedAt: person.claimedAt,
+      requestStatus: accessRequest.status,
+      requestDecidedAt: accessRequest.decidedAt,
+      requestDecidedBy: decider.fullName,
+      emailOnList: sql<boolean>`exists (select 1 from ${personEmail} where ${personEmail.personId} = ${person.id} and ${personEmail.email} = lower(${user.email}) and ${personEmail.source} <> 'signup')`,
     })
     .from(person)
     .innerJoin(user, eq(user.id, person.userId))
     .innerJoin(membership, eq(membership.personId, person.id))
     .leftJoin(accessRequest, eq(accessRequest.userId, user.id))
+    .leftJoin(decider, eq(decider.id, accessRequest.decidedByPersonId))
     .where(
       and(
         inArray(membership.status, ['active', 'inactive']),
@@ -82,7 +110,7 @@ export async function listAccounts(db: Db, viewer: Viewer): Promise<AccountView[
     .orderBy(asc(person.fullName))
   if (!rows.length) return []
 
-  const [years, seen] = await Promise.all([
+  const [years, seen, invited] = await Promise.all([
     db
       .select({ personId: personCohort.personId, year: cohort.graduationYear })
       .from(personCohort)
@@ -103,14 +131,55 @@ export async function listAccounts(db: Db, viewer: Viewer): Promise<AccountView[
         ),
       )
       .groupBy(session.userId),
+    // Den første invitasjonen kontoen brukte: det var den som slapp personen inn.
+    db
+      .selectDistinctOn([invitation.usedByUserId], {
+        userId: invitation.usedByUserId,
+        at: invitation.usedAt,
+        by: person.fullName,
+      })
+      .from(invitation)
+      .leftJoin(person, eq(person.id, invitation.createdByPersonId))
+      .where(
+        and(
+          eq(invitation.kind, 'invite'),
+          inArray(
+            invitation.usedByUserId,
+            rows.map((r) => r.userId),
+          ),
+        ),
+      )
+      .orderBy(invitation.usedByUserId, asc(invitation.usedAt)),
   ])
-  return rows.map(({ userId, ...row }) => ({
-    ...row,
+  const invitedBy = new Map(invited.map((i) => [i.userId, i]))
+  /** Det som kom først, slapp personen inn; en senere invitasjon gir bare en ny rolle. */
+  function admissionOf(row: (typeof rows)[number]): AccountAdmission | null {
+    const invite = invitedBy.get(row.userId)
+    const approved = row.requestStatus === 'approved'
+    if (
+      invite &&
+      (!approved || !row.requestDecidedAt || (invite.at && invite.at <= row.requestDecidedAt))
+    ) {
+      return { via: 'invitation', by: invite.by }
+    }
+    if (!approved) return null
+    return { via: 'request', by: row.requestDecidedBy, emailOnList: row.emailOnList }
+  }
+  return rows.map((row) => ({
+    personId: row.personId,
+    fullName: row.fullName,
+    email: row.email,
+    twoFactorEnabled: row.twoFactorEnabled,
+    passkeys: row.passkeys,
+    role: row.role,
+    status: row.status,
+    claimedAt: row.claimedAt,
+    admission: admissionOf(row),
     cohortYears: years
       .filter((y) => y.personId === row.personId)
       .map((y) => y.year)
       .sort(),
-    lastSeenAt: seen.find((s) => s.userId === userId)?.at ?? null,
+    lastSeenAt: seen.find((s) => s.userId === row.userId)?.at ?? null,
   }))
 }
 

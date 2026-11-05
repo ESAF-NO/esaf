@@ -27,7 +27,6 @@ export type {
   MemberRole,
   MembershipStatus,
   NotificationPayload,
-  CommentReactionKind,
   NotificationEmailFrequency,
   NotificationType,
   ParticipationRole,

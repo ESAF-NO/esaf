@@ -17,7 +17,6 @@ import {
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { channelKeys } from '#/lib/channels.ts'
-import { reactionKinds } from '#/lib/comments.ts'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
 import { storage } from '#/server/photos.server.ts'
@@ -92,9 +91,9 @@ export const removeComment = createServerFn({ method: 'POST' })
   .handler(({ data }) => run((viewer) => deleteComment(db, viewer, data.commentId, storage)))
 
 export const reactToComment = createServerFn({ method: 'POST' })
-  .validator(z.object({ commentId: z.uuid(), kind: z.enum(reactionKinds) }))
+  .validator(z.object({ commentId: z.uuid(), emoji: z.string().max(32) }))
   .handler(({ data }) =>
-    run((viewer) => toggleCommentReaction(db, viewer, data.commentId, data.kind)),
+    run((viewer) => toggleCommentReaction(db, viewer, data.commentId, data.emoji)),
   )
 
 export const vote = createServerFn({ method: 'POST' })

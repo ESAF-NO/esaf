@@ -1,5 +1,14 @@
+import emojibase from 'emojibase-data/nb/data.json' with { type: 'json' }
 import { describe, expect, it } from 'vitest'
-import { commentThreads, reactionKinds, reactions, toggleReaction } from '../src/lib/comments.ts'
+import { isReactionEmoji, MAX_REACTIONS_PER_COMMENT } from '@esaf/core'
+import {
+  commentThreads,
+  maxReactions,
+  quickReactions,
+  quickReactionsFor,
+  toggleReaction,
+} from '../src/lib/comments.ts'
+import { supportedEmoji } from '../scripts/emoji-data.ts'
 
 const c = (id: string, parentId: string | null = null) => ({ id, parentId })
 
@@ -20,21 +29,57 @@ describe('commentThreads', () => {
 })
 
 describe('toggleReaction', () => {
-  const like = { kind: 'like' as const, count: 1, viewerReacted: false, people: ['Kari'] }
+  const like = { emoji: '👍', count: 1, viewerReacted: false, people: ['Kari'] }
 
   it('legger til, øker og tar bort', () => {
-    expect(toggleReaction([], 'heart', 'Ola')).toEqual([
-      { kind: 'heart', count: 1, viewerReacted: true, people: ['Ola'] },
+    expect(toggleReaction([], '❤️', 'Ola')).toEqual([
+      { emoji: '❤️', count: 1, viewerReacted: true, people: ['Ola'] },
     ])
-    const mine = toggleReaction([like], 'like', 'Ola')
-    expect(mine).toEqual([{ kind: 'like', count: 2, viewerReacted: true, people: ['Kari', 'Ola'] }])
-    expect(toggleReaction(mine, 'like', 'Ola')).toEqual([
-      { kind: 'like', count: 1, viewerReacted: false, people: ['Kari'] },
+    const mine = toggleReaction([like], '👍', 'Ola')
+    expect(mine).toEqual([{ emoji: '👍', count: 2, viewerReacted: true, people: ['Kari', 'Ola'] }])
+    expect(toggleReaction(mine, '👍', 'Ola')).toEqual([
+      { emoji: '👍', count: 1, viewerReacted: false, people: ['Kari'] },
     ])
-    expect(toggleReaction(toggleReaction([], 'like', 'Ola'), 'like', 'Ola')).toEqual([])
+    expect(toggleReaction(toggleReaction([], '👍', 'Ola'), '👍', 'Ola')).toEqual([])
   })
 })
 
-it('har et tegn for hver reaksjon', () => {
-  expect(reactions.map((r) => r.kind)).toEqual([...reactionKinds])
+describe('quickReactionsFor', () => {
+  const emoji = (favorites: string[]) => quickReactionsFor(favorites).map((r) => r.emoji)
+
+  it('gir standardene til den som ikke har reagert', () => {
+    expect(quickReactionsFor([])).toEqual(quickReactions)
+  })
+
+  it('setter det personen bruker mest først, og fyller med standardene', () => {
+    expect(emoji(['🦄', '🎉'])).toEqual(['🦄', '🎉', '👍', '❤️', '😂'])
+  })
+
+  it('har alltid like mange, og navn på standardene', () => {
+    expect(emoji(['🦄', '🐙', '🌮', '🚀', '🔥'])).toEqual(['🦄', '🐙', '🌮', '🚀', '🔥'])
+    expect(quickReactionsFor(['❤️'])[0]).toEqual({ emoji: '❤️', label: 'Hjerte' })
+    expect(quickReactionsFor(['🦄'])[0]).toEqual({ emoji: '🦄', label: '🦄' })
+  })
+})
+
+describe('emoji i reaksjoner', () => {
+  it('har snarveier serveren godtar, og samme tak som serveren', () => {
+    expect(quickReactions.every((r) => isReactionEmoji(r.emoji))).toBe(true)
+    expect(maxReactions).toBe(MAX_REACTIONS_PER_COMMENT)
+  })
+
+  it('tilbyr i velgeren bare emoji serveren godtar, med hudfarger', () => {
+    const emoji = supportedEmoji([
+      { emoji: '👋', group: 1, skins: [{ emoji: '👋🏽' }, { emoji: '👋x' }] },
+      { emoji: 'x', group: 1, skins: [{ emoji: '👍' }] },
+      { emoji: '🏻' },
+    ])
+    expect(emoji).toEqual([{ emoji: '👋', group: 1, skins: [{ emoji: '👋🏽' }] }, { emoji: '🏻' }])
+  })
+
+  it('beholder nesten alt i Emojibase', () => {
+    const all = emojibase.filter((e) => 'group' in e)
+    const kept = supportedEmoji(all)
+    expect(kept.length / all.length).toBeGreaterThan(0.95)
+  })
 })

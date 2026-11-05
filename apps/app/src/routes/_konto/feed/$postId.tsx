@@ -1,4 +1,4 @@
-import type { CommentView } from '@esaf/core'
+import type { CommentView, ReactionView } from '@esaf/core'
 import { createFileRoute, Link, useLocation, useRouter } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -31,6 +31,7 @@ import {
   fetchPost,
   pinPost,
   reactToComment,
+  reactToPost,
   removeComment,
   removePost,
   submitComment,
@@ -185,12 +186,19 @@ function PostPage() {
             </span>
           </a>
         )}
-        <div className="mt-6 flex items-center gap-3 border-t border-stone-100 pt-4">
+        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-stone-100 pt-4">
           <VoteButton postId={post.id} votes={post.votes} voted={post.viewerVoted} layout="row" />
           <span className="inline-flex items-center gap-1.5 text-sm text-stone-500">
             <MessageCircle className="size-4" aria-hidden />
             {plural(post.commentList.length, 'kommentar', 'kommentarer')}
           </span>
+          <div className="flex flex-wrap items-center gap-1">
+            <Reactions
+              reactions={post.reactions}
+              label="Reager på innlegget"
+              react={(emoji) => reactToPost({ data: { postId: post.id, emoji } })}
+            />
+          </div>
         </div>
       </Card>
 
@@ -370,15 +378,24 @@ function Thread({
   )
 }
 
-/** Reaksjonene på en kommentar, og knappen for å gi en ny. */
-function Reactions({ comment: c }: { comment: CommentView }) {
+/** Reaksjonene på et innlegg eller en kommentar, og knappen for å gi en ny. */
+function Reactions({
+  reactions,
+  label,
+  react,
+}: {
+  reactions: ReactionView[]
+  /** Hva knappen gjør, for skjermlesere. */
+  label: string
+  react: (emoji: string) => Promise<ReactionView[]>
+}) {
   const { viewer } = Route.useRouteContext()
-  const [list, setList] = useState(c.reactions)
+  const [list, setList] = useState(reactions)
   // Når siden hentes på nytt, er det serverens tall som gjelder.
-  const [seen, setSeen] = useState(c.reactions)
-  if (seen !== c.reactions) {
-    setSeen(c.reactions)
-    setList(c.reactions)
+  const [seen, setSeen] = useState(reactions)
+  if (seen !== reactions) {
+    setSeen(reactions)
+    setList(reactions)
   }
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -392,7 +409,7 @@ function Reactions({ comment: c }: { comment: CommentView }) {
     // Optimistisk: oppdater med en gang, rett opp med svaret fra serveren.
     setList(toggleReaction(list, emoji, viewer.fullName ?? ''))
     try {
-      setList(await reactToComment({ data: { commentId: c.id, emoji } }))
+      setList(await react(emoji))
     } catch {
       setList(before)
     } finally {
@@ -427,7 +444,7 @@ function Reactions({ comment: c }: { comment: CommentView }) {
             type="button"
             onClick={() => setPicking((p) => !p)}
             aria-expanded={picking}
-            aria-label="Reager på kommentaren"
+            aria-label={label}
             title="Reager"
             className={commentAction}
           >
@@ -664,7 +681,11 @@ function CommentItem({
               className="mt-2"
             />
             <div className="mt-2 -ml-1 flex flex-wrap items-center gap-1">
-              <Reactions comment={c} />
+              <Reactions
+                reactions={c.reactions}
+                label="Reager på kommentaren"
+                react={(emoji) => reactToComment({ data: { commentId: c.id, emoji } })}
+              />
               <button type="button" onClick={() => onReply(c)} className={commentAction}>
                 Svar
               </button>

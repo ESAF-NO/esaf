@@ -1492,6 +1492,23 @@ export const commentReaction = pgTable(
   (t) => [primaryKey({ columns: [t.commentId, t.personId, t.emoji] }), index().on(t.personId)],
 )
 
+/** Som `commentReaction`, men på selve innlegget. Stemmen er noe annet og står for seg. */
+export const postReaction = pgTable(
+  'post_reaction',
+  {
+    postId: uuid()
+      .notNull()
+      .references(() => post.id, { onDelete: 'cascade' }),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    /** Én emoji, slik `isReactionEmoji` i @esaf/core krever det. */
+    emoji: text().notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.postId, t.personId, t.emoji] }), index().on(t.personId)],
+)
+
 export const postVote = pgTable(
   'post_vote',
   {

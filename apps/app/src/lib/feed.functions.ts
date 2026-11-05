@@ -10,6 +10,7 @@ import {
   listPosts,
   setPostPinned,
   toggleCommentReaction,
+  togglePostReaction,
   toggleVote,
   updateComment,
   updatePost,
@@ -95,6 +96,10 @@ export const reactToComment = createServerFn({ method: 'POST' })
   .handler(({ data }) =>
     run((viewer) => toggleCommentReaction(db, viewer, data.commentId, data.emoji)),
   )
+
+export const reactToPost = createServerFn({ method: 'POST' })
+  .validator(z.object({ postId: z.uuid(), emoji: z.string().max(32) }))
+  .handler(({ data }) => run((viewer) => togglePostReaction(db, viewer, data.postId, data.emoji)))
 
 export const vote = createServerFn({ method: 'POST' })
   .validator(z.object({ postId: z.uuid() }))

@@ -46,6 +46,7 @@ const {
   personCohort,
   personEmail,
   post,
+  postReaction,
   postVote,
   quote,
   user,
@@ -648,6 +649,7 @@ export async function previewPeopleMerge(
     events,
     votes,
     reactions,
+    postReactions,
   ] = await inOrder([
     () =>
       db
@@ -748,6 +750,12 @@ export async function previewPeopleMerge(
         .from(commentReaction)
         .where(eq(commentReaction.personId, from))
         .orderBy(asc(commentReaction.commentId), asc(commentReaction.emoji)),
+    () =>
+      db
+        .select({ postId: postReaction.postId, emoji: postReaction.emoji })
+        .from(postReaction)
+        .where(eq(postReaction.personId, from))
+        .orderBy(asc(postReaction.postId), asc(postReaction.emoji)),
   ] as const)
   const companies = await db
     .select({ id: schema.company.id, name: schema.company.name })
@@ -844,6 +852,7 @@ export async function previewPeopleMerge(
         events,
         votes,
         reactions,
+        postReactions,
         companies,
       }),
     )
@@ -866,7 +875,7 @@ export async function previewPeopleMerge(
       { label: 'Kommentarer', count: comments.length },
       { label: 'Dokumenter og filer', count: assets.length },
       { label: 'Stemmer', count: votes.length },
-      { label: 'Reaksjoner', count: reactions.length },
+      { label: 'Reaksjoner', count: reactions.length + postReactions.length },
       { label: 'Verv som kullrepresentant', count: reps.filter((r) => r.personId === from).length },
       { label: 'Styreverv', count: board.filter((r) => r.personId === from).length },
       { label: 'Arrangementsdeltakelser', count: events.filter((r) => r.personId === from).length },
@@ -1037,6 +1046,10 @@ export async function mergePeople(
       sql`insert into ${commentReaction} (comment_id, person_id, emoji, created_at) select comment_id, ${into}, emoji, created_at from ${commentReaction} where person_id = ${from} on conflict do nothing`,
     )
     await tx.delete(commentReaction).where(eq(commentReaction.personId, from))
+    await tx.execute(
+      sql`insert into ${postReaction} (post_id, person_id, emoji, created_at) select post_id, ${into}, emoji, created_at from ${postReaction} where person_id = ${from} on conflict do nothing`,
+    )
+    await tx.delete(postReaction).where(eq(postReaction.personId, from))
     await tx
       .delete(notification)
       .where(

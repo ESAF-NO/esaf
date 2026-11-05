@@ -1,4 +1,4 @@
-import type { AssetView, GifResult } from '@esaf/core'
+import type { AssetView } from '@esaf/core'
 import { useRouter } from '@tanstack/react-router'
 import {
   ChevronLeft,
@@ -36,7 +36,6 @@ import {
   type UploadTarget,
 } from '#/lib/assets.ts'
 import { deleteAsset } from '#/lib/assets.functions.ts'
-import { importGifAttachment } from '#/lib/gifs.functions.ts'
 import { Button, Card, cx, ErrorText } from './ui.tsx'
 
 const errorText = (err: unknown, fallback: string) =>
@@ -108,21 +107,6 @@ function useUploadQueue(
     }
   }
 
-  /** En fil serveren henter selv, som en GIF fra søket. Står i køen som en opplasting. */
-  function addRemote(name: string, preview: string, load: () => Promise<AssetView>) {
-    setError(null)
-    const key = crypto.randomUUID()
-    setPending((list) => [...list, { key, name, progress: 1, preview, error: null }])
-    queue.current = queue.current.then(async () => {
-      try {
-        onUploaded(await load())
-        setPending((list) => list.filter((p) => p.key !== key))
-      } catch (err) {
-        update(key, { error: errorText(err, 'Kunne ikke hente GIF-en.') })
-      }
-    })
-  }
-
   function dismiss(key: string) {
     setPending((list) => {
       const gone = list.find((p) => p.key === key)
@@ -132,7 +116,7 @@ function useUploadQueue(
   }
 
   const busy = pending.some((p) => !p.error)
-  return { pending, add, addRemote, dismiss, busy, error, setError, waiting: queue }
+  return { pending, add, dismiss, busy, error, setError, waiting: queue }
 }
 
 /** Dra og slipp filer, og lim inn bilder (skjermbilder), på et område. */
@@ -191,19 +175,13 @@ export function useAttachments(
     }
   }
 
-  function addGif(gif: GifResult) {
-    uploads.addRemote(gif.title, gif.preview.url, () =>
-      importGifAttachment({ data: { gifId: gif.id, til: target.til } }),
-    )
-  }
-
   /** Etter lagring: det som er lastet opp, hører nå til innlegget. */
   function reset(next: AssetView[] = []) {
     fresh.current.clear()
     setItems(next)
   }
 
-  return { ...uploads, items, ids: items.map((a) => a.id), remove, reset, addGif, drop }
+  return { ...uploads, items, ids: items.map((a) => a.id), remove, reset, drop }
 }
 
 export type Attachments = ReturnType<typeof useAttachments>
@@ -250,12 +228,7 @@ function PendingList({
           )}
         >
           {p.preview ? (
-            <img
-              src={p.preview}
-              alt=""
-              referrerPolicy="no-referrer"
-              className="size-10 shrink-0 rounded-lg object-cover"
-            />
+            <img src={p.preview} alt="" className="size-10 shrink-0 rounded-lg object-cover" />
           ) : (
             <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-500">
               {p.error ? (

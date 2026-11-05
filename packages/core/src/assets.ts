@@ -382,8 +382,6 @@ export async function uploadAsset(
   target: AssetTarget,
   file: Uint8Array,
   fileName: string,
-  /** GIF-er fra søket, så de kan finnes igjen (`gifs.ts`). */
-  gif?: { id: string; title: string },
 ): Promise<AssetView> {
   // Før den tunge jobben, så manglende tilgang eller en full kvote ikke koster en bildebehandling.
   await assertCanUpload(db, viewer, target)
@@ -456,8 +454,6 @@ export async function uploadAsset(
         .insert(asset)
         .values({
           ...values,
-          gifId: gif?.id ?? null,
-          gifTitle: gif?.title ?? null,
           fileKey,
           ownerPersonId: viewer.personId,
           purpose: target.purpose,
@@ -588,22 +584,6 @@ export async function deleteAssetsOf(
 // Sletting og opprydding
 // ---------------------------------------------------------------------------
 
-/**
- * En moderator har fjernet disse filene. Er noen av dem GIF-er fra søket, skal de
- * ikke kunne velges fra de lagrede GIF-ene igjen, heller ikke fra andres kopier.
- */
-export async function forgetGifs(tx: Tx, assetIds: string[]) {
-  if (!assetIds.length) return
-  const rows = await tx
-    .select({ gifId: asset.gifId })
-    .from(asset)
-    .where(and(inArray(asset.id, assetIds), isNotNull(asset.gifId)))
-  const ids = rows.flatMap((r) => r.gifId ?? [])
-  if (ids.length) {
-    await tx.update(asset).set({ gifId: null, gifTitle: null }).where(inArray(asset.gifId, ids))
-  }
-}
-
 export type PurgeTarget = { id: string; storageKeys: Record<string, string> }
 
 /**
@@ -685,7 +665,6 @@ export async function removeAsset(
     }
     await tx.update(asset).set({ deletedAt: new Date() }).where(eq(asset.id, row.id))
     if (!own) {
-      await forgetGifs(tx, [row.id])
       await tx.insert(auditEvent).values({
         actorPersonId: viewer.personId,
         action: 'content.remove_attachment',

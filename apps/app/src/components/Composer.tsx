@@ -1,4 +1,3 @@
-import { useRouteContext } from '@tanstack/react-router'
 import {
   AtSign,
   Bold,
@@ -13,7 +12,6 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import {
-  useCallback,
   useLayoutEffect,
   useRef,
   useState,
@@ -24,7 +22,6 @@ import {
 } from 'react'
 import { ATTACHMENT_ACCEPT, MAX_ATTACHMENTS } from '#/lib/assets.ts'
 import { AttachmentEditor, type Attachments } from './Attachments.tsx'
-import { GifPicker } from './GifPicker.tsx'
 import { Markdown } from './Markdown.tsx'
 import { MentionTextarea } from './MentionTextarea.tsx'
 import { cx } from './ui.tsx'
@@ -46,7 +43,7 @@ export function useModifierLabel() {
  * så ingen trenger å kunne Markdown; teksten lagres fortsatt som Markdown.
  * @ nevner noen (se `MentionTextarea`), ⌘ + Enter sender, og feltet vokser med
  * teksten. Filer kan slippes og bilder limes inn i skjemaet rundt
- * (`attachments.drop.props`), og GIF-er kan søkes opp når søket er slått på.
+ * (`attachments.drop.props`).
  *
  * Med `compact` er feltet én linje til noen begynner å skrive, som
  * kommentarfeltet under et innlegg.
@@ -98,13 +95,10 @@ export function Composer({
   const files = useRef<HTMLInputElement>(null)
   const [focused, setFocused] = useState(autoFocus)
   const [preview, setPreview] = useState(false)
-  const [picking, setPicking] = useState(false)
-  const closePicker = useCallback(() => setPicking(false), [])
-  const { viewer } = useRouteContext({ from: '__root__' })
   const field = () => document.getElementById(id) as HTMLTextAreaElement | null
   const hasContent =
     value.trim() !== '' || attachments.items.length > 0 || attachments.pending.length > 0
-  const open = !compact || focused || hasContent || preview || picking
+  const open = !compact || focused || hasContent || preview
   const full = attachments.items.length >= MAX_ATTACHMENTS
 
   // Feltet vokser med teksten, opp til en grense, og ruller etter det.
@@ -273,7 +267,7 @@ export function Composer({
       onFocus={() => setFocused(true)}
       onBlur={onBlur}
       className={cx(
-        'relative rounded-2xl bg-white shadow-card ring-1 transition',
+        'rounded-2xl bg-white shadow-card ring-1 transition',
         dragging
           ? 'ring-2 ring-brand-400'
           : focused
@@ -369,23 +363,6 @@ export function Composer({
               >
                 <Paperclip className="size-4" aria-hidden />
               </button>
-              {viewer.gifSearch && (
-                <button
-                  type="button"
-                  onClick={() => setPicking((p) => !p)}
-                  disabled={full}
-                  aria-expanded={picking}
-                  className={cx(
-                    toolButton,
-                    'text-[11px] font-bold',
-                    picking && 'bg-stone-100 text-stone-900',
-                  )}
-                  aria-label="Legg ved en GIF"
-                  title={full ? `Maks ${MAX_ATTACHMENTS} vedlegg` : 'Legg ved en GIF'}
-                >
-                  GIF
-                </button>
-              )}
               <input
                 ref={files}
                 type="file"
@@ -438,16 +415,6 @@ export function Composer({
             {actions}
           </div>
         </div>
-      )}
-      {picking && (
-        <GifPicker
-          onClose={closePicker}
-          onPick={(gif) => {
-            attachments.addGif(gif)
-            closePicker()
-            field()?.focus()
-          }}
-        />
       )}
     </div>
   )

@@ -14,14 +14,17 @@ import {
   passwordLinkEmail,
   passwordResetEmail,
   verificationEmail,
+  accessRequestEmail,
   welcomeEmail,
   type EmailContent,
 } from './email-templates.ts'
 import { DomainError } from './errors.ts'
 import { INVITATION_TTL_DAYS, PASSWORD_REQUEST_TTL_MINUTES } from './invitations.ts'
 import {
+  ACCESS_REQUEST_COOLDOWN_HOURS,
   INSTANT_DELAY_MS,
   DIGEST_HOUR,
+  allNotificationCategories,
   notificationCategories,
   notificationEmailFrequencies,
 } from './notification-email.ts'
@@ -57,6 +60,7 @@ export const emailKinds = [
   'welcome',
   'notification',
   'digest',
+  'access_request',
   'test',
 ] as const satisfies readonly EmailKind[]
 
@@ -68,6 +72,7 @@ export const emailKindNames: Record<EmailKind, string> = {
   welcome: 'Du er med i ESAF',
   notification: 'Varsel',
   digest: 'Oppsummering av varsler',
+  access_request: 'Forespørsel om tilgang',
   test: 'Test fra admin',
 }
 
@@ -343,6 +348,23 @@ export function emailCatalog(
       unsubscribe: settings,
       sample: notification(true, sampleItems),
     },
+    {
+      kind: 'access_request',
+      name: emailKindNames.access_request,
+      trigger: 'Noen har bekreftet e-posten sin og bedt om tilgang.',
+      recipient:
+        'Aktive admins og hovedadmins med bekreftet e-postadresse, til adressen de logger inn med.',
+      timing: `${INSTANT_DELAY_MS / 60_000} minutter etter forespørselen, så flere samles. Ikke om den alt er behandlet. Høyst én e-post hver ${ACCESS_REQUEST_COOLDOWN_HOURS}. time, uansett hvor mange som kommer.`,
+      unsubscribe: settings,
+      sample: accessRequestEmail({
+        name,
+        waiting: 2,
+        url: url('/admin'),
+        settingsUrl: url('/konto#varsler'),
+        unsubscribeUrl: url('/avmeld?t=eksempel'),
+        cooldownHours: ACCESS_REQUEST_COOLDOWN_HOURS,
+      }),
+    },
   ]
 }
 
@@ -465,7 +487,9 @@ export async function emailOverview(
     return { day: key, sent: found?.sent ?? 0, failed: found?.failed ?? 0 }
   })
 
-  const preferences = notificationCategories.map((c) => {
+  // Forespørslene gjelder bare adminene, så tallene for alle medlemmer sier ingenting der.
+  const memberCategories = allNotificationCategories.filter((c) => !c.reviewersOnly)
+  const preferences = memberCategories.map((c) => {
     const counts = Object.fromEntries(notificationEmailFrequencies.map((f) => [f, 0])) as Record<
       NotificationEmailFrequency,
       number

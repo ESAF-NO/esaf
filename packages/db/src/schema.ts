@@ -1023,6 +1023,8 @@ export const accessRequest = pgTable(
     status: accessRequestStatus().notNull().default('open'),
     decidedAt: timestamp({ withTimezone: true }),
     decidedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
+    /** Når adminene fikk e-post om forespørselen. Null betyr at de ikke har fått det ennå. */
+    adminAlertedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
   (t) => [index().on(t.status, t.createdAt)],
@@ -1610,6 +1612,7 @@ export const emailKind = pgEnum('email_kind', [
   'welcome',
   'notification',
   'digest',
+  'access_request',
   'test',
 ])
 

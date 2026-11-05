@@ -875,22 +875,24 @@ function EmailNotifications({ preferences }: { preferences: EmailPreferenceData 
                 aria-label={c.label}
                 className="inline-flex rounded-lg bg-stone-100 p-0.5"
               >
-                {frequencyOptions.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={current === o.value}
-                    onClick={() => current !== o.value && choose(c.id, o.value)}
-                    className={
-                      current === o.value
-                        ? 'rounded-md bg-white px-2.5 py-1 text-xs font-medium text-stone-950 shadow-sm'
-                        : 'rounded-md px-2.5 py-1 text-xs font-medium text-stone-500 hover:text-stone-900'
-                    }
-                  >
-                    {o.label}
-                  </button>
-                ))}
+                {frequencyOptions
+                  .filter((o) => !c.reviewersOnly || o.value === 'instant' || o.value === 'off')
+                  .map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={current === o.value}
+                      onClick={() => current !== o.value && choose(c.id, o.value)}
+                      className={
+                        current === o.value
+                          ? 'rounded-md bg-white px-2.5 py-1 text-xs font-medium text-stone-950 shadow-sm'
+                          : 'rounded-md px-2.5 py-1 text-xs font-medium text-stone-500 hover:text-stone-900'
+                      }
+                    >
+                      {o.label}
+                    </button>
+                  ))}
               </div>
             </li>
           )

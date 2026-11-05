@@ -333,6 +333,7 @@ const emailKindNames: Record<string, string> = {
   welcome: 'Du er med i ESAF',
   notification: 'Varsel',
   digest: 'Oppsummering av varsler',
+  access_request: 'Forespørsel om tilgang',
 }
 const emailKindName = (kind: unknown) =>
   (typeof kind === 'string' && emailKindNames[kind]) || 'ukjent'

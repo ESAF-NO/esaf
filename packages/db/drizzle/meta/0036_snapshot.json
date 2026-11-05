@@ -1,5 +1,5 @@
 {
-  "id": "70942b2d-cab9-45f9-a3f5-6fc9d75d69eb",
+  "id": "a7ed4668-c09f-46be-b41a-df4c4b639263",
   "prevId": "0d17ad9f-b45f-4741-bc77-fd1904bc2cda",
   "version": "7",
   "dialect": "postgresql",
@@ -68,6 +68,12 @@
         "decided_by_person_id": {
           "name": "decided_by_person_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admin_alerted_at": {
+          "name": "admin_alerted_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -1533,12 +1539,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "parent_comment_id": {
-          "name": "parent_comment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "body": {
           "name": "body",
           "type": "text",
@@ -1593,21 +1593,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "comment_parent_comment_id_index": {
-          "name": "comment_parent_comment_id_index",
-          "columns": [
-            {
-              "expression": "parent_comment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -1636,113 +1621,9 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "comment_parent_comment_id_comment_id_fk": {
-          "name": "comment_parent_comment_id_comment_id_fk",
-          "tableFrom": "comment",
-          "tableTo": "comment",
-          "columnsFrom": [
-            "parent_comment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.comment_reaction": {
-      "name": "comment_reaction",
-      "schema": "",
-      "columns": {
-        "comment_id": {
-          "name": "comment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "person_id": {
-          "name": "person_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "comment_reaction_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "comment_reaction_person_id_index": {
-          "name": "comment_reaction_person_id_index",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "comment_reaction_comment_id_comment_id_fk": {
-          "name": "comment_reaction_comment_id_comment_id_fk",
-          "tableFrom": "comment_reaction",
-          "tableTo": "comment",
-          "columnsFrom": [
-            "comment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "comment_reaction_person_id_person_id_fk": {
-          "name": "comment_reaction_person_id_person_id_fk",
-          "tableFrom": "comment_reaction",
-          "tableTo": "person",
-          "columnsFrom": [
-            "person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "comment_reaction_comment_id_person_id_kind_pk": {
-          "name": "comment_reaction_comment_id_person_id_kind_pk",
-          "columns": [
-            "comment_id",
-            "person_id",
-            "kind"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -6622,17 +6503,6 @@
         "mentor"
       ]
     },
-    "public.comment_reaction_kind": {
-      "name": "comment_reaction_kind",
-      "schema": "public",
-      "values": [
-        "like",
-        "heart",
-        "laugh",
-        "party",
-        "eyes"
-      ]
-    },
     "public.company_article_source": {
       "name": "company_article_source",
       "schema": "public",
@@ -6715,6 +6585,7 @@
         "welcome",
         "notification",
         "digest",
+        "access_request",
         "test"
       ]
     },
@@ -6811,7 +6682,6 @@
       "values": [
         "comment_on_post",
         "comment_on_thread",
-        "comment_reply",
         "mention",
         "welcome",
         "cohort_joined",

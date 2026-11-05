@@ -257,8 +257,15 @@
     {
       "idx": 36,
       "version": "7",
-      "when": 1793887944546,
-      "tag": "0036_kommentarsvar",
+      "when": 1793891483149,
+      "tag": "0036_varsle_admin_om_foresporsler",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793892779349,
+      "tag": "0037_kommentarsvar",
       "breakpoints": true
     }
   ]

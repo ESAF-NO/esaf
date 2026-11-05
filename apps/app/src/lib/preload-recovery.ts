@@ -19,6 +19,16 @@ export function recoverPreloadError(
   return true
 }
 
+/** The wording differs per browser: Safari, Chromium and Firefox, in that order. */
+export function isChunkLoadError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Importing a module script failed|Failed to fetch dynamically imported module|error loading dynamically imported module/i.test(
+      error.message,
+    )
+  )
+}
+
 export function installPreloadRecovery() {
   window.addEventListener('vite:preloadError', (event) => {
     if (!navigator.onLine) return

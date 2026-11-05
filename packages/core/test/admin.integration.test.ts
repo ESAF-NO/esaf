@@ -6,15 +6,18 @@ import {
   AccessDeniedError,
   changeRole,
   createPost,
+  decideAccessRequest,
   decideMembership,
   deletePost,
   DomainError,
   grantRoleAsOperator,
+  listAccessRequests,
   listAccounts,
   listAuditEvents,
   loadViewer,
   removePasskeys,
   setMemberAccess,
+  submitAccessRequest,
   type Viewer,
 } from '../src/index.ts'
 
@@ -259,6 +262,86 @@ describe.skipIf(!url)('roller og medlemsadministrasjon', () => {
     // Ventende kontoer hører hjemme under forespørsler, ikke i medlemslisten.
     await loadViewer(db, await account('Ventende'))
     expect((await listAccounts(db, admin)).map((a) => a.fullName)).not.toContain('Ventende')
+  })
+
+  describe('hvordan personen kom inn', () => {
+    async function profile(fullName: string, email: string) {
+      const [p] = await db.insert(schema.person).values({ fullName }).returning()
+      await db.insert(schema.personEmail).values({ email, personId: p!.id, source: 'import' })
+      return p!.id
+    }
+
+    /** Registrerer seg og ber om tilgang; admin godkjenner, eventuelt med en annen profil. */
+    async function approved(name: string, chosen: string | null, adminChoice?: string) {
+      const viewer = await loadViewer(db, await account(name))
+      await submitAccessRequest(db, viewer, {
+        profilePersonId: chosen,
+        fullName: name,
+        graduationYear: 2017,
+        linkedinUrl: '',
+        note: '',
+      })
+      const [request] = await db
+        .select()
+        .from(schema.accessRequest)
+        .where(eq(schema.accessRequest.userId, ids[name]!))
+      await decideAccessRequest(db, admin, {
+        requestId: request!.id,
+        decision: 'approve',
+        ...(adminChoice ? { profilePersonId: adminChoice } : {}),
+      })
+    }
+
+    const admissionOf = async (name: string) =>
+      (await listAccounts(db, admin)).find((a) => a.email === `${name}@example.test`)?.admission
+
+    it('adressen stod i kullisten', async () => {
+      await approved('Liste', await profile('Liste Person', 'liste@example.test'))
+      expect(await admissionOf('liste')).toEqual({
+        via: 'request',
+        by: 'Admin',
+        emailOnList: true,
+      })
+      expect((await listAccessRequests(db, admin, 'approved'))[0]!.emailOnProfile).toBe(true)
+    })
+
+    it('godkjent uten profil gir ikke treff i kullisten', async () => {
+      await approved('Ukjent', null)
+      expect(await admissionOf('ukjent')).toMatchObject({ emailOnList: false })
+    })
+
+    it('admin kobler til en profil med en annen adresse: ikke treff, selv om adressen nå står der', async () => {
+      await approved('Annen', null, await profile('Annen Person', 'gammel@example.test'))
+      expect(await admissionOf('annen')).toEqual({
+        via: 'request',
+        by: 'Admin',
+        emailOnList: false,
+      })
+      expect((await listAccessRequests(db, admin, 'approved'))[0]!.emailOnProfile).toBe(false)
+    })
+
+    it('invitasjoner viser hvem som inviterte, og bare den som slapp personen inn', async () => {
+      const invite = (userId: string, usedAt: Date) =>
+        db.insert(schema.invitation).values({
+          email: `${randomUUID()}@example.test`,
+          tokenHash: randomUUID(),
+          createdByPersonId: owner!.personId,
+          expiresAt: new Date(Date.now() + 1000),
+          usedAt,
+          usedByUserId: userId,
+        })
+      await invite(ids.Medlem!, new Date())
+      expect(await admissionOf('medlem')).toEqual({ via: 'invitation', by: 'Eier' })
+
+      // Allerede godkjent, så fikk personen en ny rolle gjennom en invitasjon.
+      await approved('Liste', await profile('Liste Person', 'liste@example.test'))
+      await invite(ids.Liste!, new Date(Date.now() + 60_000))
+      expect(await admissionOf('liste')).toMatchObject({ via: 'request', by: 'Admin' })
+    })
+
+    it('uten forespørsel og invitasjon står det ingenting', async () => {
+      expect(await admissionOf('moderator')).toBeNull()
+    })
   })
 
   it('moderatorer kan fjerne andres innlegg, og det logges', async () => {

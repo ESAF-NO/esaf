@@ -195,7 +195,8 @@ export function registerEmailTools(server: McpServer, ctx: ToolContext) {
     description:
       'Sends "Du er med i ESAF" now to the person behind an approved access request (list_access_requests ' +
       'with status approved shows welcomeEmail: when it was last sent, or null). Use for people approved ' +
-      'before the welcome e-mail existed, or when it failed.',
+      'before the welcome e-mail existed, or when it failed. Not while welcomePending is true: it is about ' +
+      'to go out by itself, and they would get two.',
     input: z.object({ requestId: id('Access request') }),
     effect: 'write',
     run: async ({ requestId }, ctx) =>

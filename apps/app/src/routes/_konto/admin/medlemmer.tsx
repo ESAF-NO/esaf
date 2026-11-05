@@ -1,4 +1,4 @@
-import type { AccountView } from '@esaf/core'
+import type { AccountAdmission, AccountView } from '@esaf/core'
 import type { MemberRole } from '@esaf/db'
 import {
   createFileRoute,
@@ -275,6 +275,21 @@ function Members() {
   )
 }
 
+/** Hvordan personen kom inn. Godkjent uten treff i kullisten er verdt en ekstra titt. */
+function Admission({ admission: a }: { admission: AccountAdmission }) {
+  const by = a.by ? ` av ${a.by}` : ''
+  if (a.via === 'invitation') return <p className="text-xs text-stone-500">Invitert{by}</p>
+  if (a.emailOnList) {
+    return <p className="text-xs text-stone-500">Godkjent{by} · e-post stod i kullisten</p>
+  }
+  return (
+    <p className="flex items-start gap-1 text-xs font-medium text-amber-700">
+      <ShieldAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+      Godkjent{by} · e-posten stod ikke i kullisten
+    </p>
+  )
+}
+
 function AccountRow({
   account: a,
   self,
@@ -320,6 +335,7 @@ function AccountRow({
             {cohorts && <span className="shrink-0 text-xs text-stone-500">{cohorts}</span>}
           </p>
           <p className="truncate text-xs text-stone-500">{a.email}</p>
+          {a.admission && <Admission admission={a.admission} />}
         </div>
       </div>
 

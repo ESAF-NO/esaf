@@ -267,6 +267,13 @@
       "when": 1793892779349,
       "tag": "0037_kommentarsvar",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793909261272,
+      "tag": "0038_merkebilder",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,7 @@ import { and, asc, desc, eq, ilike, inArray, isNull, lte, sql, type AnyColumn } 
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { assertCan, assertMember, type Viewer } from './access.ts'
+import { badgeImageUrls, deleteBadgeImageFiles, type BadgeImage } from './badge-images.ts'
 import {
   loadBadgeStats,
   playerStanding,
@@ -22,6 +23,7 @@ import { companySlug } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { normalizeRole, osloToday, type EventRole } from './events.ts'
 import { inOrder, type Tx } from './members.ts'
+import type { ObjectStorage } from './storage.ts'
 import { optionalText } from './validation.ts'
 
 const {
@@ -48,7 +50,8 @@ const {
  *
  * - Admins med `badges.manage` lager merker med navn, tekst, ikon, farge og en
  *   regel. Regelen er en av typene under (`badgeRule`), aldri fri tekst eller
- *   SQL, så den kan valideres, forhåndsvises og forklares.
+ *   SQL, så den kan valideres, forhåndsvises og forklares. Et merke kan også ha et
+ *   eget bilde, som vises i stedet for ikonet (`badge-images.ts`).
  * - Et merke er et utkast til det publiseres. Før det kan admins se hvem som
  *   ville fått det (`previewBadgeRule`). Publiserte merker deles ut og vises;
  *   arkiverte vises ikke, men hvem som hadde dem, blir stående.
@@ -938,7 +941,7 @@ export async function syncBadges(
 // For medlemmene
 // ---------------------------------------------------------------------------
 
-/** Et merke slik det vises: ikonet, fargen og navnet. */
+/** Et merke slik det vises: ikonet (eller bildet), fargen og navnet. */
 export type BadgeChip = {
   id: string
   slug: string
@@ -946,6 +949,8 @@ export type BadgeChip = {
   description: string
   icon: BadgeIcon
   color: BadgeColor
+  /** Vises i stedet for ikonet. Fargen synes bak gjennomsiktige deler. */
+  image: BadgeImage | null
 }
 
 const chipColumns = {
@@ -955,19 +960,25 @@ const chipColumns = {
   description: badge.description,
   icon: badge.icon,
   color: badge.color,
+  imageKey: badge.imageKey,
 }
 
 /** Ukjente ikoner og farger (fra en eldre versjon) vises som standard. */
-function chip(row: {
+function chip({
+  imageKey,
+  ...row
+}: {
   id: string
   slug: string
   name: string
   description: string
   icon: string
   color: string
+  imageKey: string | null
 }): BadgeChip {
   return {
     ...row,
+    image: badgeImageUrls(imageKey),
     icon: (badgeIcons as readonly string[]).includes(row.icon) ? (row.icon as BadgeIcon) : 'award',
     color: (badgeColors as readonly string[]).includes(row.color)
       ? (row.color as BadgeColor)
@@ -1084,15 +1095,24 @@ export async function loadProfileBadges(
   for (const r of sorted) if (r.series) top.set(r.series.toLocaleLowerCase('nb'), r.id)
   const badges = sorted
     .filter((r) => !r.series || top.get(r.series.toLocaleLowerCase('nb')) === r.id)
-    .map(({ achievedOn, citation, hidden, rule, id, slug, name, description, icon, color }) => ({
-      ...chip({ id, slug, name, description, icon, color }),
-      achievedOn,
-      citation,
-      hidden,
-      rarity: stats.rarity(id),
-      step: steps.get(id) ?? null,
-      ruleText: describeBadgeRule(rule, names),
-      holders: stats.holders.get(id) ?? 0,
+    .map((r) => ({
+      // Feltene plukkes ut: `chip` tar med alt den får, og regelen skal ikke til medlemmene.
+      ...chip({
+        id: r.id,
+        slug: r.slug,
+        name: r.name,
+        description: r.description,
+        icon: r.icon,
+        color: r.color,
+        imageKey: r.imageKey,
+      }),
+      achievedOn: r.achievedOn,
+      citation: r.citation,
+      hidden: r.hidden,
+      rarity: stats.rarity(r.id),
+      step: steps.get(r.id) ?? null,
+      ruleText: describeBadgeRule(r.rule, names),
+      holders: stats.holders.get(r.id) ?? 0,
     }))
   return { badges, level: playerStanding(stats, personId) }
 }
@@ -1371,9 +1391,9 @@ export async function listBadgesForAdmin(db: Db, viewer: Viewer): Promise<AdminB
     rows.map((r) => storedRule(r.rule)),
   )
   const names = await loadRuleNames(db, rules)
-  return rows.map((row, i) => ({
+  return rows.map(({ imageKey, ...row }, i) => ({
     ...row,
-    ...chip(row),
+    ...chip({ ...row, imageKey }),
     rule: rules[i]!,
     ruleText: describeBadgeRule(rules[i]!, names),
     manual: isManualRule(rules[i]!),
@@ -1671,10 +1691,15 @@ export async function setBadgeStatus(
   if (result) await syncBadges(db, { badgeIds: [badgeId] })
 }
 
-/** Sletter et merke for godt, med alle som har det. Arkivering beholder historikken. */
-export async function deleteBadge(db: Db, viewer: Viewer, badgeId: string): Promise<void> {
+/** Sletter et merke for godt, med alle som har det og bildet. Arkivering beholder historikken. */
+export async function deleteBadge(
+  db: Db,
+  storage: ObjectStorage,
+  viewer: Viewer,
+  badgeId: string,
+): Promise<void> {
   assertCan(viewer, 'badges.manage')
-  await db.transaction(async (tx) => {
+  const imageKey = await db.transaction(async (tx) => {
     await lockBadgeWork(tx)
     const current = await lockBadge(tx, badgeId)
     const holders = await awardCount(tx, badgeId)
@@ -1684,7 +1709,9 @@ export async function deleteBadge(db: Db, viewer: Viewer, badgeId: string): Prom
       action: 'badge.delete',
       details: { slug: current.slug, name: current.name, holders },
     })
+    return current.imageKey
   })
+  if (imageKey) await deleteBadgeImageFiles(storage, imageKey)
 }
 
 const awardInput = z.object({

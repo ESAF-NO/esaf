@@ -145,7 +145,7 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
     id: 'badges',
     title: 'Merker',
     description:
-      'Merker på profilene: lage og forhåndsvise regler, hele stiger (×1, ×3, ×5), publisere, og dele ut merker for hånd med begrunnelse.',
+      'Merker på profilene: lage og forhåndsvise regler, hele stiger (×1, ×3, ×5), egne bilder, publisere, og dele ut merker for hånd med begrunnelse.',
     tools: [
       'badge_options',
       'list_badges',
@@ -154,6 +154,8 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
       'create_badge',
       'create_badge_series',
       'update_badge',
+      'set_badge_image',
+      'remove_badge_image',
       'set_badge_status',
       'delete_badge',
       'award_badge',

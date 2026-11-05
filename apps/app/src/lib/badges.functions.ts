@@ -21,6 +21,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { withViewer as run } from '#/server/access.server.ts'
 import { db } from '#/server/db.server.ts'
+import { storage } from '#/server/photos.server.ts'
 
 // Merker. Egne merker og «Var du der?» er for alle medlemmer (merkene
 // vises på profilene); resten er Admin og krever badges.manage. Rettigheter og full
@@ -90,7 +91,7 @@ export const changeBadgeStatus = createServerFn({ method: 'POST' })
 
 export const removeBadge = createServerFn({ method: 'POST' })
   .validator(z.object({ badgeId: z.uuid() }))
-  .handler(({ data }) => run((viewer) => deleteBadge(db, viewer, data.badgeId)))
+  .handler(({ data }) => run((viewer) => deleteBadge(db, storage, viewer, data.badgeId)))
 
 export const giveBadge = createServerFn({ method: 'POST' })
   .validator(

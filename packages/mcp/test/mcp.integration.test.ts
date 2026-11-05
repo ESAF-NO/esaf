@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -681,6 +681,59 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       )
       expect(event.startDate).toBe('2024-01-01')
       expect(event.groups.flatMap((g) => g.people)).toMatchObject([{ role: 'organizer' }])
+      await client.close()
+    })
+
+    it('setter og fjerner et eget bilde på et merke, fra en adresse og base64', async () => {
+      const client = await connect(await tokenFor(admin))
+      const { badgeId, image: before } = await call<{ badgeId: string; image: string | null }>(
+        client,
+        'create_badge',
+        {
+          name: 'Bildemerke',
+          description: 'Har et eget bilde.',
+          icon: 'award',
+          color: 'brand',
+          rule: { kind: 'manual' },
+        },
+      )
+      expect(before).toBeNull()
+
+      const url = 'https://example.com/merke.png'
+      const { image } = await call<{ image: string }>(client, 'set_badge_image', {
+        badge: badgeId,
+        imageUrl: url,
+      })
+      expect(fetched).toContain(url)
+      expect(image).toMatch(/\/api\/merkebilder\/[\w-]{22}-256\.webp$/)
+      const stored = await readdir(join(dir, 'merkebilder'))
+      expect(stored).toHaveLength(2)
+
+      const replaced = await call<{ image: string; icon: string }>(client, 'set_badge_image', {
+        badge: 'bildemerke',
+        imageBase64: (await png()).toString('base64'),
+      })
+      expect(replaced.image).not.toBe(image)
+      expect(replaced.icon).toBe('award')
+      expect(await readdir(join(dir, 'merkebilder'))).not.toEqual(stored)
+      const [listed] = (
+        await call<{ badgeId: string; image: string }[]>(client, 'list_badges')
+      ).filter((b) => b.badgeId === badgeId)
+      expect(listed!.image).toBe(replaced.image)
+
+      expect(await callError(client, 'set_badge_image', { badge: badgeId })).toContain(
+        'Oppgi enten imageUrl eller imageBase64.',
+      )
+
+      const removed = await call<{ image: string | null }>(client, 'remove_badge_image', {
+        badge: badgeId,
+      })
+      expect(removed.image).toBeNull()
+      expect(await readdir(join(dir, 'merkebilder'))).toEqual([])
+
+      await call(client, 'set_badge_image', { badge: badgeId, imageUrl: url })
+      await call(client, 'delete_badge', { badge: badgeId })
+      expect(await readdir(join(dir, 'merkebilder'))).toEqual([])
       await client.close()
     })
 

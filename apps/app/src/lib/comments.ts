@@ -1,18 +1,25 @@
-import type { CommentReactionKind } from '@esaf/db'
-
-/** Reaksjonene på en kommentar, i rekkefølgen de vises. */
-export const reactions: { kind: CommentReactionKind; emoji: string; label: string }[] = [
-  { kind: 'like', emoji: '👍', label: 'Liker' },
-  { kind: 'heart', emoji: '❤️', label: 'Hjerte' },
-  { kind: 'laugh', emoji: '😂', label: 'Ler' },
-  { kind: 'party', emoji: '🎉', label: 'Feirer' },
-  { kind: 'eyes', emoji: '👀', label: 'Følger med' },
+/** Snarveiene for den som ikke har reagert ennå. Alle andre emoji ligger i velgeren. */
+export const quickReactions = [
+  { emoji: '👍', label: 'Liker' },
+  { emoji: '❤️', label: 'Hjerte' },
+  { emoji: '😂', label: 'Ler' },
+  { emoji: '🎉', label: 'Feirer' },
+  { emoji: '👀', label: 'Følger med' },
 ]
 
-export const reactionKinds = ['like', 'heart', 'laugh', 'party', 'eyes'] as const
+/** Snarveiene til en person: det de bruker mest, og standardene på de ledige plassene. */
+export function quickReactionsFor(favorites: string[]) {
+  const emoji = new Set([...favorites, ...quickReactions.map((r) => r.emoji)])
+  return [...emoji]
+    .slice(0, quickReactions.length)
+    .map((e) => quickReactions.find((r) => r.emoji === e) ?? { emoji: e, label: e })
+}
+
+/** Samme tak som `MAX_REACTIONS_PER_COMMENT` i @esaf/core, som ikke kan brukes i nettleseren. */
+export const maxReactions = 20
 
 type Reaction = {
-  kind: CommentReactionKind
+  emoji: string
   count: number
   viewerReacted: boolean
   people: string[]
@@ -21,11 +28,11 @@ type Reaction = {
 /** Reaksjonene etter at den innloggede har trykket, før serveren har svart. */
 export function toggleReaction<T extends Reaction>(
   list: T[],
-  kind: CommentReactionKind,
+  emoji: string,
   name: string,
 ): Reaction[] {
-  const current = list.find((r) => r.kind === kind)
-  if (!current) return [...list, { kind, count: 1, viewerReacted: true, people: [name] }]
+  const current = list.find((r) => r.emoji === emoji)
+  if (!current) return [...list, { emoji, count: 1, viewerReacted: true, people: [name] }]
   if (!current.viewerReacted) {
     return list.map((r) =>
       r === current

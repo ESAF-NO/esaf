@@ -1,5 +1,5 @@
 {
-  "id": "561cab71-d219-426c-a2ed-31f095b3c53b",
+  "id": "a8f3e9b5-8689-4242-bda0-3bc3ba5c8556",
   "prevId": "54cfb21d-8177-4259-8dd3-61d5fa60ed31",
   "version": "7",
   "dialect": "postgresql",
@@ -972,12 +972,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "image_key": {
-          "name": "image_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "rule": {
           "name": "rule",
           "type": "jsonb",
@@ -1685,10 +1679,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "kind": {
-          "name": "kind",
-          "type": "comment_reaction_kind",
-          "typeSchema": "public",
+        "emoji": {
+          "name": "emoji",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -1746,12 +1739,12 @@
         }
       },
       "compositePrimaryKeys": {
-        "comment_reaction_comment_id_person_id_kind_pk": {
-          "name": "comment_reaction_comment_id_person_id_kind_pk",
+        "comment_reaction_comment_id_person_id_emoji_pk": {
+          "name": "comment_reaction_comment_id_person_id_emoji_pk",
           "columns": [
             "comment_id",
             "person_id",
-            "kind"
+            "emoji"
           ]
         }
       },
@@ -6632,17 +6625,6 @@
         "student",
         "staff",
         "mentor"
-      ]
-    },
-    "public.comment_reaction_kind": {
-      "name": "comment_reaction_kind",
-      "schema": "public",
-      "values": [
-        "like",
-        "heart",
-        "laugh",
-        "party",
-        "eyes"
       ]
     },
     "public.company_article_source": {

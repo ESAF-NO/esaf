@@ -160,6 +160,7 @@ Klokka i toppen viser antall uleste varsler og de siste varslene. Et klikk åpne
   | Nye svar i samtaler du er med i | `comment_on_thread`                     | daglig      |
   | Selskapene dine                 | forslag, svar på forslag, tilknytninger | med en gang |
   | Nye fra kullet ditt             | `cohort_joined`                         | ukentlig    |
+  | Forespørsler om tilgang         | bare admins, på eller av                | med en gang |
   - **Når:** «med en gang» venter tre minutter, så flere varsler samles i én e-post og den som er i appen og leser varselet der, ikke får e-post. Oppsummeringene går kl. 07 norsk tid, daglig hver morgen og ukentlig mandag. Varsler som er lest i appen, varsler om slettet innhold og varsler eldre enn åtte dager sendes ikke, og hvert varsel sendes høyst én gang (`notification.emailed_at`). Slås e-post på igjen, sendes ikke det som kom mens det var av. Velkomsten sendes aldri på e-post.
   - **Hvem:** bare aktive medlemmer med egen konto og bekreftet e-postadresse.
   - **E-posten:** ett varsel får setningen som emne («Kari Nordmann kommenterte innlegget ditt «Lansering»»), utdraget og «Svar i ESAF»; flere blir en liste med «Se alle varsler». Under står at svar på e-posten går til styret, ikke til den som skrev, en lenke til valgene og en lenke for å slutte (`email-templates.ts`).
@@ -356,6 +357,8 @@ Ingen får tilgang automatisk. Det finnes to veier inn, og begge krever en avgj�
 2. **Bekreft e-posten.** Det beviser at personen leser den innboksen, ikke bare kjenner adressen.
 3. **Hvem er du?** (`/velkommen`). Står kontoens bekreftede adresse på en profil i kullisten, får personen spørsmål om det er dem. Ellers oppgir de navn og kull. Søkere ser aldri andres data, bare profilen med sin egen adresse. LinkedIn og en melding til styret er valgfritt.
 4. **En admin godkjenner** (`/admin`). For hver forespørsel vises hva som faktisk er bekreftet. En bekreftet adresse som står på den valgte profilen i kullisten, er et sterkt tegn. Navn, kull, telefon og LinkedIn kan alle med lista skrive inn, så de vises som informasjon, ikke som bevis. Uten sterkt tegn viser kortet profiler med likt navn og telefonnummeret fra lista, så admin kan ringe og spørre. Admin kan koble kontoen til en annen profil, godkjenne den som ny person i oppgitt kull, eller avslå. Avslåtte kan ikke sende på nytt, men må kontakte styret.
+
+**Adminene får e-post** når noen venter (`alertReviewers` i `notification-email.ts`, migrering `0036_varsle_admin_om_foresporsler`), men aldri én per forespørsel. Den første går tre minutter etter forespørselen, så det som kommer samtidig blir én e-post, og den sendes ikke om forespørselen alt er behandlet. Deretter går det minst seks timer til neste, uansett hvor mange som kommer, og den neste sendes bare om det har kommet nye som fortsatt venter. Forespørselen merkes med `admin_alerted_at`. E-posten sier bare hvor mange som venter, ikke hvem: navnet skriver søkeren selv. Mottakerne er aktive admins og hovedadmins med bekreftet e-post. Hver av dem kan slå den av under «Varsler på e-post», og den kan slås av for alle under Admin → E-post.
 
 Ved godkjenning med profil kobles kontoen til profilen. Personen arver kull, og navnet fra kullisten beholdes. Den tomme personen fra registreringen slettes. Alt logges (`access.request`, `access.approve`, `access.reject`).
 
@@ -706,7 +709,7 @@ Lokalt kan bildet bygges og prøves med `docker build -f apps/app/Dockerfile .`.
 
 ### E-post
 
-Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) (REST-API-et, uten egne avhengigheter): invitasjoner, lenker for nytt passord, «Glemt passord?», bekreftelse av e-postadressen ved registrering, velkomst når en forespørsel er godkjent, og varsler (se «Varsler og omtaler»). Leverandøren velges med `EMAIL_PROVIDER`; reglene for variablene står i `emailEnvIssues` i `packages/core/src/email.ts`, og e-postene i `packages/core/src/email-templates.ts`. Appen starter ikke med en ufullstendig konfigurasjon.
+Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare.com/email-service/) (REST-API-et, uten egne avhengigheter): invitasjoner, lenker for nytt passord, «Glemt passord?», bekreftelse av e-postadressen ved registrering, velkomst når en forespørsel er godkjent, beskjed til adminene når noen venter på godkjenning, og varsler (se «Varsler og omtaler»). Leverandøren velges med `EMAIL_PROVIDER`; reglene for variablene står i `emailEnvIssues` i `packages/core/src/email.ts`, og e-postene i `packages/core/src/email-templates.ts`. Appen starter ikke med en ufullstendig konfigurasjon.
 
 | `EMAIL_PROVIDER` | Hva skjer                                                                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -166,6 +166,7 @@ export function registerContentTools(server: McpServer, ctx: ToolContext) {
         author: { personId: p.author.personId, fullName: p.author.fullName },
         votes: p.votes,
         pinned: p.pinned,
+        reactions: p.reactions.map((r) => ({ emoji: r.emoji, count: r.count })),
         comments: p.commentList.map((c) => ({
           commentId: c.id,
           parentCommentId: c.parentId,

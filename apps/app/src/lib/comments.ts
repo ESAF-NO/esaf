@@ -15,7 +15,7 @@ export function quickReactionsFor(favorites: string[]) {
     .map((e) => quickReactions.find((r) => r.emoji === e) ?? { emoji: e, label: e })
 }
 
-/** Samme tak som `MAX_REACTIONS_PER_COMMENT` i @esaf/core, som ikke kan brukes i nettleseren. */
+/** Samme tak som `MAX_REACTIONS` i @esaf/core, som ikke kan brukes i nettleseren. */
 export const maxReactions = 20
 
 type Reaction = {

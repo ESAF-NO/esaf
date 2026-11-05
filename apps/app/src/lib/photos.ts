@@ -1,8 +1,9 @@
-import type { CompanyLogoUrls, ProfilePhoto } from '@esaf/core'
+import type { BadgeImage, CompanyLogoUrls, ProfilePhoto } from '@esaf/core'
 
 /**
- * Profilbilder og logoer fra nettleseren, mot `/api/medlemmer/$personId/bilde`
- * og `/api/selskaper/$companyId/logo`. Grensene er de samme som i @esaf/core
+ * Profilbilder, logoer og merkebilder fra nettleseren, mot
+ * `/api/medlemmer/$personId/bilde`, `/api/selskaper/$companyId/logo` og
+ * `/api/merker/$badgeId/bilde`. Grensene er de samme som i @esaf/core
  * (images.ts), så brukeren får svar med en gang, men det er serveren som avgjør.
  */
 const MAX_BYTES = 10 * 1024 * 1024
@@ -20,6 +21,7 @@ export function checkPhotoFile(file: File): string | null {
 
 const photoEndpoint = (personId: string) => `/api/medlemmer/${encodeURIComponent(personId)}/bilde`
 const logoEndpoint = (companyId: string) => `/api/selskaper/${encodeURIComponent(companyId)}/logo`
+const badgeImageEndpoint = (badgeId: string) => `/api/merker/${encodeURIComponent(badgeId)}/bilde`
 
 function failure(status: number, body: unknown) {
   if (status === 401) return new Error('Du er logget ut. Logg inn igjen og prøv på nytt.')
@@ -76,3 +78,14 @@ export async function uploadLogo(
 }
 
 export const deleteLogo = (companyId: string) => remove(logoEndpoint(companyId))
+
+export async function uploadBadgeImage(
+  badgeId: string,
+  file: File,
+  onProgress: (share: number) => void,
+): Promise<BadgeImage> {
+  const body = await upload(badgeImageEndpoint(badgeId), file, onProgress)
+  return (body as { image: BadgeImage }).image
+}
+
+export const deleteBadgeImage = (badgeId: string) => remove(badgeImageEndpoint(badgeId))

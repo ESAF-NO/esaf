@@ -1,10 +1,11 @@
 import type { AdminBadge, BadgeColor, BadgeIcon, BadgePreview, BadgeRuleKind } from '@esaf/core'
 import { createFileRoute, Link, notFound, useNavigate, useRouter } from '@tanstack/react-router'
-import { Archive, Award, Gift, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { Archive, Award, Gift, ImageUp, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { BadgeMedal, badgeColorClasses, badgeIconComponents } from '#/components/Badges.tsx'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
+import { Progress } from '#/components/PhotoUpload.tsx'
 import {
   Button,
   buttonClass,
@@ -31,6 +32,7 @@ import {
   takeBadge,
 } from '#/lib/badges.functions.ts'
 import { plural } from '#/lib/format.ts'
+import { checkPhotoFile, deleteBadgeImage, PHOTO_ACCEPT, uploadBadgeImage } from '#/lib/photos.ts'
 
 export const Route = createFileRoute('/_konto/admin/merker')({
   // `merke` åpner et merke for redigering, f.eks. fra «Endre merket» på merkesiden.
@@ -240,6 +242,10 @@ function BadgeRow({ badge: b, onAward }: { badge: AdminBadge; onAward: () => voi
 /** Regelen mens den redigeres. Valideres av serveren (`badgeRule` i @esaf/core). */
 type RuleDraft = { kind: BadgeRuleKind } & Record<string, unknown>
 
+/** Bildet mens merket redigeres. Lagres sammen med resten av skjemaet. */
+type ImageDraft =
+  { kind: 'keep' } | { kind: 'new'; file: File; preview: string } | { kind: 'remove' }
+
 function defaultRule(kind: BadgeRuleKind, options: Options): RuleDraft {
   const weekend = options.eventTypes.find((t) => t.slug === 'esaf-helgen')?.id ?? null
   switch (kind) {
@@ -285,11 +291,32 @@ function BadgeEditor({
   const [rule, setRule] = useState<RuleDraft>(
     (badge?.rule as RuleDraft | undefined) ?? defaultRule('event_count', options),
   )
+  const [image, setImage] = useState<ImageDraft>({ kind: 'keep' })
+  const [imageError, setImageError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<number | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  // Et nytt merke lages før bildet lastes opp. Feiler bildet, fortsetter neste forsøk på samme merke.
+  const created = useRef<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const preview = usePreview(rule)
+  const imagePreview = image.kind === 'new' ? image.preview : null
+  useEffect(() => {
+    if (imagePreview) return () => URL.revokeObjectURL(imagePreview)
+  }, [imagePreview])
+  const shownImage = imagePreview
+    ? { small: imagePreview, large: imagePreview }
+    : image.kind === 'keep'
+      ? (badge?.image ?? null)
+      : null
   // Har noen merket, kan det ikke bytte mellom regel og «for hånd» (se `updateBadge`).
   const lockedKind = badge && badge.awarded > 0 ? (badge.manual ? 'manual' : 'auto') : null
+
+  function pickImage(file: File) {
+    const problem = checkPhotoFile(file)
+    setImageError(problem)
+    if (!problem) setImage({ kind: 'new', file, preview: URL.createObjectURL(file) })
+  }
 
   async function save(publish: boolean) {
     setBusy(true)
@@ -303,14 +330,33 @@ function BadgeEditor({
       series: series.trim() || null,
       sortOrder,
     }
+    // Med bilde publiseres merket til slutt, så ingen ser det uten bildet.
+    const publishNow = publish && !created.current && image.kind !== 'new'
     try {
-      if (badge) await saveBadge({ data: { badgeId: badge.id, ...values } })
-      else await newBadge({ data: { ...values, publish } })
+      let badgeId = badge?.id ?? created.current
+      if (badgeId) {
+        await saveBadge({ data: { badgeId, ...values } })
+      } else {
+        badgeId = (await newBadge({ data: { ...values, publish: publishNow } })).id
+        created.current = badgeId
+      }
+      if (image.kind === 'new') {
+        setProgress(0)
+        await uploadBadgeImage(badgeId, image.file, setProgress)
+      } else if (image.kind === 'remove') {
+        await deleteBadgeImage(badgeId)
+      }
+      if (publish && !publishNow) {
+        await changeBadgeStatus({ data: { badgeId, status: 'published' } })
+      }
       await router.invalidate()
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
+      const message = e instanceof Error ? e.message : 'Kunne ikke lagre.'
+      setError(created.current ? `Merket er lagret som utkast. ${message}` : message)
+      setProgress(null)
       setBusy(false)
+      if (created.current) void router.invalidate()
     }
   }
 
@@ -330,7 +376,7 @@ function BadgeEditor({
         className="space-y-5"
       >
         <div className="flex items-start gap-4">
-          <BadgeMedal badge={{ icon, color }} size="lg" />
+          <BadgeMedal badge={{ icon, color, image: shownImage }} size="lg" />
           <div className="min-w-0 flex-1 space-y-3">
             <Field label="Navn" hint="Kort, som «ESAF-helgen ×5» eller «Ildsjel».">
               <Input
@@ -353,31 +399,78 @@ function BadgeEditor({
           </div>
         </div>
 
-        <fieldset>
-          <legend className="mb-1.5 text-sm font-medium text-stone-800">Ikon</legend>
-          <div className="flex flex-wrap gap-1.5">
-            {options.icons.map((value) => {
-              const Icon = badgeIconComponents[value]
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setIcon(value)}
-                  aria-label={value}
-                  aria-pressed={icon === value}
-                  className={cx(
-                    'grid size-9 place-items-center rounded-lg ring-1 transition ring-inset',
-                    icon === value
-                      ? 'bg-stone-900 text-white ring-stone-900'
-                      : 'text-stone-600 ring-stone-200 hover:bg-stone-50',
-                  )}
-                >
-                  <Icon className="size-4" aria-hidden />
-                </button>
-              )
-            })}
+        <fieldset className="space-y-2">
+          <legend className="mb-1.5 text-sm font-medium text-stone-800">
+            Eget bilde (valgfritt)
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => fileInput.current?.click()} disabled={busy}>
+              <ImageUp className="size-4" aria-hidden />{' '}
+              {shownImage ? 'Bytt bilde' : 'Last opp bilde'}
+            </Button>
+            {shownImage && (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setImage({ kind: badge?.image ? 'remove' : 'keep' })
+                  setImageError(null)
+                }}
+                disabled={busy}
+              >
+                <Trash2 className="size-4" aria-hidden /> Fjern
+              </Button>
+            )}
           </div>
+          {progress !== null ? (
+            <Progress share={progress} />
+          ) : (
+            <p className="text-xs leading-relaxed text-stone-500">
+              JPEG, PNG eller WebP, maks 10 MB. Vises i stedet for ikonet, og beskjæres til en
+              sirkel fra midten. Gjennomsiktige deler viser fargen under.
+            </p>
+          )}
+          {imageError && <ErrorText>{imageError}</ErrorText>}
+          <input
+            ref={fileInput}
+            type="file"
+            accept={PHOTO_ACCEPT}
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              // Tømmes, så samme fil kan velges igjen.
+              e.target.value = ''
+              if (file) pickImage(file)
+            }}
+          />
         </fieldset>
+
+        {!shownImage && (
+          <fieldset>
+            <legend className="mb-1.5 text-sm font-medium text-stone-800">Ikon</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {options.icons.map((value) => {
+                const Icon = badgeIconComponents[value]
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setIcon(value)}
+                    aria-label={value}
+                    aria-pressed={icon === value}
+                    className={cx(
+                      'grid size-9 place-items-center rounded-lg ring-1 transition ring-inset',
+                      icon === value
+                        ? 'bg-stone-900 text-white ring-stone-900'
+                        : 'text-stone-600 ring-stone-200 hover:bg-stone-50',
+                    )}
+                  >
+                    <Icon className="size-4" aria-hidden />
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+        )}
 
         <fieldset>
           <legend className="mb-1.5 text-sm font-medium text-stone-800">Farge</legend>

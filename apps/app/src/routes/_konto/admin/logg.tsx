@@ -891,6 +891,17 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       .
     </>
   ),
+  'badge.image_upload': ({ actor, details }) => (
+    <>
+      {actor} {details.replaced ? 'byttet bildet på' : 'la inn et bilde på'} merket{' '}
+      <BadgeLink details={details} />.
+    </>
+  ),
+  'badge.image_remove': ({ actor, details }) => (
+    <>
+      {actor} fjernet bildet fra merket <BadgeLink details={details} />.
+    </>
+  ),
   'badge.publish': ({ actor, details }) => (
     <>
       {actor} publiserte merket <BadgeLink details={details} />.

@@ -922,6 +922,11 @@ export const badge = pgTable(
     icon: text().notNull(),
     /** En farge fra listen i @esaf/core (`badgeColors`). */
     color: text().notNull(),
+    /**
+     * Nøkkelen til et opplastet bilde, som vises i stedet for ikonet (se
+     * `badge-images.ts` i @esaf/core). Null: merket viser ikonet.
+     */
+    imageKey: text(),
     rule: jsonb().$type<Record<string, unknown>>().notNull(),
     status: badgeStatus().notNull().default('draft'),
     /**

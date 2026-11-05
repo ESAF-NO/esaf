@@ -274,7 +274,8 @@ Design badges ("merker") for the ESAF member app${theme ? `, focused on: ${theme
    XP) follows the share of active members who have a badge, so aim for a ladder from common to legendary: a few
    easy ones everyone gets, and some that only a handful reach. Adjust thresholds that give nobody or everybody.
 4. Names and descriptions in Norwegian bokmål: short, warm and plain ("ESAF-helgen ×5", "Vært på fem ESAF-helger."),
-   no slang, no emoji. One colour per family, an icon that fits.
+   no slang, no emoji. One colour per family, an icon that fits. If I give you artwork for a badge, use
+   set_badge_image on the draft before publishing.
 5. After I approve, create them as drafts, then publish what I say (published badges appear on profiles right away).
 `),
   )

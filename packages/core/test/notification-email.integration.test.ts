@@ -25,6 +25,7 @@ import {
   submitAccessRequest,
   unsubscribe,
   unsubscribeToken,
+  WELCOME_PENDING_MS,
   type EmailMessage,
   type Mailer,
   type Viewer,
@@ -393,6 +394,30 @@ describe.skipIf(!url)('varsler på e-post', () => {
     expect(await emailed()).toHaveLength(1)
   })
 
+  it('velkomsten er på vei til jobben har sendt den, men ikke når e-post står på pause', async () => {
+    const logged = withEmailLog(db, mailer, { error() {} })
+    const userId = await account('Vera Venter')
+    await submitAccessRequest(db, await loadViewer(db, userId), {
+      profilePersonId: null,
+      fullName: 'Vera Venter',
+      graduationYear: 2017,
+      linkedinUrl: '',
+      note: '',
+    })
+    const [request] = await db.select().from(schema.accessRequest)
+    await decideAccessRequest(db, admin, { requestId: request!.id, decision: 'approve' })
+    const pending = async () => (await listAccessRequests(db, admin, 'approved'))[0]!.welcomePending
+    expect(await pending()).toBe(true)
+
+    await setEmailPaused(db, admin, { paused: true })
+    expect(await pending()).toBe(false)
+    await setEmailPaused(db, admin, { paused: false })
+    expect(await pending()).toBe(true)
+
+    await sendWelcomeEmail(db, admin, logged, { requestId: request!.id, appUrl: APP })
+    expect(await pending()).toBe(false)
+  })
+
   it('velkomsten kan sendes for hånd, og forespørselen viser når den sist ble sendt', async () => {
     const logged = withEmailLog(db, mailer, { error() {} })
     const userId = await account('Nina Ny')
@@ -405,7 +430,15 @@ describe.skipIf(!url)('varsler på e-post', () => {
     })
     const [request] = await db.select().from(schema.accessRequest)
     await decideAccessRequest(db, admin, { requestId: request!.id, decision: 'approve' })
-    expect((await listAccessRequests(db, admin, 'approved'))[0]!.welcomeEmail).toBeNull()
+    expect((await listAccessRequests(db, admin, 'approved'))[0]).toMatchObject({
+      welcomeEmail: null,
+      welcomePending: true,
+    })
+    // Kom den ikke innen rimelig tid, er det admin som må sende den.
+    await db
+      .update(schema.accessRequest)
+      .set({ decidedAt: new Date(Date.now() - WELCOME_PENDING_MS - 1000) })
+    expect((await listAccessRequests(db, admin, 'approved'))[0]!.welcomePending).toBe(false)
 
     // Godkjent før velkomsten fantes: admin sender den selv.
     const { to } = await sendWelcomeEmail(db, admin, logged, {

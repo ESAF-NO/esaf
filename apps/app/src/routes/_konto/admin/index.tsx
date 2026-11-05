@@ -13,7 +13,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
 import {
   Avatar,
@@ -428,6 +428,14 @@ function WelcomeStatus({ request: r }: { request: AccessRequestView }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const w = r.welcomeEmail
+  const pending = r.welcomePending
+
+  // E-postjobben går hvert minutt: hent på nytt, så admin ser når velkomsten er sendt.
+  useEffect(() => {
+    if (!pending) return
+    const timer = setTimeout(() => void router.invalidate(), 30_000)
+    return () => clearTimeout(timer)
+  }, [pending, router, r])
 
   async function run() {
     setBusy(true)
@@ -452,20 +460,24 @@ function WelcomeStatus({ request: r }: { request: AccessRequestView }) {
         )}
       >
         <Mail className="size-3.5" aria-hidden />
-        {!w
-          ? 'Ingen velkomst på e-post'
-          : w.status === 'sent'
-            ? `Velkomst sendt ${timeAgo(w.at)}`
-            : `Velkomsten feilet ${timeAgo(w.at)}`}
+        {pending
+          ? 'Velkomst sendes straks'
+          : !w
+            ? 'Ingen velkomst på e-post'
+            : w.status === 'sent'
+              ? `Velkomst sendt ${timeAgo(w.at)}`
+              : `Velkomsten feilet ${timeAgo(w.at)}`}
       </span>
-      <button
-        type="button"
-        onClick={run}
-        disabled={busy}
-        className="font-medium text-brand-700 hover:underline disabled:opacity-50"
-      >
-        {busy ? 'Sender …' : w?.status === 'sent' ? 'Send på nytt' : 'Send velkomst'}
-      </button>
+      {!pending && (
+        <button
+          type="button"
+          onClick={run}
+          disabled={busy}
+          className="font-medium text-brand-700 hover:underline disabled:opacity-50"
+        >
+          {busy ? 'Sender …' : w?.status === 'sent' ? 'Send på nytt' : 'Send velkomst'}
+        </button>
+      )}
       <span role="status" className={result?.ok ? 'text-emerald-700' : 'text-red-700'}>
         {result?.text}
       </span>

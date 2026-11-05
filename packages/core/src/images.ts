@@ -18,13 +18,25 @@ export const IMAGE_CONTENT_TYPE = 'image/webp'
  */
 export const MAX_PIXELS = 100_000_000
 
-// Bildebiblioteket brukes bare til opplastede bilder. Bare dekoderne for JPEG, PNG
-// og WebP er slått på, så formater med større angrepsflate (SVG, PDF, TIFF, HEIF …)
+/**
+ * Grensen for animasjoner, summert over alle bildene. Hele animasjonen behandles på
+ * én gang, og bildekøen venter imens. Vanlige GIF-er (480×270 og 200 bilder) er 26
+ * millioner og tar om lag ett sekund.
+ */
+export const MAX_ANIMATED_PIXELS = 30_000_000
+
+// Bildebiblioteket brukes bare til opplastede bilder. Bare dekoderne for JPEG, PNG,
+// WebP og GIF er slått på, så formater med større angrepsflate (SVG, PDF, TIFF, HEIF …)
 // aldri blir tolket, selv om en fil skulle slippe forbi sjekken av filtypen.
 // Gjelder hele prosessen.
 sharp.block({ operation: ['VipsForeignLoad'] })
 sharp.unblock({
-  operation: ['VipsForeignLoadJpegBuffer', 'VipsForeignLoadPngBuffer', 'VipsForeignLoadWebpBuffer'],
+  operation: [
+    'VipsForeignLoadJpegBuffer',
+    'VipsForeignLoadPngBuffer',
+    'VipsForeignLoadWebpBuffer',
+    'VipsForeignLoadNsgifBuffer',
+  ],
 })
 // Cachen hjelper bare når samme bilde behandles flere ganger. Her holder den bare på minne.
 sharp.cache(false)
@@ -35,7 +47,7 @@ export const IMAGE_FILE_NAME = /^([A-Za-z0-9_-]{22})-(\d{1,4})\.webp$/
 /** 128 tilfeldige bit: kan ikke gjettes, og blir aldri gjenbrukt. */
 export const newImageKey = () => randomBytes(16).toString('base64url')
 
-export type ImageFormat = 'jpeg' | 'png' | 'webp'
+export type ImageFormat = 'jpeg' | 'png' | 'webp' | 'gif'
 
 /**
  * Filtypen ut fra de første bytene i fila. Avgjør hva som slippes videre til
@@ -46,6 +58,7 @@ export function sniffImageFormat(bytes: Uint8Array): ImageFormat | null {
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg'
   if (ascii(0, 8) === '\x89PNG\r\n\x1a\n') return 'png'
   if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp'
+  if (ascii(0, 6) === 'GIF87a' || ascii(0, 6) === 'GIF89a') return 'gif'
   return null
 }
 
@@ -62,20 +75,35 @@ export const readOptions = {
 } as const
 
 /**
- * Sjekker en opplastet fil og gir bredden og høyden slik bildet står. Kaster
- * `DomainError` med en melding brukeren kan lese hvis fila ikke kan brukes.
- * `maxBytes` er grensen for profilbilder og logoer, med mindre en annen gis.
+ * Innstillingene for å lese en animasjon. GIF-er fra nettet har ofte små feil som
+ * ikke synes, så bare det som ikke kan leses, stopper. Animasjoner har ingen EXIF.
+ */
+export const animatedReadOptions = {
+  animated: true,
+  failOn: 'error',
+  limitInputPixels: MAX_ANIMATED_PIXELS,
+} as const
+
+/**
+ * Sjekker en opplastet fil og gir bredden og høyden slik bildet står, og hvor
+ * mange bilder den har. Kaster `DomainError` med en melding brukeren kan lese hvis
+ * fila ikke kan brukes. `maxBytes` er grensen for profilbilder og logoer, med
+ * mindre en annen gis. GIF slippes bare inn med `animation`: et profilbilde eller
+ * en logo står stille.
  */
 export async function inspectUpload(
   file: Uint8Array,
   maxBytes = IMAGE_MAX_BYTES,
-): Promise<{ width: number; height: number }> {
+  { animation = false } = {},
+): Promise<{ width: number; height: number; frames: number }> {
   if (file.byteLength === 0) throw new DomainError('Fila er tom.')
   if (file.byteLength > maxBytes) {
     throw new DomainError(`Bildet er for stort. Maks ${Math.round(maxBytes / 1024 / 1024)} MB.`)
   }
   const format = sniffImageFormat(file)
-  if (!format) throw new DomainError('Bildet må være JPEG, PNG eller WebP.')
+  if (!format || (format === 'gif' && !animation)) {
+    throw new DomainError('Bildet må være JPEG, PNG eller WebP.')
+  }
 
   let metadata: Metadata
   try {
@@ -87,7 +115,11 @@ export async function inspectUpload(
   if (metadata.format !== format) throw unreadable()
   const { width, height } = metadata.autoOrient
   if (width * height > MAX_PIXELS) throw new DomainError('Bildet har for mange piksler.')
-  return { width, height }
+  const frames = animation ? (metadata.pages ?? 1) : 1
+  if (frames > 1 && width * height * frames > MAX_ANIMATED_PIXELS) {
+    throw new DomainError('Animasjonen er for stor. Velg en som er kortere eller mindre.')
+  }
+  return { width, height, frames }
 }
 
 let queue: Promise<unknown> = Promise.resolve()

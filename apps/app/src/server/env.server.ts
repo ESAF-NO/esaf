@@ -52,6 +52,8 @@ const schema = z
     // Modellen. Uten den: Xenova/bge-m3, eller Xenova/multilingual-e5-small på en server
     // med under 3 GB minne. Begge ligger i bildet; en annen modell må også lastes ned der.
     SEARCH_MODEL: optional(z.string()),
+    // GIF-søket i skrivefeltet. Uten nøkkel vises ingen søkeknapp. Se README, «GIF-er».
+    GIPHY_API_KEY: optional(z.string()),
   })
   .superRefine((env, ctx) => {
     const production = env.NODE_ENV === 'production'

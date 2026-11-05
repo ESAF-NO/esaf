@@ -14,6 +14,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 
 const timestamps = {
@@ -1453,14 +1454,46 @@ export const comment = pgTable(
     authorPersonId: uuid()
       .notNull()
       .references(() => person.id, { onDelete: 'cascade' }),
+    /**
+     * Kommentaren dette er et svar på, alltid den øverste i tråden: svar har ett nivå.
+     * Forsvinner den helt, blir svaret stående som en vanlig kommentar.
+     */
+    parentCommentId: uuid().references((): AnyPgColumn => comment.id, { onDelete: 'set null' }),
     body: text().notNull(),
     /** Satt når forfatteren har redigert kommentaren. */
     editedAt: timestamp({ withTimezone: true }),
     deletedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
-  (t) => [index().on(t.postId, t.createdAt)],
+  (t) => [index().on(t.postId, t.createdAt), index().on(t.parentCommentId)],
 )
+
+/** Reaksjonene på en kommentar. Hver reaksjon er ett tegn i appen (`reactionEmoji`). */
+export const commentReactionKind = pgEnum('comment_reaction_kind', [
+  'like',
+  'heart',
+  'laugh',
+  'party',
+  'eyes',
+])
+
+/** En person kan gi flere ulike reaksjoner på samme kommentar, men hver bare én gang. */
+export const commentReaction = pgTable(
+  'comment_reaction',
+  {
+    commentId: uuid()
+      .notNull()
+      .references(() => comment.id, { onDelete: 'cascade' }),
+    personId: uuid()
+      .notNull()
+      .references(() => person.id, { onDelete: 'cascade' }),
+    kind: commentReactionKind().notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [primaryKey({ columns: [t.commentId, t.personId, t.kind] }), index().on(t.personId)],
+)
+
+export type CommentReactionKind = (typeof commentReactionKind.enumValues)[number]
 
 export const postVote = pgTable(
   'post_vote',
@@ -1487,6 +1520,8 @@ export const notificationType = pgEnum('notification_type', [
   'comment_on_post',
   /** Noen kommenterte et innlegg mottakeren selv har kommentert. */
   'comment_on_thread',
+  /** Noen svarte på en kommentar mottakeren skrev. */
+  'comment_reply',
   /** Noen nevnte mottakeren i et innlegg eller en kommentar. */
   'mention',
   /** Forespørselen om tilgang ble godkjent. */
@@ -1719,6 +1754,12 @@ export const asset = pgTable(
     position: integer().notNull().default(0),
     /** Filnavnet slik det vises og lastes ned, renset og med riktig filendelse. */
     originalName: text().notNull(),
+    /**
+     * GIF-er fra søket: id-en hos GIPHY og tittelen. De kan søkes opp igjen her når
+     * GIPHY ikke svarer. Settes til null når en moderator fjerner GIF-en.
+     */
+    gifId: text(),
+    gifTitle: text(),
     /** Typen fila serveres med, avgjort ut fra innholdet. */
     contentType: text().notNull(),
     /** Størrelsen på fila som ble lastet opp. */
@@ -1740,6 +1781,9 @@ export const asset = pgTable(
   (t) => [
     index().on(t.postId),
     index().on(t.commentId),
+    index('asset_gif_index')
+      .on(t.gifId)
+      .where(sql`${t.gifId} is not null`),
     index().on(t.eventId),
     index().on(t.companyId),
     // Grensen per døgn teller det personen har lastet opp.

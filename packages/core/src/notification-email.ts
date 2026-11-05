@@ -70,6 +70,13 @@ export const notificationCategories = [
     default: 'instant',
   },
   {
+    id: 'comment_replies',
+    label: 'Svar på kommentarene dine',
+    help: 'Når noen svarer på noe du har kommentert.',
+    types: ['comment_reply'],
+    default: 'instant',
+  },
+  {
     id: 'mentions',
     label: 'Når noen nevner deg',
     help: 'I et innlegg eller en kommentar.',
@@ -356,6 +363,8 @@ export function describeNotification(
       return { text: `${who} kommenterte innlegget ditt ${title}`, url: postUrl, reply: true }
     case 'comment_on_thread':
       return { text: `${who} kommenterte også ${title}`, url: postUrl, reply: true }
+    case 'comment_reply':
+      return { text: `${who} svarte på kommentaren din til ${title}`, url: postUrl, reply: true }
     case 'mention':
       return {
         text: n.commentId

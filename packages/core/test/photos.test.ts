@@ -285,9 +285,9 @@ describe('behandling av profilbilder', () => {
   })
 
   it('bildebiblioteket nekter selv å lese andre formater', async () => {
-    const gif = await stripes(400, 400, [red]).gif().toBuffer()
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9"/>')
-    await expect(sharp(gif).metadata()).rejects.toThrow()
+    const tiff = Buffer.from('II*\x00\x08\x00\x00\x00\x00\x00', 'latin1')
+    await expect(sharp(tiff).metadata()).rejects.toThrow()
     await expect(sharp(svg).metadata()).rejects.toThrow()
     expect((await sharp(await stripes(9, 9, [red]).png().toBuffer()).metadata()).format).toBe('png')
   })

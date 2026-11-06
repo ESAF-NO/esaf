@@ -2,7 +2,7 @@ import { schema, type CompanyArticleSource, type Db, type DatePrecision } from '
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Viewer } from './access.ts'
-import { companyForEdit } from './companies.ts'
+import { companyForAdding, companyForEdit } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 import { hostLabel, optionalText, safeHttpUrl } from './validation.ts'
@@ -14,10 +14,11 @@ const { auditEvent, companyArticle } = schema
  *
  * - Bare lenken, tittelen, utgiveren, datoen og to merker (betalingsmur, nevner
  *   ES) lagres. Teksten i saken lagres aldri.
- * - De samme som kan redigere selskapsinfoen, kan legge til, rette og fjerne
- *   saker: gründere (også tidligere), ES-teamet, de som jobber der nå og admins
- *   med `profiles.edit`. Admins som ikke selv er knyttet til selskapet, logges.
- *   Andre medlemmer foreslår saker (se `suggestCompanyArticle` i contributions.ts).
+ * - Alle aktive medlemmer kan legge til saker, og de vises med en gang. De som
+ *   ikke er knyttet til selskapet, logges, og har en grense per døgn.
+ * - De samme som kan redigere selskapsinfoen, kan rette og fjerne saker: gründere
+ *   (også tidligere), ES-teamet, de som jobber eller har jobbet der og admins med
+ *   `profiles.edit`. Admins som ikke selv er knyttet til selskapet, logges.
  * - Lenken må være http eller https. Samme sak står bare én gang per selskap, også
  *   når lenken er skrevet litt ulikt (med eller uten «www.», sporingsparametre,
  *   skråstrek til slutt eller `#`-del); se `articleUrlKey`.
@@ -251,7 +252,10 @@ async function logAdminChange(
   tx: Tx,
   viewer: Viewer,
   action:
-    'company.admin_article_add' | 'company.admin_article_edit' | 'company.admin_article_remove',
+    | 'company.admin_article_add'
+    | 'company.admin_article_edit'
+    | 'company.admin_article_remove'
+    | 'company.member_article_add',
   target: { id: string; slug: string; name: string },
   article: { id: string; url: string },
 ) {
@@ -278,17 +282,15 @@ export async function addCompanyArticle(
   const values = parseArticle(input)
   return db.transaction(async (tx) => {
     // Låsen på selskapet hindrer at to samtidige lagringer legger inn samme sak.
-    const target = await companyForEdit(tx, viewer, companyId, { lock: true })
+    const target = await companyForAdding(tx, viewer, companyId)
     const row = await insertArticle(tx, companyId, values, {
       source: target.adminEdit ? 'admin' : 'member',
       byPersonId: viewer!.personId,
     })
     if (!row) throw duplicate()
-    if (target.adminEdit) {
-      await logAdminChange(tx, viewer, 'company.admin_article_add', target, {
-        id: row.id,
-        url: values.url,
-      })
+    if (target.adminEdit || target.outsider) {
+      const action = target.adminEdit ? 'company.admin_article_add' : 'company.member_article_add'
+      await logAdminChange(tx, viewer, action, target, { id: row.id, url: values.url })
     }
     return row
   })

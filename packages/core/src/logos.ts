@@ -26,7 +26,7 @@ const { auditEvent, company } = schema
  * Selskapslogoer. Reglene:
  *
  * - De samme som kan redigere selskapsinfoen, kan laste opp, bytte og fjerne
- *   logoen: gründere (også tidligere), ES-teamet, de som jobber der nå og
+ *   logoen: gründere (også tidligere), ES-teamet, de som jobber eller har jobbet der og
  *   admins med `profiles.edit`. Admins som ikke selv er knyttet til selskapet,
  *   logges, som ved annen redigering.
  * - Samme filer slippes inn som for profilbilder (JPEG, PNG og WebP, avgjort av

@@ -33,7 +33,7 @@ import {
   requestCompanyLink,
   reviewCounts,
   setPersonCohorts,
-  suggestCompanyEvent,
+  suggestCompanyInfo,
   updateProfile,
   type CompanyInput,
   type ObjectStorage,
@@ -438,16 +438,17 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
       expect(logged).toHaveLength(2)
     })
 
-    it('forslag og tilknytninger til profiler uten konto står i køen', async () => {
+    it('forslag står i køen, men ikke tilknytninger: de trenger ingen admin', async () => {
       const companyId = await company('Syrlig')
-      await suggestCompanyEvent(db, kari, companyId, {
-        year: 2020,
-        month: null,
-        day: null,
-        type: 'launch',
-        text: 'Lanserte',
-        sourceUrl: '',
-        sourceLabel: '',
+      await suggestCompanyInfo(db, kari, companyId, {
+        name: 'Syrlig',
+        tagline: 'Brus',
+        description: '',
+        website: '',
+        foundedYear: null,
+        location: '',
+        industries: [],
+        status: 'active',
       })
       const { personId } = await createProfile(db, admin, {
         fullName: 'Uten Konto',
@@ -465,8 +466,7 @@ describe.skipIf(!url)('gjennomgang og adminverktøy for data', () => {
         })
       }
       const counts = await reviewCounts(db, admin)
-      expect(counts).toMatchObject({ suggestions: 1, links: 1 })
-      expect((await review('links')).items[0]!.person.personId).toBe(personId)
+      expect(counts).toMatchObject({ suggestions: 1, links: 0 })
     })
 
     it('sider på 20', async () => {

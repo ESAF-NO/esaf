@@ -9,7 +9,6 @@ import {
   saveCompanyArticle,
   type CompanyArticleFormValues,
 } from '#/lib/companies.functions.ts'
-import { proposeCompanyArticle } from '#/lib/contributions.functions.ts'
 import { monthNames, partialDate } from '#/lib/format.ts'
 
 /** Så mange vises før «Vis alle». */
@@ -147,8 +146,8 @@ function ArticleRow({
 
 /**
  * «I media» på selskapssiden: saker om selskapet, nyeste først og de uten dato
- * sist. De som kan redigere selskapet, legger til, retter og fjerner saker; andre
- * medlemmer foreslår dem.
+ * sist. Alle medlemmer kan legge til saker; de som kan redigere selskapet, retter
+ * og fjerner dem.
  */
 export function CompanyArticles({
   companyId,
@@ -160,14 +159,13 @@ export function CompanyArticles({
   companyId: string
   name: string
   articles: CompanyArticle[]
-  /** Kan legge til og rette selv. Andre medlemmer foreslår saker i stedet. */
+  /** Kan rette og fjerne. Alle medlemmer kan legge til. */
   canEdit: boolean
   /** Redigerer som admin uten å være knyttet til selskapet; endringer logges. */
   adminEdit: boolean
 }) {
   const [editing, setEditing] = useState<CompanyArticle | 'new' | null>(null)
   const [showAll, setShowAll] = useState(false)
-  const [suggested, setSuggested] = useState(false)
   const shown = showAll ? articles : articles.slice(0, VISIBLE)
 
   return (
@@ -180,14 +178,9 @@ export function CompanyArticles({
           )}
         </h2>
         <Button variant="secondary" size="sm" onClick={() => setEditing('new')}>
-          <Plus className="size-4" aria-hidden /> {canEdit ? 'Legg til' : 'Foreslå sak'}
+          <Plus className="size-4" aria-hidden /> Legg til
         </Button>
       </div>
-      {suggested && (
-        <p role="status" className="mt-2 text-sm text-emerald-700">
-          Takk! Forslaget er sendt til dem som kan redigere {name}.
-        </p>
-      )}
       {articles.length > 0 ? (
         <>
           <ul id={`saker-${companyId}`} className="mt-4 divide-y divide-stone-100">
@@ -212,9 +205,7 @@ export function CompanyArticles({
       ) : (
         <p className="mt-2 flex items-start gap-2 text-sm text-stone-500">
           <Newspaper className="mt-0.5 size-4 shrink-0 text-stone-400" aria-hidden />
-          {canEdit
-            ? `Ingen saker ennå. Legg til intervjuer og nyhetssaker om ${name}.`
-            : `Ingen saker ennå. Har du sett ${name} omtalt i media? Foreslå saken.`}
+          Ingen saker ennå. Legg til intervjuer og nyhetssaker om {name}.
         </p>
       )}
       {editing && (
@@ -222,9 +213,7 @@ export function CompanyArticles({
           companyId={companyId}
           article={editing === 'new' ? null : editing}
           adminEdit={adminEdit}
-          suggest={!canEdit}
           onClose={() => setEditing(null)}
-          onSuggested={() => setSuggested(true)}
         />
       )}
     </Card>
@@ -235,21 +224,15 @@ function ArticleDialog({
   companyId,
   article,
   adminEdit,
-  suggest,
   onClose,
-  onSuggested,
 }: {
   companyId: string
   article: CompanyArticle | null
   adminEdit: boolean
-  /** Sendes som forslag til dem som kan redigere, med en valgfri kommentar. */
-  suggest: boolean
   onClose: () => void
-  onSuggested: () => void
 }) {
   const router = useRouter()
   const [values, setValues] = useState(() => formValues(article))
-  const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const set = (patch: Partial<CompanyArticleFormValues>) => setValues((v) => ({ ...v, ...patch }))
@@ -259,14 +242,9 @@ function ArticleDialog({
     setSaving(true)
     setError(null)
     try {
-      if (suggest) {
-        await proposeCompanyArticle({ data: { companyId, values, note } })
-        onSuggested()
-      } else {
-        await saveCompanyArticle({
-          data: article ? { articleId: article.id, values } : { companyId, values },
-        })
-      }
+      await saveCompanyArticle({
+        data: article ? { articleId: article.id, values } : { companyId, values },
+      })
       await router.invalidate()
       onClose()
     } catch (err) {
@@ -277,13 +255,11 @@ function ArticleDialog({
 
   return (
     <Dialog
-      title={suggest ? 'Foreslå en sak' : article ? 'Rediger sak' : 'Ny sak i media'}
+      title={article ? 'Rediger sak' : 'Ny sak i media'}
       description={
-        suggest
-          ? 'De som kan redigere selskapet, ser over forslaget. Du får varsel når det er behandlet.'
-          : adminEdit
-            ? 'Du redigerer som admin, og endringen logges.'
-            : 'Bare lenken, tittelen og datoen lagres, ikke teksten i saken.'
+        adminEdit
+          ? 'Du redigerer som admin, og endringen logges.'
+          : 'Bare lenken, tittelen og datoen lagres, ikke teksten i saken.'
       }
       onClose={onClose}
       busy={saving}
@@ -387,18 +363,13 @@ function ArticleDialog({
             Saken nevner Entreprenørskolen
           </label>
         </fieldset>
-        {suggest && (
-          <Field label="Kommentar" hint="Valgfritt. Hjelper dem som skal godta forslaget.">
-            <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-          </Field>
-        )}
         {error && <ErrorText>{error}</ErrorText>}
         <DialogActions>
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Avbryt
           </Button>
           <Button type="submit" variant="brand" disabled={saving}>
-            {saving ? (suggest ? 'Sender …' : 'Lagrer …') : suggest ? 'Send forslag' : 'Lagre'}
+            {saving ? 'Lagrer …' : 'Lagre'}
           </Button>
         </DialogActions>
       </form>

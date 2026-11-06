@@ -4,10 +4,12 @@ import { and, eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   AccessDeniedError,
+  addCompanyEvent,
   addSelfToCompany,
   companiesToFill,
   createProfile,
   decideCompanyLink,
+  deleteCompanyEvent,
   decideMembership,
   decideSuggestion,
   getCompany,
@@ -17,13 +19,14 @@ import {
   listNotifications,
   loadViewer,
   mergeCompanies,
+  listReview,
   removeSelfFromCompany,
   requestCompanyLink,
   searchCompanies,
   startCompany,
-  suggestCompanyEvent,
   suggestCompanyInfo,
   updateCompany,
+  updateCompanyEvent,
   updateProfile,
   withdrawCompanyLink,
   withdrawSuggestion,
@@ -226,7 +229,7 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
         name: 'Gammel Jobb',
         link: { role: 'employee', title: 'Utvikler', startYear: 2015, endYear: 2017 },
       })
-      expect((await page(per, past.slug)).canEdit).toBe(false)
+      expect((await page(per, past.slug)).canEdit).toBe(true)
       expect(await companiesToFill(db, per)).toEqual([])
 
       expect(await removeSelfFromCompany(db, per, past.id)).toEqual({ companyDeleted: true })
@@ -294,14 +297,14 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       await expect(removeSelfFromCompany(db, kari, syrligId)).rejects.toThrow(/ikke knyttet/)
     })
 
-    it('tidligere ansatte kan ikke redigere, ES-team kan; ES-selskapet byttes ikke stille', async () => {
+    it('tidligere ansatte og ES-team kan redigere; ES-selskapet byttes ikke stille', async () => {
       await addSelfToCompany(db, kari, syrligId, {
         role: 'employee',
         title: null,
         startYear: 2015,
         endYear: 2017,
       })
-      expect((await page(kari)).canEdit).toBe(false)
+      expect((await page(kari)).canEdit).toBe(true)
       await addSelfToCompany(db, per, syrligId, {
         role: 'es',
         title: 'ignoreres',
@@ -405,8 +408,42 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       await expect(decideSuggestion(db, ola, id, 'reject')).rejects.toThrow(/allerede behandlet/)
     })
 
+    /** Forslag om hendelser fantes før alle kunne legge til selv, og kan fortsatt behandles. */
+    async function oldEventSuggestion() {
+      const [row] = await db
+        .insert(schema.companySuggestion)
+        .values({
+          companyId: syrligId,
+          suggestedByPersonId: kari!.personId!,
+          kind: 'event',
+          changes: { kind: 'event', event } as never,
+        })
+        .returning({ id: schema.companySuggestion.id })
+      return row!
+    }
+
+    it('alle medlemmer legger til hendelser med en gang, men retter bare med tilknytning', async () => {
+      const { id } = await addCompanyEvent(db, kari, syrligId, event)
+      expect((await page(per)).events).toMatchObject([{ text: 'Hentet 4 MNOK.', review: false }])
+      const [logged] = await audit('company.member_event_add')
+      expect(logged).toMatchObject({ actorPersonId: kari!.personId })
+      expect(await denial(updateCompanyEvent(db, kari, id, event))).toBe('forbidden')
+      expect(await denial(deleteCompanyEvent(db, kari, id))).toBe('forbidden')
+
+      // Den som er knyttet til selskapet, logges ikke.
+      await addCompanyEvent(db, ola, syrligId, event)
+      expect(await audit('company.member_event_add')).toHaveLength(1)
+      await deleteCompanyEvent(db, ola, id)
+    })
+
+    it('medlemmer utenfor selskapet har en grense per døgn', async () => {
+      for (let i = 0; i < 20; i++) await addCompanyEvent(db, kari, syrligId, event)
+      await expect(addCompanyEvent(db, kari, syrligId, event)).rejects.toThrow(/Prøv igjen/)
+      await addCompanyEvent(db, ola, syrligId, event)
+    })
+
     it('admins behandler forslag (logges), men trenger sterk innlogging', async () => {
-      const { id } = await suggestCompanyEvent(db, kari, syrligId, event)
+      const { id } = await oldEventSuggestion()
       expect(await denial(decideSuggestion(db, weakAdmin, id, 'reject'))).toBe(
         'strong_auth_required',
       )
@@ -418,7 +455,7 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       expect(logged!.details).toMatchObject({ companyId: syrligId, kind: 'event' })
       expect(logged!.subjectPersonId).toBe(kari!.personId)
 
-      const second = await suggestCompanyEvent(db, kari, syrligId, event)
+      const second = await oldEventSuggestion()
       await decideSuggestion(db, admin, second.id, 'accept')
       const events = (await page(per)).events
       expect(events).toHaveLength(1)
@@ -443,12 +480,14 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
     it('forslag kan trekkes av den som sendte, og antallet åpne er begrenset', async () => {
       const ids: string[] = []
       for (const text of ['A', 'B', 'C']) {
-        ids.push((await suggestCompanyEvent(db, kari, syrligId, { ...event, text })).id)
+        ids.push((await suggestCompanyInfo(db, kari, syrligId, { ...info, tagline: text })).id)
       }
-      await expect(suggestCompanyEvent(db, kari, syrligId, event)).rejects.toThrow(/allerede 3/)
+      await expect(
+        suggestCompanyInfo(db, kari, syrligId, { ...info, tagline: 'D' }),
+      ).rejects.toThrow(/allerede 3/)
       await expect(withdrawSuggestion(db, per, ids[0]!)).rejects.toThrow(/Fant ikke/)
       await withdrawSuggestion(db, kari, ids[0]!)
-      await suggestCompanyEvent(db, kari, syrligId, event)
+      await suggestCompanyInfo(db, kari, syrligId, { ...info, tagline: 'D' })
       await expect(decideSuggestion(db, ola, ids[0]!, 'accept')).rejects.toThrow(/allerede/)
     })
   })
@@ -525,48 +564,45 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       ).rejects.toThrow(/Jeg var med her/)
     })
 
-    it('admins bekrefter for profiler uten konto og avslår alle; begge logges', async () => {
+    it('en profil uten konto legges til med en gang, uten admin, og logges', async () => {
       const { personId } = await createProfile(db, admin, {
         fullName: 'Profil Uten Konto',
         cohorts: [{ graduationYear: 2016, relation: 'student' }],
         emails: [],
         status: 'active',
       })
-      const { id } = await requestCompanyLink(db, kari, syrligId, {
+      const link = {
         personId,
         role: 'founder',
         title: null,
         startYear: 2016,
         endYear: null,
-      })
-      expect(await denial(decideCompanyLink(db, weakAdmin, id, 'accept'))).toBe(
-        'strong_auth_required',
-      )
-      const row = (
-        await db
-          .select()
-          .from(schema.companyLinkRequest)
-          .where(eq(schema.companyLinkRequest.id, id))
-      )[0]!
-      expect(row.status).toBe('pending')
+      } as const
+      expect(await requestCompanyLink(db, kari, syrligId, link)).toMatchObject({ added: true })
 
-      await decideCompanyLink(db, admin, id, 'accept')
-      expect((await page(kari)).people.map((p) => p.personId)).toContain(personId)
-      const [logged] = await audit('company.admin_link_accept')
-      expect(logged!.subjectPersonId).toBe(personId)
+      expect((await page(per)).people.map((p) => p.personId)).toContain(personId)
+      expect((await listReview(db, admin, 'links', 1)).total).toBe(0)
+      const [logged] = await audit('company.member_link_add')
+      expect(logged).toMatchObject({ actorPersonId: kari!.personId, subjectPersonId: personId })
+      await expect(requestCompanyLink(db, kari, syrligId, link)).rejects.toThrow(/står allerede/)
+    })
 
-      const other = await requestCompanyLink(db, kari, syrligId, {
+    it('admins avslår forespørsler om personer med konto, og det logges', async () => {
+      const { id } = await requestCompanyLink(db, kari, syrligId, {
         personId: per!.personId!,
         role: 'employee',
         title: null,
         startYear: null,
         endYear: null,
       })
-      await decideCompanyLink(db, admin, other.id, 'reject')
+      expect(await denial(decideCompanyLink(db, weakAdmin, id, 'reject'))).toBe(
+        'strong_auth_required',
+      )
+      await decideCompanyLink(db, admin, id, 'reject')
       expect(await audit('company.admin_link_reject')).toHaveLength(1)
     })
 
-    it('antallet åpne forespørsler per medlem er begrenset', async () => {
+    it('hvor mange personer et medlem kan legge til, er begrenset per døgn', async () => {
       const people = []
       for (let i = 0; i < 21; i++) {
         people.push(
@@ -597,7 +633,7 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
           startYear: null,
           endYear: null,
         }),
-      ).rejects.toThrow(/20 forespørsler/)
+      ).rejects.toThrow(/Prøv igjen i morgen/)
     })
   })
 
@@ -612,7 +648,7 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       startYear: null,
       endYear: null,
     })
-    const suggestion = await suggestCompanyEvent(db, kari, dup!.id, event)
+    const suggestion = await suggestCompanyInfo(db, kari, dup!.id, { ...info, tagline: 'Brus' })
     const link = await requestCompanyLink(db, per, dup!.id, {
       personId: kari!.personId!,
       role: 'employee',

@@ -213,7 +213,7 @@ describe.skipIf(!url)('historikk, sitater og kilder', () => {
   })
 
   describe('historikk', () => {
-    it('de som kan redigere selskapet, kan legge til, rette og slette hendelser; andre ikke', async () => {
+    it('de som kan redigere selskapet, kan rette og slette hendelser; andre ikke', async () => {
       const { id } = await syrlig()
       const { id: eventId } = await addCompanyEvent(db, ola, id, event)
       await addCompanyEvent(db, ola, id, {
@@ -237,7 +237,6 @@ describe.skipIf(!url)('historikk, sitater og kilder', () => {
       expect(events[1]!.source).toBeNull()
 
       for (const v of [kari, per]) {
-        expect(await denial(addCompanyEvent(db, v, id, event))).toBe('forbidden')
         expect(await denial(updateCompanyEvent(db, v, eventId, event))).toBe('forbidden')
         expect(await denial(deleteCompanyEvent(db, v, eventId))).toBe('forbidden')
       }
@@ -275,12 +274,13 @@ describe.skipIf(!url)('historikk, sitater og kilder', () => {
         expect(logged!.details).toMatchObject({ companyId: id, slug: 'syrlig', eventId })
       }
 
+      const { id: other } = await addCompanyEvent(db, admin, id, event)
       await db
         .update(schema.user)
         .set({ twoFactorEnabled: false })
         .where(eq(schema.user.email, 'admin@example.test'))
       const without2fa = await loadViewer(db, admin!.userId)
-      expect(await denial(addCompanyEvent(db, without2fa, id, event))).toBe('strong_auth_required')
+      expect(await denial(deleteCompanyEvent(db, without2fa, other))).toBe('strong_auth_required')
     })
 
     it('usikre hendelser vises bare for dem som kan redigere, og blir bekreftet når de lagres', async () => {

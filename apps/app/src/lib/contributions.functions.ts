@@ -1,7 +1,6 @@
 import {
   addSelfToCompany,
   companiesToFill,
-  companyEventTypes,
   companyLinkRoles,
   companyStatuses,
   decideCompanyLink,
@@ -11,8 +10,6 @@ import {
   requestCompanyLink,
   searchPeople,
   startCompany,
-  suggestCompanyArticle,
-  suggestCompanyEvent,
   suggestCompanyInfo,
   withdrawCompanyLink,
   withdrawSuggestion,
@@ -107,47 +104,6 @@ export const proposeCompanyInfo = createServerFn({ method: 'POST' })
   )
   .handler(({ data }) =>
     run((viewer) => suggestCompanyInfo(db, viewer, data.companyId, data.values, data.note)),
-  )
-
-export const proposeCompanyEvent = createServerFn({ method: 'POST' })
-  .validator(
-    z.object({
-      companyId: z.uuid(),
-      note,
-      values: z.object({
-        year: z.number().int(),
-        month: z.number().int().nullable(),
-        day: z.number().int().nullable(),
-        type: z.enum(companyEventTypes),
-        text: z.string().max(2000),
-        sourceUrl: z.string().max(1000),
-        sourceLabel: z.string().max(200),
-      }),
-    }),
-  )
-  .handler(({ data }) =>
-    run((viewer) => suggestCompanyEvent(db, viewer, data.companyId, data.values, data.note)),
-  )
-
-export const proposeCompanyArticle = createServerFn({ method: 'POST' })
-  .validator(
-    z.object({
-      companyId: z.uuid(),
-      note,
-      values: z.object({
-        url: z.string().max(2000),
-        title: z.string().max(1000),
-        publisher: z.string().max(500),
-        year: z.number().int().nullable(),
-        month: z.number().int().nullable(),
-        day: z.number().int().nullable(),
-        paywall: z.boolean(),
-        mentionsEs: z.boolean(),
-      }),
-    }),
-  )
-  .handler(({ data }) =>
-    run((viewer) => suggestCompanyArticle(db, viewer, data.companyId, data.values, data.note)),
   )
 
 export const retractSuggestion = createServerFn({ method: 'POST' })

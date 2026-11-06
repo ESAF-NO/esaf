@@ -539,6 +539,21 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} la til en hendelse i historikken til <Company details={details} />.
     </>
   ),
+  'company.member_event_add': ({ actor, details }) => (
+    <>
+      {actor} la til en hendelse i historikken til <Company details={details} />.
+    </>
+  ),
+  'company.member_article_add': ({ actor, details }) => (
+    <>
+      {actor} la til en sak under «I media» hos <Company details={details} />.
+    </>
+  ),
+  'company.member_link_add': ({ actor, subject, details }) => (
+    <>
+      {actor} la til {subject} som {linkRole(details.role)} i <Company details={details} />.
+    </>
+  ),
   'company.admin_event_edit': ({ actor, details }) => (
     <>
       {actor} rettet en hendelse i historikken til <Company details={details} />.

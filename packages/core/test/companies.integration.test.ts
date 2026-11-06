@@ -257,7 +257,7 @@ describe.skipIf(!url)('selskaper', () => {
     expect((await page(ola, 'ensom-as')).people).toEqual([])
   })
 
-  it('gründere, ES-teamet og de som jobber der nå kan redigere, ikke tidligere ansatte eller andre', async () => {
+  it('gründere, ES-teamet og ansatte, nå eller før, kan redigere, ikke andre', async () => {
     const tidligere = await member('Tidligere')
     const annen = await member('Annen')
     await work(ola, [job('Syrlig', { founder: true, startYear: 2016, endYear: 2020 })])
@@ -266,15 +266,13 @@ describe.skipIf(!url)('selskaper', () => {
     await work(tidligere, [job('Syrlig', { startYear: 2017, endYear: 2019 })])
     const { id } = (await companyBySlug('syrlig'))!
 
-    for (const v of [ola, kari, per]) {
+    for (const v of [ola, kari, per, tidligere]) {
       expect((await page(v, 'syrlig')).canEdit).toBe(true)
       await updateCompany(db, v, id, { ...info, location: `Oslo ${v!.personId}` })
     }
-    for (const v of [tidligere, annen]) {
-      expect((await page(v, 'syrlig')).canEdit).toBe(false)
-      expect(await denial(updateCompany(db, v, id, info))).toBe('forbidden')
-      expect(await denial(getEditableCompany(db, v, 'syrlig'))).toBe('forbidden')
-    }
+    expect((await page(annen, 'syrlig')).canEdit).toBe(false)
+    expect(await denial(updateCompany(db, annen, id, info))).toBe('forbidden')
+    expect(await denial(getEditableCompany(db, annen, 'syrlig'))).toBe('forbidden')
     expect(await denial(updateCompany(db, null, id, info))).toBe('unauthenticated')
     expect(await denial(getCompany(db, null, 'syrlig'))).toBe('unauthenticated')
     // Endringer fra dem som er knyttet til selskapet, logges ikke som adminendringer.
@@ -586,7 +584,7 @@ describe.skipIf(!url)('selskaper', () => {
         cohortYears: [],
       },
     ])
-    expect((await page(kari, 'syrlig')).connected).toBe(false)
+    expect((await page(kari, 'syrlig')).connected).toBe(true)
 
     const [listed] = await listCompanies(db, kari)
     expect(listed).toMatchObject({ slug: 'syrlig', startedByAlumni: true, cohortYears: [2016] })

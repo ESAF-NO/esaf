@@ -370,8 +370,6 @@ export {
   removeSelfFromCompany,
   requestCompanyLink,
   startCompany,
-  suggestCompanyArticle,
-  suggestCompanyEvent,
   suggestCompanyInfo,
   withdrawCompanyLink,
   withdrawSuggestion,

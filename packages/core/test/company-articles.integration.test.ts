@@ -12,15 +12,11 @@ import {
   deleteCompanyArticle,
   getCompany,
   grantRoleAsOperator,
-  listNotifications,
-  listReview,
   loadViewer,
   mergeCompanies,
   normalizeArticleUrl,
-  suggestCompanyArticle,
   updateCompanyArticle,
   updateProfile,
-  withdrawSuggestion,
   type CompanyArticleInput,
   type CompanyDetails,
   type ObjectStorage,
@@ -192,7 +188,7 @@ describe.skipIf(!url)('I media', () => {
   const audit = (action: string) =>
     db.select().from(schema.auditEvent).where(eq(schema.auditEvent.action, action))
 
-  it('de som kan redigere selskapet, legger til, retter og fjerner saker; andre kan ikke', async () => {
+  it('de som kan redigere selskapet, retter og fjerner saker; andre kan ikke', async () => {
     const { id } = await addCompanyArticle(db, ola, syrligId, article)
     const [row] = await db
       .select()
@@ -221,12 +217,9 @@ describe.skipIf(!url)('I media', () => {
       },
     ])
 
-    expect(await denial(addCompanyArticle(db, kari, syrligId, article))).toBe('forbidden')
     expect(await denial(updateCompanyArticle(db, kari, id, article))).toBe('forbidden')
     expect(await denial(deleteCompanyArticle(db, kari, id))).toBe('forbidden')
-    expect(await denial(addCompanyArticle(db, weakAdmin, syrligId, article))).toBe(
-      'strong_auth_required',
-    )
+    expect(await denial(deleteCompanyArticle(db, weakAdmin, id))).toBe('strong_auth_required')
 
     await updateCompanyArticle(db, ola, id, { ...article, publisher: '', paywall: false })
     expect((await page(kari)).articles[0]).toMatchObject({
@@ -303,57 +296,38 @@ describe.skipIf(!url)('I media', () => {
     }
   })
 
-  it('andre medlemmer foreslår saker; godtatt blir den lagt inn med varsel', async () => {
-    const { id } = await suggestCompanyArticle(db, kari, syrligId, article, 'Fra i går')
-    // Den som kan redigere, kan ikke foreslå, og samme sak kan ikke foreslås når den står der.
-    await expect(suggestCompanyArticle(db, ola, syrligId, article)).rejects.toThrow(
-      /kan redigere det selv/,
-    )
-    const [forOla] = (await page(ola)).suggestions
-    expect(forOla).toMatchObject({
-      kind: 'article',
-      note: 'Fra i går',
-      article: { url: 'https://www.adressa.no/syrlig', title: 'Syrlig vil erobre Europa' },
-    })
-    const [notified] = (await listNotifications(db, ola)).items
-    expect(notified).toMatchObject({ type: 'company_suggestion', suggestionKind: 'article' })
-    // Admins ser forslaget under Gjennomgang.
-    const review = await listReview(db, admin, 'suggestions', 1)
-    expect(review).toMatchObject({ kind: 'suggestions', total: 1 })
-
-    expect(await denial(decideSuggestion(db, kari, id, 'accept'))).toBe('forbidden')
-    await decideSuggestion(db, ola, id, 'accept')
-    const after = await page(kari)
-    expect(after.articles).toHaveLength(1)
+  it('alle medlemmer legger til saker med en gang, men retter bare med tilknytning', async () => {
+    const { id } = await addCompanyArticle(db, kari, syrligId, article)
+    expect((await page(ola)).articles).toHaveLength(1)
     const [row] = await db.select().from(schema.companyArticle)
     expect(row).toMatchObject({ source: 'member', addedByPersonId: kari!.personId })
-    const [note] = (await listNotifications(db, kari)).items
-    expect(note).toMatchObject({ type: 'suggestion_accepted', suggestionKind: 'article' })
+    const [logged] = await audit('company.member_article_add')
+    expect(logged).toMatchObject({ actorPersonId: kari!.personId })
 
-    await expect(suggestCompanyArticle(db, kari, syrligId, article)).rejects.toThrow(
-      /står allerede/,
-    )
+    await expect(addCompanyArticle(db, kari, syrligId, article)).rejects.toThrow(/står allerede/)
+    await expect(
+      addCompanyArticle(db, kari, syrligId, { ...article, url: 'mailto:ola@example.test' }),
+    ).rejects.toThrow(/Ugyldig lenke/)
+    expect(await denial(updateCompanyArticle(db, kari, id, article))).toBe('forbidden')
+    expect(await denial(deleteCompanyArticle(db, kari, id))).toBe('forbidden')
+    await deleteCompanyArticle(db, ola, id)
   })
 
-  it('et forslag om en sak som er lagt inn i mellomtiden, godtas uten duplikat', async () => {
-    const { id } = await suggestCompanyArticle(db, kari, syrligId, article)
+  it('et gammelt forslag om en sak som er lagt inn i mellomtiden, godtas uten duplikat', async () => {
+    const [old] = await db
+      .insert(schema.companySuggestion)
+      .values({
+        companyId: syrligId,
+        suggestedByPersonId: kari!.personId!,
+        kind: 'article',
+        changes: { kind: 'article', article } as never,
+      })
+      .returning({ id: schema.companySuggestion.id })
     await addCompanyArticle(db, ola, syrligId, article)
-    await decideSuggestion(db, admin, id, 'accept')
+    await decideSuggestion(db, admin, old!.id, 'accept')
     expect(await db.select().from(schema.companyArticle)).toHaveLength(1)
     const [logged] = await audit('company.admin_suggestion_accept')
     expect(logged!.details).toMatchObject({ kind: 'article' })
-  })
-
-  it('forslag kan avslås og trekkes', async () => {
-    const first = await suggestCompanyArticle(db, kari, syrligId, article)
-    await decideSuggestion(db, ola, first.id, 'reject')
-    expect((await page(kari)).articles).toEqual([])
-    const second = await suggestCompanyArticle(db, kari, syrligId, article)
-    await withdrawSuggestion(db, kari, second.id)
-    expect((await page(ola)).suggestions).toEqual([])
-    await expect(
-      suggestCompanyArticle(db, kari, syrligId, { ...article, url: 'mailto:ola@example.test' }),
-    ).rejects.toThrow(/Ugyldig lenke/)
   })
 
   it('følger med når selskaper slås sammen, uten doble saker', async () => {

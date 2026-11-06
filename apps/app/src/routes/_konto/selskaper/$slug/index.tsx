@@ -286,7 +286,8 @@ function CompanyPage() {
             ) : (
               <p className="mt-2 text-sm text-stone-500">
                 Ingen har skrevet om {c.name} ennå.
-                {!c.canEdit && ' Gründerne, ES-teamet og de som jobber der nå, kan fylle ut siden.'}
+                {!c.canEdit &&
+                  ' Gründerne, ES-teamet og de som jobber eller har jobbet der, kan fylle ut siden.'}
               </p>
             )}
           </Card>

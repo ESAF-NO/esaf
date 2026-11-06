@@ -189,7 +189,7 @@ export function JoinCompanyDialog({
   return (
     <Dialog
       title={`Jeg var med i ${name}`}
-      description="Det legges til på profilen din med en gang. Som gründer, ES-team eller ansatt nå kan du også redigere selskapssiden."
+      description="Det legges til på profilen din med en gang. Da kan du også redigere selskapssiden."
       onClose={onClose}
       busy={saving}
       className="max-w-lg"
@@ -211,8 +211,8 @@ export function JoinCompanyDialog({
 }
 
 /**
- * Legg til en annen person. Personen får spørsmål om det stemmer, og vises ikke
- * på selskapssiden før de har bekreftet.
+ * Legg til en annen person. Har de konto, får de spørsmål om det stemmer, og vises
+ * ikke på selskapssiden før de har bekreftet. Uten konto vises de med en gang.
  */
 export function AddPersonDialog({
   companyId,
@@ -272,7 +272,11 @@ export function AddPersonDialog({
   return (
     <Dialog
       title={`Legg til en person i ${name}`}
-      description="Personen får spørsmål om det stemmer, og vises ikke på selskapssiden før de har bekreftet."
+      description={
+        chosen && !chosen.claimed
+          ? 'Personen har ikke konto ennå, så det vises på selskapssiden med en gang. De kan rette det når de tar profilen i bruk.'
+          : 'Har personen konto, får de spørsmål om det stemmer, og vises ikke på selskapssiden før de har bekreftet.'
+      }
       onClose={onClose}
       busy={saving}
       className="max-w-lg"
@@ -351,7 +355,7 @@ export function AddPersonDialog({
             Avbryt
           </Button>
           <Button type="submit" variant="brand" disabled={saving || !chosen}>
-            {saving ? 'Sender …' : 'Send til bekreftelse'}
+            {saving ? 'Lagrer …' : chosen && !chosen.claimed ? 'Legg til' : 'Send til bekreftelse'}
           </Button>
         </DialogActions>
       </form>
@@ -406,14 +410,11 @@ export function NewCompanyDialog({ onClose }: { onClose: () => void }) {
     setSaving(true)
     setError(null)
     try {
-      const values = toValues(draft)
-      const created = await createOwnCompany({ data: { name: term, link: values } })
-      // Tidligere ansatte kan ikke redigere selskapet, så de får selskapssiden.
-      const canEdit = values.role !== 'employee' || values.endYear === null
+      const created = await createOwnCompany({ data: { name: term, link: toValues(draft) } })
       await navigate({
-        to: canEdit ? '/selskaper/$slug/rediger' : '/selskaper/$slug',
+        to: '/selskaper/$slug/rediger',
         params: { slug: created.slug },
-        search: canEdit ? { ny: true } : {},
+        search: { ny: true },
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')

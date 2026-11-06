@@ -2,7 +2,7 @@ import { schema, type CompanyEventType, type Db, type DatePrecision } from '@esa
 import { and, desc, eq, ne } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Viewer } from './access.ts'
-import { companyForEdit } from './companies.ts'
+import { companyForAdding, companyForEdit } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
 import { hostLabel, optionalSourceUrl, optionalText, safeHttpUrl } from './validation.ts'
@@ -12,10 +12,12 @@ const { auditEvent, companyEvent } = schema
 /**
  * Historikken til et selskap. Reglene:
  *
- * - De samme som kan redigere selskapsinfoen, kan legge til, rette og slette
- *   hendelser: gründere (også tidligere), ES-teamet, de som jobber der nå og
- *   admins med `profiles.edit`. Admins som ikke selv er knyttet til selskapet,
- *   logges, som ved annen redigering.
+ * - Alle aktive medlemmer kan legge til hendelser, og de vises med en gang. De
+ *   som ikke er knyttet til selskapet, logges, og har en grense per døgn.
+ * - De samme som kan redigere selskapsinfoen, kan rette og slette hendelser:
+ *   gründere (også tidligere), ES-teamet, de som jobber eller har jobbet der og admins med
+ *   `profiles.edit`. Admins som ikke selv er knyttet til selskapet, logges, som
+ *   ved annen redigering.
  * - Hendelser med lav sikkerhet (typisk setninger hentet automatisk fra
  *   nyhetssaker) vises bare for dem som kan redigere selskapet, merket «til
  *   gjennomgang». Lagres en hendelse i appen, regnes den som bekreftet (`high`).
@@ -162,7 +164,8 @@ async function logAdminChange(
     | 'company.admin_event_add'
     | 'company.admin_event_edit'
     | 'company.admin_event_confirm'
-    | 'company.admin_event_remove',
+    | 'company.admin_event_remove'
+    | 'company.member_event_add',
   target: { id: string; slug: string; name: string },
   event: { id: string; type: CompanyEventType },
 ) {
@@ -188,7 +191,7 @@ export async function addCompanyEvent(
 ): Promise<{ id: string }> {
   const values = parse(input)
   return db.transaction(async (tx) => {
-    const target = await companyForEdit(tx, viewer, companyId, { lock: true })
+    const target = await companyForAdding(tx, viewer, companyId)
     const [row] = await tx
       .insert(companyEvent)
       .values({
@@ -200,11 +203,9 @@ export async function addCompanyEvent(
         confidence: 'high',
       })
       .returning({ id: companyEvent.id })
-    if (target.adminEdit) {
-      await logAdminChange(tx, viewer, 'company.admin_event_add', target, {
-        id: row!.id,
-        type: values.type,
-      })
+    if (target.adminEdit || target.outsider) {
+      const action = target.adminEdit ? 'company.admin_event_add' : 'company.member_event_add'
+      await logAdminChange(tx, viewer, action, target, { id: row!.id, type: values.type })
     }
     return { id: row!.id }
   })

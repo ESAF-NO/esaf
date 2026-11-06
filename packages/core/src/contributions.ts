@@ -6,7 +6,7 @@ import {
   type ContributionStatus,
   type Db,
 } from '@esaf/db'
-import { and, asc, count, eq, gt, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
@@ -21,14 +21,9 @@ import {
   writeCompanyValues,
   type CompanyInput,
 } from './companies.ts'
-import {
-  findDuplicateArticle,
-  insertArticle,
-  parseArticle,
-  type CompanyArticleInput,
-} from './company-articles.ts'
+import { insertArticle, parseArticle } from './company-articles.ts'
 import { insertCompany } from './company-admin.ts'
-import { companyEventInput, eventValues, type CompanyEventInput } from './company-events.ts'
+import { companyEventInput, eventValues } from './company-events.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import type { Tx } from './members.ts'
@@ -54,18 +49,24 @@ const {
  * - **Seg selv:** Et aktivt medlem kan legge seg selv til i et selskap som
  *   gründer, ES-team eller ansatt (nå eller før). Det gjelder dem selv, så det
  *   lagres med en gang som erfaring eller ES-selskap, akkurat som på profilen.
- *   De kan også fjerne seg selv. Er de da gründer, ES-team eller ansatt nå, kan
+ *   De kan også fjerne seg selv. Som gründer, ES-team eller ansatt, nå eller før, kan
  *   de redigere selskapet etter de vanlige reglene (`isConnected`).
+ * - **Tillit:** Medlemmene er invitert eller godkjent, så det som bare legger til
+ *   noe, trenger ingen godkjenning. Det gjelder hendelser, saker (se
+ *   `company-events.ts` og `company-articles.ts`) og personer uten konto. Det som
+ *   endrer eller fjerner noe andre står bak, gjør de som er knyttet til det.
  * - **Forslag:** Medlemmer som ikke kan redigere selskapet, kan foreslå endringer
- *   i selskapsinfoen (bare feltene som endres lagres, med verdien før og etter),
- *   nye hendelser i historikken og saker under «I media». De som kan redigere selskapet, og admins med
- *   `profiles.edit`, godtar eller avslår. Den som foreslo får varsel, og kan
- *   trekke forslaget så lenge det ikke er behandlet. Ingen behandler sine egne.
- * - **Andre personer:** Sier et medlem at en annen person var med i et selskap,
+ *   i selskapsinfoen (bare feltene som endres lagres, med verdien før og etter).
+ *   De som kan redigere selskapet, og admins med `profiles.edit`, godtar eller
+ *   avslår. Den som foreslo får varsel, og kan trekke forslaget så lenge det ikke
+ *   er behandlet. Ingen behandler sine egne. Forslag om hendelser og saker fra før
+ *   de kunne legges til direkte, behandles på samme måte.
+ * - **Andre personer:** Sier et medlem at en annen med konto var med i et selskap,
  *   lagres det som en forespørsel personen selv må bekrefte (varsel og knapper
  *   på selskapssiden og profilen). Den vises ikke for andre før den er bekreftet.
- *   For profiler ingen har tatt i bruk, kan en admin bekrefte. Admins kan avslå
- *   alle, for å rydde bort feil.
+ *   Har personen ingen konto, er det ingen å spørre: det vises med en gang og
+ *   logges, og personen kan fjerne det når de tar profilen i bruk. Admins kan
+ *   avslå forespørsler, for å rydde bort feil.
  * - **Grenser:** Høyst 10 åpne forslag per medlem, 3 per selskap og 20 nye i
  *   døgnet; høyst 20 åpne forespørsler om andre og 20 nye i døgnet.
  * - Admins som behandler noe uten å være knyttet til selskapet, logges.
@@ -451,7 +452,7 @@ async function startSuggestion(
   return current
 }
 
-/** Varsler dem som kan godta forslaget: gründere, ES-teamet og de som jobber der nå. */
+/** Varsler dem som kan godta forslaget: gründere, ES-teamet og ansatte, nå eller før. */
 async function notifyConnected(
   tx: Tx,
   companyId: string,
@@ -462,12 +463,7 @@ async function notifyConnected(
   const roles = await tx
     .selectDistinct({ personId: experience.personId })
     .from(experience)
-    .where(
-      and(
-        eq(experience.companyId, companyId),
-        or(eq(experience.founder, true), isNull(experience.endYear)),
-      ),
-    )
+    .where(and(eq(experience.companyId, companyId)))
   const team = await tx
     .select({ personId: person.id })
     .from(person)
@@ -522,68 +518,6 @@ export async function suggestCompanyInfo(
       })
       .returning({ id: companySuggestion.id })
     await notifyConnected(tx, companyId, viewer.personId, row!.id, 'info')
-    return { id: row!.id }
-  })
-}
-
-/** Foreslår en ny hendelse i historikken. */
-export async function suggestCompanyEvent(
-  db: Db,
-  viewer: Viewer,
-  companyId: string,
-  input: CompanyEventInput,
-  note?: string | null,
-): Promise<{ id: string }> {
-  assertMember(viewer)
-  const event = parse(companyEventInput, input)
-  const comment = parse(noteInput, note ?? '')
-  return db.transaction(async (tx) => {
-    await startSuggestion(tx, viewer, companyId)
-    const [row] = await tx
-      .insert(companySuggestion)
-      .values({
-        companyId,
-        suggestedByPersonId: viewer.personId,
-        kind: 'event',
-        changes: { kind: 'event', event },
-        note: comment,
-      })
-      .returning({ id: companySuggestion.id })
-    await notifyConnected(tx, companyId, viewer.personId, row!.id, 'event')
-    return { id: row!.id }
-  })
-}
-
-/**
- * Foreslår en sak under «I media». Står saken der allerede (samme lenke), sies det
- * fra med en gang.
- */
-export async function suggestCompanyArticle(
-  db: Db,
-  viewer: Viewer,
-  companyId: string,
-  input: CompanyArticleInput,
-  note?: string | null,
-): Promise<{ id: string }> {
-  assertMember(viewer)
-  const article = parseArticle(input)
-  const comment = parse(noteInput, note ?? '')
-  return db.transaction(async (tx) => {
-    await startSuggestion(tx, viewer, companyId)
-    if (await findDuplicateArticle(tx, companyId, article.url)) {
-      throw new DomainError('Saken står allerede under «I media».')
-    }
-    const [row] = await tx
-      .insert(companySuggestion)
-      .values({
-        companyId,
-        suggestedByPersonId: viewer.personId,
-        kind: 'article',
-        changes: { kind: 'article', article },
-        note: comment,
-      })
-      .returning({ id: companySuggestion.id })
-    await notifyConnected(tx, companyId, viewer.personId, row!.id, 'article')
     return { id: row!.id }
   })
 }
@@ -851,15 +785,15 @@ export type LinkRequestView = {
 }
 
 /**
- * Sier at en annen person var med i selskapet. Personen må bekrefte før det
- * vises; de får varsel hvis de har konto.
+ * Sier at en annen person var med i selskapet. Har de konto, må de bekrefte før
+ * det vises, og får varsel. Uten konto vises det med en gang (`added`).
  */
 export async function requestCompanyLink(
   db: Db,
   viewer: Viewer,
   companyId: string,
   input: CompanyLinkInput & { personId: string },
-): Promise<{ id: string }> {
+): Promise<{ id: string; added: boolean }> {
   assertMember(viewer)
   const link = parse(companyLinkInput, input)
   const personId = parse(z.uuid(), input.personId)
@@ -869,7 +803,11 @@ export async function requestCompanyLink(
   return db.transaction(async (tx) => {
     const target = await companyName(tx, companyId)
     const [named] = await tx
-      .select({ fullName: person.fullName, esCompanyId: person.esCompanyId })
+      .select({
+        fullName: person.fullName,
+        esCompanyId: person.esCompanyId,
+        userId: person.userId,
+      })
       .from(person)
       .innerJoin(
         membership,
@@ -932,6 +870,36 @@ export async function requestCompanyLink(
       throw new DomainError('Du har lagt til mange personer det siste døgnet. Prøv igjen i morgen.')
     }
 
+    // Uten konto er det ingen å spørre. Raden teller mot grensen per døgn.
+    if (!named.userId) {
+      await applyLink(tx, personId, target, link, { owner: false, you: false })
+      const [added] = await tx
+        .insert(companyLinkRequest)
+        .values({
+          companyId,
+          personId,
+          requestedByPersonId: viewer.personId,
+          ...link,
+          status: 'accepted',
+          decidedAt: new Date(),
+          decidedByPersonId: viewer.personId,
+        })
+        .returning({ id: companyLinkRequest.id })
+      await tx.insert(auditEvent).values({
+        actorPersonId: viewer.personId,
+        action: 'company.member_link_add',
+        subjectPersonId: personId,
+        details: {
+          companyId: target.id,
+          slug: target.slug,
+          name: target.name,
+          role: link.role,
+          requestId: added!.id,
+        },
+      })
+      return { id: added!.id, added: true }
+    }
+
     const [row] = await tx
       .insert(companyLinkRequest)
       .values({ companyId, personId, requestedByPersonId: viewer.personId, ...link })
@@ -952,7 +920,7 @@ export async function requestCompanyLink(
         payload: { linkRequestId: row.id, linkRole: link.role },
       },
     ])
-    return { id: row.id }
+    return { id: row.id, added: false }
   })
 }
 

@@ -216,11 +216,10 @@ describe.skipIf(!url)('selskapslogoer', () => {
     await work(kari, [], 'Syrlig')
     await setCompanyLogo(db, storage, kari, syrlig, file)
     const annen = await member('Annen')
-    for (const v of [tidligere, annen]) {
-      expect(await denial(setCompanyLogo(db, storage, v, syrlig, file))).toBe('forbidden')
-      expect(await denial(removeCompanyLogo(db, storage, v, syrlig))).toBe('forbidden')
-      expect(await denial(assertCanChangeLogo(db, v, syrlig))).toBe('forbidden')
-    }
+    await setCompanyLogo(db, storage, tidligere, syrlig, file)
+    expect(await denial(setCompanyLogo(db, storage, annen, syrlig, file))).toBe('forbidden')
+    expect(await denial(removeCompanyLogo(db, storage, annen, syrlig))).toBe('forbidden')
+    expect(await denial(assertCanChangeLogo(db, annen, syrlig))).toBe('forbidden')
     expect(await denial(setCompanyLogo(db, storage, adminWithout2fa, syrlig, file))).toBe(
       'strong_auth_required',
     )

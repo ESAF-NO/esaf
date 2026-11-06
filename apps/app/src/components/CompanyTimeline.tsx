@@ -26,7 +26,6 @@ import {
   saveCompanyEvent,
   type CompanyEventFormValues,
 } from '#/lib/companies.functions.ts'
-import { proposeCompanyEvent } from '#/lib/contributions.functions.ts'
 import { monthNames, partialDate } from '#/lib/format.ts'
 
 const icons: Record<CompanyEventType, LucideIcon> = {
@@ -231,13 +230,12 @@ export function CompanyTimeline({
   companyId: string
   name: string
   events: CompanyEvent[]
-  /** Kan legge til og rette selv. Andre medlemmer foreslår nye hendelser i stedet. */
+  /** Kan rette og slette. Alle medlemmer kan legge til. */
   canEdit: boolean
   /** Redigerer som admin uten å være knyttet til selskapet; endringer logges. */
   adminEdit: boolean
 }) {
   const [editing, setEditing] = useState<CompanyEvent | 'new' | null>(null)
-  const [suggested, setSuggested] = useState(false)
   const confirmed = events.filter((e) => !e.review)
   const review = events.filter((e) => e.review)
 
@@ -246,21 +244,15 @@ export function CompanyTimeline({
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-stone-950">Historikk</h2>
         <Button variant="secondary" size="sm" onClick={() => setEditing('new')}>
-          <Plus className="size-4" aria-hidden /> {canEdit ? 'Legg til' : 'Foreslå hendelse'}
+          <Plus className="size-4" aria-hidden /> Legg til
         </Button>
       </div>
-      {suggested && (
-        <p role="status" className="mt-2 text-sm text-emerald-700">
-          Takk! Forslaget er sendt til dem som kan redigere {name}.
-        </p>
-      )}
       {confirmed.length > 0 ? (
         <EventList events={confirmed} canEdit={canEdit} onEdit={setEditing} />
       ) : (
         <p className="mt-2 text-sm text-stone-500">
-          {canEdit
-            ? `Ingen hendelser ennå. Legg til når ${name} ble grunnlagt, fikk kapital, vant priser eller lanserte noe.`
-            : `Ingen hendelser ennå. Vet du når ${name} ble grunnlagt, fikk kapital, vant priser eller lanserte noe? Foreslå det.`}
+          Ingen hendelser ennå. Legg til når {name} ble grunnlagt, fikk kapital, vant priser eller
+          lanserte noe.
         </p>
       )}
       {review.length > 0 && (
@@ -281,9 +273,7 @@ export function CompanyTimeline({
           companyId={companyId}
           event={editing === 'new' ? null : editing}
           adminEdit={adminEdit}
-          suggest={!canEdit}
           onClose={() => setEditing(null)}
-          onSuggested={() => setSuggested(true)}
         />
       )}
     </Card>
@@ -294,21 +284,15 @@ function EventDialog({
   companyId,
   event,
   adminEdit,
-  suggest,
   onClose,
-  onSuggested,
 }: {
   companyId: string
   event: CompanyEvent | null
   adminEdit: boolean
-  /** Sendes som forslag til dem som kan redigere, med en valgfri kommentar. */
-  suggest: boolean
   onClose: () => void
-  onSuggested: () => void
 }) {
   const router = useRouter()
   const [values, setValues] = useState(() => formValues(event))
-  const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const set = (patch: Partial<CompanyEventFormValues>) => setValues((v) => ({ ...v, ...patch }))
@@ -319,14 +303,9 @@ function EventDialog({
     setSaving(true)
     setError(null)
     try {
-      if (suggest) {
-        await proposeCompanyEvent({ data: { companyId, values, note } })
-        onSuggested()
-      } else {
-        await saveCompanyEvent({
-          data: event ? { eventId: event.id, values } : { companyId, values },
-        })
-      }
+      await saveCompanyEvent({
+        data: event ? { eventId: event.id, values } : { companyId, values },
+      })
       await router.invalidate()
       onClose()
     } catch (err) {
@@ -337,13 +316,13 @@ function EventDialog({
 
   return (
     <Dialog
-      title={suggest ? 'Foreslå en hendelse' : event ? 'Rediger hendelse' : 'Ny hendelse'}
+      title={event ? 'Rediger hendelse' : 'Ny hendelse'}
       description={
-        suggest
-          ? 'De som kan redigere selskapet, ser over forslaget. Du får varsel når det er behandlet.'
-          : adminEdit
-            ? 'Du redigerer som admin, og endringen logges.'
-            : undefined
+        adminEdit
+          ? 'Du redigerer som admin, og endringen logges.'
+          : event
+            ? undefined
+            : 'Hendelsen vises for alle medlemmer med en gang.'
       }
       onClose={onClose}
       busy={saving}
@@ -433,18 +412,13 @@ function EventDialog({
             />
           </Field>
         </div>
-        {suggest && (
-          <Field label="Kommentar" hint="Valgfritt. Hjelper dem som skal godta forslaget.">
-            <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-          </Field>
-        )}
         {error && <ErrorText>{error}</ErrorText>}
         <DialogActions>
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Avbryt
           </Button>
           <Button type="submit" variant="brand" disabled={saving}>
-            {saving ? (suggest ? 'Sender …' : 'Lagrer …') : suggest ? 'Send forslag' : 'Lagre'}
+            {saving ? 'Lagrer …' : 'Lagre'}
           </Button>
         </DialogActions>
       </form>

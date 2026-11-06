@@ -1,7 +1,20 @@
 import { createHash } from 'node:crypto'
 import { domainToUnicode } from 'node:url'
 import { schema, type CompanyStatus, type Db } from '@esaf/db'
-import { and, arrayOverlaps, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
+import {
+  and,
+  arrayOverlaps,
+  asc,
+  count,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import { z } from 'zod'
 import { assertCan, assertMember, can, type Viewer } from './access.ts'
 import { assetViews, loadAssets, type AssetView } from './assets.ts'
@@ -227,7 +240,7 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   quotes: Quote[]
   /** Hvor de importerte feltene kom fra, for feltene som vises. */
   sources: FieldSource<CompanySourceField>[]
-  /** Den innloggede er gründer, i ES-teamet eller jobber der nå. */
+  /** Den innloggede er gründer, i ES-teamet eller jobber eller har jobbet der. */
   connected: boolean
   canEdit: boolean
   /** Admin kan slå selskapet sammen med et duplikat. */
@@ -468,21 +481,15 @@ async function findCompany(db: Db | Tx, slug: string) {
 }
 
 /**
- * Gründer (også tidligere), i ES-teamet eller ansatt nå. Tidligere ansatte regnes
- * ikke med. Avgjør hvem som kan redigere selskapet, også logoen (logos.ts).
+ * Har vært med i selskapet: gründer, i ES-teamet eller ansatt, nå eller før. De vet
+ * mest om det, og kan redigere det, som på LinkedIn.
  */
 export async function isConnected(db: Db | Tx, personId: string, companyId: string) {
   const [[role], [es]] = await Promise.all([
     db
       .select({ id: experience.id })
       .from(experience)
-      .where(
-        and(
-          eq(experience.personId, personId),
-          eq(experience.companyId, companyId),
-          or(eq(experience.founder, true), isNull(experience.endYear)),
-        ),
-      )
+      .where(and(eq(experience.personId, personId), eq(experience.companyId, companyId)))
       .limit(1),
     db
       .select({ id: person.id })
@@ -494,7 +501,7 @@ export async function isConnected(db: Db | Tx, personId: string, companyId: stri
 
 /**
  * Selskapet, når den innloggede kan redigere det: gründere (også tidligere),
- * ES-teamet, de som jobber der nå og admins med `profiles.edit`. `adminEdit`
+ * ES-teamet, de som jobber eller har jobbet der og admins med `profiles.edit`. `adminEdit`
  * betyr at endringen gjøres med adminrettighet og skal logges. Brukes av
  * redigering, logo og historikk.
  */
@@ -514,6 +521,44 @@ export async function companyForEdit(
   const connected = await isConnected(db, viewer.personId, companyId)
   if (!connected) assertCan(viewer, 'profiles.edit')
   return { ...row, adminEdit: !connected }
+}
+
+/** Så mye kan et medlem legge til på selskaper de ikke er knyttet til, per døgn. */
+const ADDITIONS_PER_DAY = 20
+
+/**
+ * Selskapet, for å legge til en hendelse eller sak. Alle aktive medlemmer kan
+ * det: de er invitert eller godkjent, og å legge til endrer ikke noe som står der.
+ * Å rette og slette krever `companyForEdit`. `outsider` betyr verken knyttet til
+ * selskapet eller admin; det logges, og er det som teller mot grensen.
+ */
+export async function companyForAdding(tx: Tx, viewer: Viewer, companyId: string) {
+  assertMember(viewer)
+  const [row] = await tx
+    .select({ id: company.id, slug: company.slug, name: company.name })
+    .from(company)
+    .where(eq(company.id, companyId))
+    .for('update')
+  if (!row) throw new NotFoundError('Fant ikke selskapet.')
+  const connected = await isConnected(tx, viewer.personId, companyId)
+  const adminEdit = !connected && can(viewer, 'profiles.edit')
+  const outsider = !connected && !adminEdit
+  if (outsider) {
+    const [recent] = await tx
+      .select({ n: count() })
+      .from(auditEvent)
+      .where(
+        and(
+          eq(auditEvent.actorPersonId, viewer.personId),
+          inArray(auditEvent.action, ['company.member_event_add', 'company.member_article_add']),
+          gt(auditEvent.createdAt, new Date(Date.now() - 24 * 3600 * 1000)),
+        ),
+      )
+    if ((recent?.n ?? 0) >= ADDITIONS_PER_DAY) {
+      throw new DomainError('Du har lagt til mye det siste døgnet. Prøv igjen i morgen.')
+    }
+  }
+  return { ...row, adminEdit, outsider }
 }
 
 /** Domenet uten «www.», med æøå i stedet for punycode. */
@@ -541,7 +586,7 @@ export async function getCompany(
     db,
     people.map((p) => p.personId),
   )
-  const connected = people.some((p) => p.personId === viewer.personId && p.role !== 'past')
+  const connected = people.some((p) => p.personId === viewer.personId)
   const canEdit = connected || can(viewer, 'profiles.edit')
   // Kilder bare for feltene som vises.
   const shown = companySourceFields.filter((field) =>
@@ -733,7 +778,7 @@ export function rethrowSlugConflict(error: unknown): never {
 }
 
 /**
- * Lagrer selskapsinfo. Gründere, ES-teamet og de som jobber der nå kan endre den,
+ * Lagrer selskapsinfo. Gründere, ES-teamet og de som jobber eller har jobbet der kan endre den,
  * og admins (`profiles.edit`). Admins som ikke selv er knyttet til selskapet, blir
  * logget. Nytt navn gir ny slug; den gamle blir et alias, så gamle lenker virker.
  */

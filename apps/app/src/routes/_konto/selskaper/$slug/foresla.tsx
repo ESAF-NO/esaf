@@ -47,7 +47,8 @@ function SuggestChange() {
             Foreslå endring i {company.name}
           </h1>
           <p className="text-sm text-stone-500">
-            Gründerne, ES-teamet, de som jobber der nå eller en admin ser over forslaget.
+            Gründerne, ES-teamet, de som jobber eller har jobbet der, eller en admin ser over
+            forslaget.
           </p>
         </div>
       </div>

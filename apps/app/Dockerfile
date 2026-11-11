@@ -5,7 +5,7 @@
 # henter bare bildet. Ingen hemmeligheter trengs eller havner i bildet: alt fra
 # miljøet leses når containeren starter.
 
-FROM node:24-slim AS build
+FROM node:24.22.3-bookworm-slim AS build
 WORKDIR /repo
 # Personsøket kjører på CPU; CUDA-filene til onnxruntime trengs ikke.
 ENV TURBO_TELEMETRY_DISABLED=1 ONNXRUNTIME_NODE_INSTALL=skip SEARCH_MODEL_DIR=/repo/.data/models
@@ -24,7 +24,7 @@ RUN --mount=type=cache,id=esaf-search-models,target=/cache/models \
   && mkdir -p /repo/.data \
   && cp -R /cache/models /repo/.data/models
 
-FROM node:24-slim
+FROM node:24.22.3-bookworm-slim
 ENV NODE_ENV=production PORT=3000 SEARCH_MODEL_DIR=/repo/.data/models
 # Coolifys helsesjekk kjører curl eller wget inne i containeren; slim-bildet har ingen av dem.
 RUN apt-get update \

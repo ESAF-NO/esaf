@@ -268,12 +268,14 @@ function defaultRule(kind: BadgeRuleKind, options: Options): RuleDraft {
     case 'programme':
       return {
         kind,
-        link: 'founder',
+        link: 'founder_or_es',
         programmeIds: [],
         programmeKinds: [],
         first: false,
         duringEs: false,
       }
+    case 'milestone':
+      return { kind, link: 'founder_or_es', eventTypes: ['funding'], count: 1 }
     case 'profile':
       return { kind, fields: ['photo', 'bio', 'experience'] }
     case 'community':
@@ -646,6 +648,7 @@ const companyStatusNames = {
 const companyLinkNames = {
   es_company: 'Selskapet de startet på ES',
   founder: 'Grunnlagt (gründer)',
+  founder_or_es: 'Grunnlagt eller startet på ES',
   any: 'Grunnlagt eller jobbet i',
 } as const
 
@@ -850,6 +853,28 @@ function RuleEditor({
               onChange={(duringEs) => set({ duringEs })}
             />
           </div>
+        </>
+      )}
+      {rule.kind === 'milestone' && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Selskaper">
+              <Select value={rule.link as string} onChange={(e) => set({ link: e.target.value })}>
+                {Object.entries(companyLinkNames).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {number('count', 'Minst antall ganger', 1, 50)}
+          </div>
+          <Checks
+            label="Milepæler som teller"
+            values={options.milestoneTypes.map((m) => [m.type, m.name])}
+            selected={list('eventTypes')}
+            onToggle={(v) => toggleIn('eventTypes', v)}
+          />
         </>
       )}
       {rule.kind === 'profile' && (

@@ -148,9 +148,30 @@ describe('regler for merker', () => {
   it('selskaper: ES-selskapet, gründer, og status som «kjøpt opp»', () => {
     const f = facts({
       companies: [
-        { companyId: 'a', status: 'acquired', founder: true, esCompany: true, programmes: [] },
-        { companyId: 'b', status: 'active', founder: true, esCompany: false, programmes: [] },
-        { companyId: 'c', status: 'active', founder: false, esCompany: false, programmes: [] },
+        {
+          companyId: 'a',
+          status: 'acquired',
+          founder: true,
+          esCompany: true,
+          milestones: [],
+          programmes: [],
+        },
+        {
+          companyId: 'b',
+          status: 'active',
+          founder: true,
+          esCompany: false,
+          milestones: [],
+          programmes: [],
+        },
+        {
+          companyId: 'c',
+          status: 'active',
+          founder: false,
+          esCompany: false,
+          milestones: [],
+          programmes: [],
+        },
       ],
     })
     expect(evaluateBadgeRule(rule({ kind: 'company', link: 'es_company' }), f).earned).toBe(true)
@@ -167,6 +188,56 @@ describe('regler for merker', () => {
     expect(evaluateBadgeRule(rule({ kind: 'company', link: 'any', count: 4 }), f).earned).toBe(
       false,
     )
+    // Gründer eller ES-selskap: a (begge) og b (gründer), ikke c (bare ansatt).
+    expect(
+      evaluateBadgeRule(rule({ kind: 'company', link: 'founder_or_es', count: 2 }), f).earned,
+    ).toBe(true)
+    expect(
+      evaluateBadgeRule(rule({ kind: 'company', link: 'founder_or_es', count: 3 }), f).earned,
+    ).toBe(false)
+  })
+
+  it('programmer med «grunnlagt eller startet på ES» teller begge slags selskaper', () => {
+    const programme = (programmeId: string) => [
+      { programmeId, kind: 'incubator' as const, date: '2024-01-01', first: false },
+    ]
+    const f = facts({
+      companies: [
+        {
+          companyId: 'es',
+          status: 'active',
+          founder: false,
+          esCompany: true,
+          milestones: [],
+          programmes: programme(YC),
+        },
+        {
+          companyId: 'own',
+          status: 'active',
+          founder: true,
+          esCompany: false,
+          milestones: [],
+          programmes: programme(LAB),
+        },
+        {
+          companyId: 'job',
+          status: 'active',
+          founder: false,
+          esCompany: false,
+          milestones: [],
+          programmes: programme(OTHER),
+        },
+      ],
+    })
+    const earned = (programmeIds: string[]) =>
+      evaluateBadgeRule(rule({ kind: 'programme', link: 'founder_or_es', programmeIds }), f).earned
+    expect(earned([YC])).toBe(true)
+    expect(earned([LAB])).toBe(true)
+    expect(earned([OTHER])).toBe(false)
+    expect(
+      evaluateBadgeRule(rule({ kind: 'programme', link: 'es_company', programmeIds: [LAB] }), f)
+        .earned,
+    ).toBe(false)
   })
 
   it('programmer: bestemte programmer, typer, først i ESAF og mens de gikk på ES', () => {
@@ -178,6 +249,7 @@ describe('regler for merker', () => {
           status: 'active',
           founder: true,
           esCompany: true,
+          milestones: [],
           programmes: [
             { programmeId: LAB, kind: 'incubator', date: '2021-08-01', first: false },
             { programmeId: YC, kind: 'accelerator', date: '2023-01-01', first: true },
@@ -188,6 +260,7 @@ describe('regler for merker', () => {
           status: 'active',
           founder: false,
           esCompany: false,
+          milestones: [],
           programmes: [{ programmeId: LAB, kind: 'incubator', date: '2019-01-01', first: true }],
         },
       ],
@@ -219,6 +292,44 @@ describe('regler for merker', () => {
         f,
       ).earned,
     ).toBe(true)
+  })
+
+  it('milepæler teller kapital, priser og lanseringer i selskaper de var med å starte', () => {
+    const f = facts({
+      companies: [
+        {
+          companyId: 'a',
+          status: 'active',
+          founder: true,
+          esCompany: false,
+          programmes: [],
+          milestones: [
+            { type: 'funding', date: '2021-03-01' },
+            { type: 'award', date: '2022-05-01' },
+            { type: 'funding', date: '2023-09-01' },
+          ],
+        },
+        {
+          companyId: 'b',
+          status: 'active',
+          founder: false,
+          esCompany: false,
+          programmes: [],
+          milestones: [{ type: 'funding', date: '2020-01-01' }],
+        },
+      ],
+    })
+    const funding = (count: number, link?: 'any') =>
+      evaluateBadgeRule(rule({ kind: 'milestone', eventTypes: ['funding'], count, link }), f)
+    expect(funding(1)).toMatchObject({ earned: true, achievedOn: '2021-03-01' })
+    expect(funding(2)).toMatchObject({ earned: true, achievedOn: '2023-09-01' })
+    // Selskapet personen bare jobbet i, teller ikke med standard tilknytning.
+    expect(funding(3)).toMatchObject({ earned: false, progress: { current: 2, target: 3 } })
+    expect(funding(3, 'any').earned).toBe(true)
+    expect(
+      evaluateBadgeRule(rule({ kind: 'milestone', eventTypes: ['award'] }), f).achievedOn,
+    ).toBe('2022-05-01')
+    expect(badgeRule.safeParse({ kind: 'milestone', eventTypes: [] }).success).toBe(false)
   })
 
   it('profilen og feeden teller mot et mål', () => {
@@ -275,6 +386,15 @@ describe('regler for merker', () => {
     expect(text({ kind: 'company', link: 'es_company' })).toBe('Startet et selskap på ES')
     expect(text({ kind: 'company', link: 'founder', statuses: ['acquired'] })).toBe(
       'Grunnlagt et selskap som er kjøpt opp',
+    )
+    expect(text({ kind: 'milestone', eventTypes: ['funding'] })).toBe(
+      'Et selskap de var med å starte har hentet kapital',
+    )
+    expect(text({ kind: 'milestone', eventTypes: ['funding', 'award'], count: 3 })).toBe(
+      'Et selskap de var med å starte har hentet kapital eller vunnet en pris minst 3 ganger',
+    )
+    expect(text({ kind: 'programme', link: 'founder_or_es', programmeIds: [YC] })).toBe(
+      'Var med å starte et selskap som gikk gjennom Y Combinator',
     )
     expect(text({ kind: 'programme', programmeIds: [YC], first: true })).toBe(
       'Grunnlagt et selskap som gikk gjennom Y Combinator, som det første selskapet i ESAF',

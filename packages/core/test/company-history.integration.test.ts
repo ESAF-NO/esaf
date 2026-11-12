@@ -500,6 +500,37 @@ describe.skipIf(!url)('historikk, sitater og kilder', () => {
     })
   })
 
+  describe('milepæler i merkereglene', () => {
+    it('kapital og priser i historikken teller for gründerne, ikke usikre hendelser', async () => {
+      const { id } = await syrlig()
+      await addCompanyEvent(db, ola, id, { ...event, year: 2019, type: 'funding' })
+      await addCompanyEvent(db, ola, id, { ...event, year: 2021, type: 'funding' })
+      await addCompanyEvent(db, ola, id, {
+        ...event,
+        year: 2020,
+        type: 'award',
+        text: 'Vant pris.',
+      })
+      await db.insert(schema.companyEvent).values({
+        companyId: id,
+        date: '2022-01-01',
+        datePrecision: 'year',
+        type: 'funding',
+        text: 'Usikker runde.',
+        confidence: 'low',
+      })
+      const facts = await loadBadgeFacts(db, [ola!.personId!, kari!.personId!])
+      const twoRounds = badgeRule.parse({ kind: 'milestone', eventTypes: ['funding'], count: 2 })
+      expect(evaluateBadgeRule(twoRounds, facts.get(ola!.personId!)!)).toMatchObject({
+        earned: true,
+        achievedOn: '2021-06-01',
+      })
+      const threeRounds = badgeRule.parse({ kind: 'milestone', eventTypes: ['funding'], count: 3 })
+      expect(evaluateBadgeRule(threeRounds, facts.get(ola!.personId!)!).earned).toBe(false)
+      expect(evaluateBadgeRule(twoRounds, facts.get(kari!.personId!)!).earned).toBe(false)
+    })
+  })
+
   describe('sitater', () => {
     async function addQuote(values: Partial<typeof schema.quote.$inferInsert> = {}) {
       const [row] = await db

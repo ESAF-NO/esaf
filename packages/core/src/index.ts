@@ -789,6 +789,8 @@ export {
   badgeChips,
   badgeColors,
   badgeCompanyLinks,
+  badgeMilestoneNames,
+  badgeMilestoneTypes,
   badgeEventRoles,
   badgeIcons,
   badgeInput,

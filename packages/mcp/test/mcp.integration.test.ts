@@ -557,6 +557,22 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
         { personId, esCompany: 'Nytt AS' },
       )
       expect(renamed.person.esCompany.name).toBe('Nytt AS')
+
+      // Med bare en id kobles det selskapet, og null fjerner koblingen.
+      const { companyId: valgtId } = await call<{ companyId: string }>(client, 'create_company', {
+        name: 'Valgt AS',
+      })
+      const byId = await call<{ person: { esCompany: { id: string; name: string } | null } }>(
+        client,
+        'update_person',
+        { personId, esCompanyId: valgtId },
+      )
+      expect(byId.person.esCompany).toEqual({ id: valgtId, name: 'Valgt AS' })
+      const removed = await call<{ person: { esCompany: unknown } }>(client, 'update_person', {
+        personId,
+        esCompanyId: null,
+      })
+      expect(removed.person.esCompany).toBeNull()
       await client.close()
     })
 

@@ -59,13 +59,18 @@ export type AdminCompany = {
 
 /** Sluggen til et selskap, fra id-en (til adresser og oppslag). Bare admins. */
 export async function companySlugById(db: Db, viewer: Viewer, companyId: string) {
+  return (await companyRefById(db, viewer, companyId)).slug
+}
+
+/** Slugen og navnet til et selskap, for MCP-verktøy som tar en id. */
+export async function companyRefById(db: Db, viewer: Viewer, companyId: string) {
   assertCan(viewer, 'profiles.edit')
   const [row] = await db
-    .select({ slug: company.slug })
+    .select({ slug: company.slug, name: company.name })
     .from(company)
     .where(eq(company.id, companyId))
   if (!row) throw new NotFoundError('Fant ikke selskapet.')
-  return row.slug
+  return row
 }
 
 export async function listAdminCompanies(db: Db, viewer: Viewer): Promise<AdminCompany[]> {

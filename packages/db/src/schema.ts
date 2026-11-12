@@ -792,6 +792,23 @@ export const cohortRepresentative = pgTable(
 )
 
 /**
+ * Når et kull første gang hadde tatt i bruk alle profilene sine (100 % i
+ * kullkampen på /kull). Raden skrives av merkesynkroniseringen og blir stående
+ * selv om kullet senere får en ny profil, så «først til 100 %» ikke flytter seg.
+ * Reglene står i @esaf/core (cohort-race.ts).
+ */
+export const cohortCompletion = pgTable('cohort_completion', {
+  cohortId: uuid()
+    .primaryKey()
+    .references(() => cohort.id, { onDelete: 'cascade' }),
+  /** Da synkroniseringen så at kullet var fullt. Avgjør rekkefølgen. */
+  completedAt: timestamp({ withTimezone: true }).notNull(),
+  /** Hvor mange kullet hadde da. */
+  members: integer().notNull(),
+  createdAt: timestamps.createdAt,
+})
+
+/**
  * Rollen i styret. `member` er et vanlig styremedlem, og er standard: styret
  * fordeler gjerne rollene internt etter generalforsamlingen.
  */

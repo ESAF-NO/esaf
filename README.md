@@ -316,7 +316,7 @@ Arrangementene matches mot dem som finnes: navn, så dato (innenfor fra–til), 
 
 ## Programmer
 
-Migrering `0041_selskapsprogrammer`. Reglene ligger i `packages/core/src/company-events.ts`.
+Migrering `0042_selskapsprogrammer`. Reglene ligger i `packages/core/src/company-events.ts`.
 
 Akseleratorer, inkubatorer og lignende (Y Combinator, StartupLab, 6am, ESA BIC Norway) er selskaper i ESAF som alle andre, så de har logo, info og egen side, og alumni kan jobbe der. At et selskap gikk gjennom et program, er en hendelse i historikken av typen «Program», som peker på programmet:
 

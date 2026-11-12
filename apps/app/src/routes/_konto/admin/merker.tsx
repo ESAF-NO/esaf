@@ -1,9 +1,21 @@
-import type { AdminBadge, BadgeColor, BadgeIcon, BadgePreview, BadgeRuleKind } from '@esaf/core'
+import type {
+  AdminBadge,
+  BadgeColor,
+  BadgeIcon,
+  BadgePreview,
+  BadgeRarityTier,
+  BadgeRuleKind,
+} from '@esaf/core'
 import { createFileRoute, Link, notFound, useNavigate, useRouter } from '@tanstack/react-router'
 import { Archive, Award, Gift, ImageUp, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
-import { BadgeMedal, badgeColorClasses, badgeIconComponents } from '#/components/Badges.tsx'
+import {
+  BadgeMedal,
+  badgeColorClasses,
+  badgeIconComponents,
+  rarityNames,
+} from '#/components/Badges.tsx'
 import { Dialog, DialogActions } from '#/components/Dialog.tsx'
 import { Progress } from '#/components/PhotoUpload.tsx'
 import {
@@ -33,6 +45,9 @@ import {
 } from '#/lib/badges.functions.ts'
 import { plural } from '#/lib/format.ts'
 import { checkPhotoFile, deleteBadgeImage, PHOTO_ACCEPT, uploadBadgeImage } from '#/lib/photos.ts'
+
+/** Fra vanligst til sjeldnest, som `badgeRarities` i @esaf/core. */
+const rarityOrder: BadgeRarityTier[] = ['common', 'uncommon', 'rare', 'epic', 'legendary']
 
 export const Route = createFileRoute('/_konto/admin/merker')({
   // `merke` åpner et merke for redigering, f.eks. fra «Endre merket» på merkesiden.
@@ -140,6 +155,11 @@ function BadgeRow({ badge: b, onAward }: { badge: AdminBadge; onAward: () => voi
             {b.name}
             {b.series && (
               <span className="ml-2 text-xs font-normal text-stone-500">Serie: {b.series}</span>
+            )}
+            {b.rarity && (
+              <span className="ml-2 text-xs font-normal text-stone-500">
+                Fast: {rarityNames[b.rarity]}
+              </span>
             )}
           </p>
           <p className="text-sm text-stone-600">{b.ruleText}</p>
@@ -301,6 +321,7 @@ function BadgeEditor({
   const [color, setColor] = useState<BadgeColor>(badge?.color ?? 'brand')
   const [series, setSeries] = useState(badge?.series ?? '')
   const [sortOrder, setSortOrder] = useState(badge?.sortOrder ?? 100)
+  const [rarity, setRarity] = useState<BadgeRarityTier | null>(badge?.rarity ?? null)
   const [rule, setRule] = useState<RuleDraft>(
     (badge?.rule as RuleDraft | undefined) ?? defaultRule('event_count', options),
   )
@@ -342,6 +363,7 @@ function BadgeEditor({
       rule,
       series: series.trim() || null,
       sortOrder,
+      rarity,
     }
     // Med bilde publiseres merket til slutt, så ingen ser det uten bildet.
     const publishNow = publish && !created.current && image.kind !== 'new'
@@ -520,6 +542,22 @@ function BadgeEditor({
               min={0}
               max={10000}
             />
+          </Field>
+          <Field
+            label="Sjeldenhet"
+            hint="Gir XP. Automatisk: etter hvor mange medlemmer som har merket. Sett den fast når det ikke gir mening, som for merker alle kan få."
+          >
+            <Select
+              value={rarity ?? ''}
+              onChange={(e) => setRarity((e.target.value || null) as BadgeRarityTier | null)}
+            >
+              <option value="">Automatisk</option>
+              {rarityOrder.map((tier) => (
+                <option key={tier} value={tier}>
+                  {rarityNames[tier]}
+                </option>
+              ))}
+            </Select>
           </Field>
         </div>
 

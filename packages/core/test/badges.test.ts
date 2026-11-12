@@ -424,6 +424,17 @@ describe('spillet: sjeldenhet og nivå', () => {
     expect(badgeRarity(150, 200)).toMatchObject({ tier: 'common', xp: 25 })
   })
 
+  it('en fast sjeldenhet brukes uansett andel, og andelen vises fortsatt', () => {
+    expect(badgeRarity(1, 200, 'common')).toMatchObject({
+      tier: 'common',
+      xp: 25,
+      share: 0.005,
+      fixed: true,
+    })
+    expect(badgeRarity(150, 200, 'epic')).toMatchObject({ tier: 'epic', xp: 120, fixed: true })
+    expect(badgeRarity(150, 200).fixed).toBe(false)
+  })
+
   it('nivåene krever stadig mer XP, og har titler', () => {
     expect([1, 2, 3, 4, 5].map(xpForLevel)).toEqual([0, 40, 100, 180, 280])
     expect(levelFor(0)).toMatchObject({ level: 1, title: 'Nykommer', nextXp: 40 })

@@ -831,16 +831,18 @@ function RuleEditor({
             selected={list('programmeKinds')}
             onToggle={(v) => toggleIn('programmeKinds', v)}
           />
-          <Check
-            label="Bare det første selskapet i ESAF i programmet"
-            checked={rule.first === true}
-            onChange={(first) => set({ first })}
-          />
-          <Check
-            label="Bare mens de gikk på ES"
-            checked={rule.duringEs === true}
-            onChange={(duringEs) => set({ duringEs })}
-          />
+          <div className="flex flex-col gap-2">
+            <Check
+              label="Bare det første selskapet i ESAF i programmet"
+              checked={rule.first === true}
+              onChange={(first) => set({ first })}
+            />
+            <Check
+              label="Bare mens de gikk på ES"
+              checked={rule.duringEs === true}
+              onChange={(duringEs) => set({ duringEs })}
+            />
+          </div>
         </>
       )}
       {rule.kind === 'profile' && (

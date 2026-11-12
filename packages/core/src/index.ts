@@ -355,6 +355,7 @@ export {
 export {
   createCompany,
   deleteCompany,
+  companyRefById,
   companySlugById,
   listAdminCompanies,
   type AdminCompany,

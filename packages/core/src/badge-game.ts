@@ -1,5 +1,5 @@
 import { schema, type Db } from '@esaf/db'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import type { Tx } from './members.ts'
 
 const { badge, badgeAward, membership } = schema
@@ -10,7 +10,9 @@ const { badge, badgeAward, membership } = schema
  * ingenting her lagres. Reglene:
  *
  * - Sjeldenheten kommer av hvor stor andel av de aktive medlemmene som har
- *   merket. Sjeldnere merker gir mer XP.
+ *   merket, med mindre en admin har satt den fast på merket. Sjeldnere merker
+ *   gir mer XP. Fast sjeldenhet trengs mens få har tatt i bruk profilen: da er
+ *   nesten alt sjeldent regnet etter andel.
  * - Bare publiserte merker hos aktive medlemmer teller, og et merke personen har
  *   skjult, teller ikke (heller ikke for personen selv, så tallet er det samme
  *   for alle).
@@ -41,11 +43,21 @@ export type BadgeRarity = {
   /** Andelen aktive medlemmer som har merket, fra 0 til 1. */
   share: number
   xp: number
+  /** Satt fast av en admin, ikke regnet ut fra andelen. */
+  fixed: boolean
 }
 
-/** Hvor sjeldent et merke er. Ingen som har det ennå, er legendarisk. */
-export function badgeRarity(holders: number, members: number): BadgeRarity {
+/**
+ * Hvor sjeldent et merke er: den faste sjeldenheten hvis merket har en, ellers
+ * fra andelen. Ingen som har det ennå, er legendarisk.
+ */
+export function badgeRarity(
+  holders: number,
+  members: number,
+  fixed: BadgeRarityTier | null = null,
+): BadgeRarity {
   const share = members > 0 ? holders / members : 0
+  if (fixed) return { tier: fixed, share, xp: badgeRarityXp[fixed], fixed: true }
   const tier: BadgeRarityTier =
     holders === 0 || share <= 0.02
       ? 'legendary'
@@ -56,7 +68,7 @@ export function badgeRarity(holders: number, members: number): BadgeRarity {
           : share <= 0.45
             ? 'uncommon'
             : 'common'
-  return { tier, share, xp: badgeRarityXp[tier] }
+  return { tier, share, xp: badgeRarityXp[tier], fixed: false }
 }
 
 /** Titlene for nivåene. Fra det siste nivået i lista heter alle det samme. */
@@ -116,6 +128,11 @@ export async function loadBadgeStats(db: Db | Tx): Promise<BadgeStats> {
     .select({ members: sql<number>`count(*)::int` })
     .from(membership)
     .where(eq(membership.status, 'active'))) as [{ members: number }]
+  const fixedRows = await db
+    .select({ id: badge.id, rarity: badge.rarity })
+    .from(badge)
+    .where(and(eq(badge.status, 'published'), isNotNull(badge.rarity)))
+  const fixed = new Map(fixedRows.map((r) => [r.id, r.rarity as BadgeRarityTier]))
   const awards: CountedAward[] = await db
     .select({ badgeId: badgeAward.badgeId, personId: badgeAward.personId })
     .from(badgeAward)
@@ -130,7 +147,8 @@ export async function loadBadgeStats(db: Db | Tx): Promise<BadgeStats> {
     )
   const holders = new Map<string, number>()
   for (const a of awards) holders.set(a.badgeId, (holders.get(a.badgeId) ?? 0) + 1)
-  const rarity = (badgeId: string) => badgeRarity(holders.get(badgeId) ?? 0, members)
+  const rarity = (badgeId: string) =>
+    badgeRarity(holders.get(badgeId) ?? 0, members, fixed.get(badgeId) ?? null)
   const xp = new Map<string, number>()
   const counts = new Map<string, number>()
   for (const a of awards) {

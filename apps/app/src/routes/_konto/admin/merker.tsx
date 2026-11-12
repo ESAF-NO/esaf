@@ -265,6 +265,15 @@ function defaultRule(kind: BadgeRuleKind, options: Options): RuleDraft {
       return { kind, place: 1 }
     case 'company':
       return { kind, link: 'es_company', statuses: [], count: 1 }
+    case 'programme':
+      return {
+        kind,
+        link: 'founder',
+        programmeIds: [],
+        programmeKinds: [],
+        first: false,
+        duringEs: false,
+      }
     case 'profile':
       return { kind, fields: ['photo', 'bio', 'experience'] }
     case 'community':
@@ -797,6 +806,50 @@ function RuleEditor({
             selected={list('statuses')}
             onToggle={(v) => toggleIn('statuses', v)}
           />
+        </>
+      )}
+      {rule.kind === 'programme' && (
+        <>
+          <Field label="Selskaper">
+            <Select value={rule.link as string} onChange={(e) => set({ link: e.target.value })}>
+              {Object.entries(companyLinkNames).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {options.programmes.length > 0 ? (
+            <Checks
+              label="Programmer (ingen valgt: alle)"
+              values={options.programmes.map((p) => [p.id, p.name])}
+              selected={list('programmeIds')}
+              onToggle={(v) => toggleIn('programmeIds', v)}
+            />
+          ) : (
+            <p className="text-sm text-stone-500">
+              Ingen selskaper har vært med i et program ennå. Legg det inn i historikken til
+              selskapet («Program»), så kan du velge programmet her.
+            </p>
+          )}
+          <Checks
+            label="Type program (ingen valgt: alle)"
+            values={options.programmeKinds.map((k) => [k.kind, k.name])}
+            selected={list('programmeKinds')}
+            onToggle={(v) => toggleIn('programmeKinds', v)}
+          />
+          <div className="flex flex-col gap-2">
+            <Check
+              label="Bare det første selskapet i ESAF i programmet"
+              checked={rule.first === true}
+              onChange={(first) => set({ first })}
+            />
+            <Check
+              label="Bare mens de gikk på ES"
+              checked={rule.duringEs === true}
+              onChange={(duringEs) => set({ duringEs })}
+            />
+          </div>
         </>
       )}
       {rule.kind === 'profile' && (

@@ -1,4 +1,5 @@
 import {
+  companyRefById,
   addFieldSources,
   addPersonEmail,
   createProfileBatch,
@@ -439,6 +440,13 @@ export function registerPeopleTools(server: McpServer, ctx: ToolContext) {
             'Profilen er tatt i bruk, og bare personen selv endrer kontaktinfoen.',
           )
         }
+      }
+      // ES-selskapet lagres fra navnet; med bare en id hentes navnet, ellers ble
+      // det gamle (eller tomme) navnet stående og koblingen forsvant.
+      if (changes.esCompanyId !== undefined && changes.esCompany === undefined) {
+        changes.esCompany = changes.esCompanyId
+          ? (await companyRefById(ctx.db, ctx.viewer, changes.esCompanyId)).name
+          : null
       }
       const fields = Object.fromEntries(
         Object.entries(changes).filter(([, v]) => v !== undefined),

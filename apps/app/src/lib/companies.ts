@@ -1,4 +1,4 @@
-import type { CompanyDetails, CompanyEvent, CompanyPerson } from '@esaf/core'
+import type { CompanyDetails, CompanyEvent, CompanyPerson, ProgrammeCompany } from '@esaf/core'
 
 export type CompanyStatus = CompanyDetails['status']
 
@@ -23,10 +23,12 @@ export const eventTypeLabels: Record<CompanyEventType, string> = {
   dissolved: 'Oppløst',
   closed: 'Lagt ned',
   other: 'Annet',
+  programme: 'Program',
 }
 
 export const eventTypeOrder: CompanyEventType[] = [
   'founded',
+  'programme',
   'funding',
   'award',
   'launch',
@@ -34,6 +36,23 @@ export const eventTypeOrder: CompanyEventType[] = [
   'bankrupt',
   'dissolved',
   'closed',
+  'other',
+]
+
+export type ProgrammeKind = ProgrammeCompany['kind']
+
+/** Samme som `programmeKindLabels` i @esaf/core, uten å hente serverkode inn i nettleseren. */
+export const programmeKindLabels: Record<ProgrammeKind, string> = {
+  accelerator: 'Akselerator',
+  incubator: 'Inkubator',
+  pre_incubator: 'Pre-inkubator',
+  other: 'Program',
+}
+
+export const programmeKindOrder: ProgrammeKind[] = [
+  'accelerator',
+  'incubator',
+  'pre_incubator',
   'other',
 ]
 

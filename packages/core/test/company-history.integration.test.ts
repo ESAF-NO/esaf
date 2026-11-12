@@ -9,8 +9,12 @@ import {
   companyInput,
   confirmProfileFields,
   decideMembership,
+  badgeRule,
+  deleteCompany,
   deleteCompanyEvent,
   deleteQuote,
+  evaluateBadgeRule,
+  loadBadgeFacts,
   getCompany,
   getProfile,
   grantRoleAsOperator,
@@ -339,6 +343,160 @@ describe.skipIf(!url)('historikk, sitater og kilder', () => {
         sourceUrl: 'https://dn.no/sak',
         sourceLabel: 'Dagens Næringsliv',
       })
+    })
+  })
+
+  describe('programmer', () => {
+    const programme = (
+      name: string,
+      patch: Partial<NonNullable<CompanyEventInput['programme']>> = {},
+    ): CompanyEventInput => ({
+      year: 2022,
+      month: 1,
+      day: null,
+      type: 'programme',
+      text: '',
+      sourceUrl: 'https://www.ycombinator.com/companies/syrlig',
+      sourceLabel: '',
+      programme: { name, companyId: null, kind: 'accelerator', batch: 'W22', ...patch },
+    })
+
+    it('kobler selskapet til programmet, som viser selskapene som har vært med', async () => {
+      const { id } = await syrlig()
+      const { id: eventId } = await addCompanyEvent(db, kari, id, programme('Y Combinator'))
+
+      const [event] = (await page(kari)).events
+      expect(event).toMatchObject({
+        id: eventId,
+        type: 'programme',
+        text: '',
+        programme: {
+          kind: 'accelerator',
+          batch: 'W22',
+          company: { slug: 'y-combinator', name: 'Y Combinator', logo: null },
+        },
+      })
+      const yc = await page(kari, 'y-combinator')
+      expect(yc.programmeCompanies).toMatchObject([
+        {
+          eventId,
+          date: '2022-01-01',
+          datePrecision: 'month',
+          kind: 'accelerator',
+          batch: 'W22',
+          company: { id, slug: 'syrlig', name: 'Syrlig' },
+        },
+      ])
+      expect((await page(kari)).programmeCompanies).toEqual([])
+
+      // Et valgt program brukes, også med et annet navn i feltet.
+      const { id: second } = await addCompanyEvent(
+        db,
+        ola,
+        id,
+        programme('YC', { companyId: yc.id, batch: null, kind: 'other' }),
+      )
+      expect((await page(kari)).events.find((e) => e.id === second)?.programme).toMatchObject({
+        kind: 'other',
+        batch: null,
+        company: { id: yc.id },
+      })
+    })
+
+    it('programmet må velges, og et selskap kan ikke ha vært med i seg selv', async () => {
+      const { id } = await syrlig()
+      await expect(
+        addCompanyEvent(db, ola, id, { ...programme(''), programme: null }),
+      ).rejects.toThrow('Velg programmet')
+      await expect(addCompanyEvent(db, ola, id, programme('  '))).rejects.toThrow('Velg programmet')
+      await expect(
+        addCompanyEvent(db, ola, id, programme('Syrlig', { companyId: id })),
+      ).rejects.toThrow('sitt eget program')
+      await expect(
+        addCompanyEvent(db, ola, id, programme('Y Combinator', { kind: 'bootcamp' as never })),
+      ).rejects.toThrow('Velg hva slags program')
+      await expect(
+        addCompanyEvent(db, ola, id, programme('Y Combinator', { batch: 'x'.repeat(41) })),
+      ).rejects.toThrow('40')
+      // Andre typer får aldri et program, selv om skjemaet sender ett.
+      const { id: eventId } = await addCompanyEvent(db, ola, id, {
+        ...programme('Y Combinator'),
+        type: 'funding',
+        text: 'Hentet 4 MNOK.',
+      })
+      const [row] = await db
+        .select()
+        .from(schema.companyEvent)
+        .where(eq(schema.companyEvent.id, eventId))
+      expect(row).toMatchObject({
+        programmeCompanyId: null,
+        programmeKind: null,
+        programmeBatch: null,
+      })
+      expect(
+        await db.select().from(schema.company).where(eq(schema.company.slug, 'y-combinator')),
+      ).toEqual([])
+    })
+
+    it('et program laget fra en skrivefeil ryddes bort når det rettes, et ekte blir stående', async () => {
+      const { id } = await syrlig()
+      const { id: eventId } = await addCompanyEvent(db, ola, id, programme('Y Combinatr'))
+      await updateCompanyEvent(db, ola, eventId, programme('Y Combinator'))
+      const slugs = async () =>
+        (await db.select({ slug: schema.company.slug }).from(schema.company)).map((c) => c.slug)
+      expect(await slugs()).not.toContain('y-combinatr')
+      expect(await slugs()).toContain('y-combinator')
+
+      await deleteCompanyEvent(db, ola, eventId)
+      expect(await slugs()).not.toContain('y-combinator')
+    })
+
+    it('sammenslåing flytter koblingen, sletting av programmet lar hendelsen stå', async () => {
+      const { id } = await syrlig()
+      const [dup, real] = await resolveCompanies(db, [{ name: 'YC' }, { name: 'Y Combinator' }])
+      await addCompanyEvent(db, ola, id, programme('YC', { companyId: dup! }))
+      await mergeCompanies(db, storage, admin, { sourceId: dup!, targetId: real! })
+      expect((await page(kari, 'y-combinator')).programmeCompanies).toHaveLength(1)
+
+      await deleteCompany(db, storage, admin, { companyId: real!, unlink: false })
+      const [event] = (await page(kari)).events
+      expect(event).toMatchObject({ type: 'programme', programme: { company: null } })
+      const [logged] = await audit('company.delete')
+      expect(logged!.details).toMatchObject({ programmeEvents: 1 })
+    })
+
+    it('merkeregelen ser det første selskapet i ESAF i programmet', async () => {
+      const { id } = await syrlig()
+      await updateProfile(db, kari, kari!.personId!, {
+        ...emptyProfile,
+        fullName: 'Kari',
+        experience: [
+          { company: 'Bølgepost', title: null, startYear: 2018, endYear: null, founder: true },
+        ],
+      })
+      const [bolge] = await db
+        .select()
+        .from(schema.company)
+        .where(eq(schema.company.slug, 'bolgepost'))
+      await addCompanyEvent(db, ola, id, programme('Y Combinator'))
+      const yc = await page(ola, 'y-combinator')
+      await addCompanyEvent(db, kari, bolge!.id, {
+        ...programme('Y Combinator', { companyId: yc.id, batch: 'S23' }),
+        year: 2023,
+      })
+      const firstInYc = badgeRule.parse({ kind: 'programme', programmeIds: [yc.id], first: true })
+      const facts = await loadBadgeFacts(db, [ola!.personId!, kari!.personId!])
+      expect(evaluateBadgeRule(firstInYc, facts.get(ola!.personId!)!)).toMatchObject({
+        earned: true,
+        achievedOn: '2022-01-01',
+      })
+      expect(evaluateBadgeRule(firstInYc, facts.get(kari!.personId!)!).earned).toBe(false)
+      expect(
+        evaluateBadgeRule(
+          badgeRule.parse({ kind: 'programme', programmeIds: [yc.id] }),
+          facts.get(kari!.personId!)!,
+        ),
+      ).toMatchObject({ earned: true, achievedOn: '2023-01-01' })
     })
   })
 

@@ -362,6 +362,7 @@ export {
 export {
   createCompany,
   deleteCompany,
+  companyRefById,
   companySlugById,
   listAdminCompanies,
   type AdminCompany,
@@ -445,9 +446,14 @@ export {
   companyEventInput,
   companyEventTypes,
   deleteCompanyEvent,
+  eventSummary,
+  programmeKindLabels,
+  programmeKinds,
   updateCompanyEvent,
   type CompanyEvent,
   type CompanyEventInput,
+  type EventProgramme,
+  type ProgrammeCompany,
 } from './company-events.ts'
 export {
   addCompanyArticle,

@@ -6,8 +6,21 @@ import {
   type CompanyStatus,
   type Db,
   type EventDatePrecision,
+  type ProgrammeKind,
 } from '@esaf/db'
-import { and, asc, desc, eq, ilike, inArray, isNull, lte, sql, type AnyColumn } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  ne,
+  sql,
+  type AnyColumn,
+} from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { assertCan, assertMember, type Viewer } from './access.ts'
@@ -21,6 +34,7 @@ import {
 import { boardRoleNames, boardRoles } from './board.ts'
 import { loadCohortStandings, recordCohortCompletions } from './cohort-race.ts'
 import { companySlug } from './companies.ts'
+import { programmeKindLabels, programmeKinds } from './company-events.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { normalizeRole, osloToday, type EventRole } from './events.ts'
 import { inOrder, type Tx } from './members.ts'
@@ -36,6 +50,7 @@ const {
   cohortRepresentative,
   comment,
   company,
+  companyEvent,
   event,
   eventParticipation,
   eventType,
@@ -265,6 +280,26 @@ export const badgeRule = z
         count: amount(20).default(1),
       }),
       z.object({
+        /**
+         * Vært med i et selskap som gikk gjennom et program (akselerator, inkubator),
+         * eventuelt bestemte programmer, som det første selskapet i ESAF der, eller
+         * mens personen gikk på ES.
+         */
+        kind: z.literal('programme'),
+        link: z.enum(badgeCompanyLinks, 'Ugyldig tilknytning.').default('founder'),
+        /** Programmene (selskapene i ESAF). Tom: alle. */
+        programmeIds: z
+          .array(z.uuid('Ugyldig program.'))
+          .max(20, 'Høyst 20 programmer.')
+          .default([]),
+        /** Tom: alle typer program. */
+        programmeKinds: z.array(z.enum(programmeKinds, 'Ugyldig type.')).max(4).default([]),
+        /** Bare det første selskapet i ESAF i programmet (alle med samme dato). */
+        first: z.boolean().default(false),
+        /** Bare når programmet var mens personen gikk på ES, som student. */
+        duringEs: z.boolean().default(false),
+      }),
+      z.object({
         /** Fylt ut feltene på profilen. */
         kind: z.literal('profile'),
         fields: z
@@ -342,6 +377,11 @@ export const badgeRuleKinds: { kind: BadgeRuleKind; label: string; help: string 
     label: 'Selskaper',
     help: 'Startet selskap på ES, grunnlagt selskaper, eventuelt med en status som «kjøpt opp».',
   },
+  {
+    kind: 'programme',
+    label: 'Programmer',
+    help: 'Vært med i et selskap som gikk gjennom en akselerator eller inkubator, eventuelt som det første i ESAF eller mens de gikk på ES.',
+  },
   { kind: 'profile', label: 'Profilen', help: 'Fylt ut feltene på profilen.' },
   {
     kind: 'community',
@@ -382,10 +422,23 @@ export type BadgeFacts = {
     status: CompanyStatus
     founder: boolean
     esCompany: boolean
+    /** Programmene selskapet gikk gjennom, eldste først. */
+    programmes: BadgeProgrammeFact[]
   }[]
   profile: Record<BadgeProfileField, boolean>
   posts: number
   comments: number
+}
+
+/** Et program et selskap gikk gjennom. */
+export type BadgeProgrammeFact = {
+  /** Null når programmet er slettet fra ESAF. */
+  programmeId: string | null
+  kind: ProgrammeKind
+  /** `YYYY-MM-DD`. */
+  date: string
+  /** Det første selskapet i ESAF i dette programmet (eller ett av dem, ved samme dato). */
+  first: boolean
 }
 
 export const emptyBadgeFacts = (): BadgeFacts => ({
@@ -423,6 +476,15 @@ const progress = (current: number, target: number): BadgeProgress => ({
 function roleMatches(roles: BadgeEventRole[], role: EventRole | null) {
   if (!roles.length) return true
   return roles.includes(role ?? 'participant')
+}
+
+function companyLinkMatches(
+  link: BadgeCompanyLink,
+  c: Pick<BadgeFacts['companies'][number], 'founder' | 'esCompany'>,
+) {
+  return (
+    link === 'any' || (link === 'founder' && c.founder) || (link === 'es_company' && c.esCompany)
+  )
 }
 
 /** Hva regelen sier om personen. Ren funksjon: samme svar for samme fakta. */
@@ -522,9 +584,7 @@ export function evaluateBadgeRule(rule: BadgeRule, f: BadgeFacts): BadgeResult {
     case 'company': {
       const hits = f.companies.filter(
         (c) =>
-          (rule.link === 'any' ||
-            (rule.link === 'founder' && c.founder) ||
-            (rule.link === 'es_company' && c.esCompany)) &&
+          companyLinkMatches(rule.link, c) &&
           (!rule.statuses.length || rule.statuses.includes(c.status)),
       )
       return {
@@ -532,6 +592,29 @@ export function evaluateBadgeRule(rule: BadgeRule, f: BadgeFacts): BadgeResult {
         achievedOn: null,
         progress: rule.count > 1 ? progress(hits.length, rule.count) : null,
       }
+    }
+    case 'programme': {
+      const studied = (date: string) => {
+        const year = Number(date.slice(0, 4))
+        // «ES 2024» gikk 2022–2024.
+        return f.cohorts.some(
+          (c) =>
+            c.relation === 'student' && year >= c.graduationYear - 2 && year <= c.graduationYear,
+        )
+      }
+      const hits = f.companies
+        .filter((c) => companyLinkMatches(rule.link, c))
+        .flatMap((c) => c.programmes)
+        .filter(
+          (p) =>
+            (!rule.programmeIds.length ||
+              (p.programmeId !== null && rule.programmeIds.includes(p.programmeId))) &&
+            (!rule.programmeKinds.length || rule.programmeKinds.includes(p.kind)) &&
+            (!rule.first || p.first) &&
+            (!rule.duringEs || studied(p.date)),
+        )
+        .sort((a, b) => a.date.localeCompare(b.date))
+      return { earned: hits.length > 0, achievedOn: hits[0]?.date ?? null, progress: null }
     }
     case 'profile': {
       const done = rule.fields.filter((field) => f.profile[field]).length
@@ -566,92 +649,114 @@ export async function loadBadgeFacts(
   const ids = personIds ? [...new Set(personIds)] : null
   const today = osloToday()
   // Etter hverandre: synkroniseringen kaller dette inne i en transaksjon.
-  const [people, participations, cohorts, board, reps, jobs, posts, comments, standings] =
-    await inOrder([
-      () =>
-        db
-          .select({
-            id: person.id,
-            photoKey: person.photoKey,
-            bio: person.bio,
-            expertise: person.expertise,
-            industries: person.industries,
-            city: person.city,
-            linkedinUrl: person.linkedinUrl,
-            studyBackground: person.studyBackground,
-            esCompanyId: person.esCompanyId,
-            esCompanyStatus: company.status,
-          })
-          .from(person)
-          .leftJoin(company, eq(company.id, person.esCompanyId))
-          .where(within(person.id, ids)),
-      () =>
-        db
-          .select({
-            personId: eventParticipation.personId,
-            eventId: eventParticipation.eventId,
-            role: eventParticipation.role,
-            typeId: event.typeId,
-            startDate: event.startDate,
-          })
-          .from(eventParticipation)
-          .innerJoin(event, eq(event.id, eventParticipation.eventId))
-          .where(and(within(eventParticipation.personId, ids), lte(event.startDate, today)))
-          .orderBy(asc(event.startDate), asc(event.id)),
-      () =>
-        db
-          .select({
-            personId: personCohort.personId,
-            graduationYear: cohort.graduationYear,
-            relation: personCohort.relation,
-            active: sql<boolean>`coalesce(${membership.status} = 'active', false)`,
-          })
-          .from(personCohort)
-          .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
-          .leftJoin(membership, eq(membership.personId, personCohort.personId))
-          .where(within(personCohort.personId, ids)),
-      () =>
-        db
-          .select({
-            personId: boardMember.personId,
-            role: boardMember.role,
-            endYear: boardMember.endYear,
-          })
-          .from(boardMember)
-          .where(within(boardMember.personId, ids)),
-      () =>
-        db
-          .select({
-            personId: cohortRepresentative.personId,
-            endYear: cohortRepresentative.endYear,
-          })
-          .from(cohortRepresentative)
-          .where(within(cohortRepresentative.personId, ids)),
-      () =>
-        db
-          .select({
-            personId: experience.personId,
-            companyId: experience.companyId,
-            founder: experience.founder,
-            status: company.status,
-          })
-          .from(experience)
-          .innerJoin(company, eq(company.id, experience.companyId))
-          .where(within(experience.personId, ids)),
-      () =>
-        db
-          .select({ personId: post.authorPersonId, n: sql<number>`count(*)::int` })
-          .from(post)
-          .where(and(within(post.authorPersonId, ids), isNull(post.deletedAt)))
-          .groupBy(post.authorPersonId),
-      () =>
-        db
-          .select({ personId: comment.authorPersonId, n: sql<number>`count(*)::int` })
-          .from(comment)
-          .where(and(within(comment.authorPersonId, ids), isNull(comment.deletedAt)))
-          .groupBy(comment.authorPersonId),
-      () => loadCohortStandings(db),
-    ] as const)
+  const [
+    people,
+    participations,
+    cohorts,
+    board,
+    reps,
+    jobs,
+    posts,
+    comments,
+    standings,
+    programmeEvents,
+  ] = await inOrder([
+    () =>
+      db
+        .select({
+          id: person.id,
+          photoKey: person.photoKey,
+          bio: person.bio,
+          expertise: person.expertise,
+          industries: person.industries,
+          city: person.city,
+          linkedinUrl: person.linkedinUrl,
+          studyBackground: person.studyBackground,
+          esCompanyId: person.esCompanyId,
+          esCompanyStatus: company.status,
+        })
+        .from(person)
+        .leftJoin(company, eq(company.id, person.esCompanyId))
+        .where(within(person.id, ids)),
+    () =>
+      db
+        .select({
+          personId: eventParticipation.personId,
+          eventId: eventParticipation.eventId,
+          role: eventParticipation.role,
+          typeId: event.typeId,
+          startDate: event.startDate,
+        })
+        .from(eventParticipation)
+        .innerJoin(event, eq(event.id, eventParticipation.eventId))
+        .where(and(within(eventParticipation.personId, ids), lte(event.startDate, today)))
+        .orderBy(asc(event.startDate), asc(event.id)),
+    () =>
+      db
+        .select({
+          personId: personCohort.personId,
+          graduationYear: cohort.graduationYear,
+          relation: personCohort.relation,
+          active: sql<boolean>`coalesce(${membership.status} = 'active', false)`,
+        })
+        .from(personCohort)
+        .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+        .leftJoin(membership, eq(membership.personId, personCohort.personId))
+        .where(within(personCohort.personId, ids)),
+    () =>
+      db
+        .select({
+          personId: boardMember.personId,
+          role: boardMember.role,
+          endYear: boardMember.endYear,
+        })
+        .from(boardMember)
+        .where(within(boardMember.personId, ids)),
+    () =>
+      db
+        .select({
+          personId: cohortRepresentative.personId,
+          endYear: cohortRepresentative.endYear,
+        })
+        .from(cohortRepresentative)
+        .where(within(cohortRepresentative.personId, ids)),
+    () =>
+      db
+        .select({
+          personId: experience.personId,
+          companyId: experience.companyId,
+          founder: experience.founder,
+          status: company.status,
+        })
+        .from(experience)
+        .innerJoin(company, eq(company.id, experience.companyId))
+        .where(within(experience.personId, ids)),
+    () =>
+      db
+        .select({ personId: post.authorPersonId, n: sql<number>`count(*)::int` })
+        .from(post)
+        .where(and(within(post.authorPersonId, ids), isNull(post.deletedAt)))
+        .groupBy(post.authorPersonId),
+    () =>
+      db
+        .select({ personId: comment.authorPersonId, n: sql<number>`count(*)::int` })
+        .from(comment)
+        .where(and(within(comment.authorPersonId, ids), isNull(comment.deletedAt)))
+        .groupBy(comment.authorPersonId),
+    () => loadCohortStandings(db),
+    // Alle, også for selskaper ingen av personene er i: «først» gjelder hele ESAF.
+    () =>
+      db
+        .select({
+          companyId: companyEvent.companyId,
+          programmeId: companyEvent.programmeCompanyId,
+          kind: companyEvent.programmeKind,
+          date: companyEvent.date,
+        })
+        .from(companyEvent)
+        .where(and(eq(companyEvent.type, 'programme'), ne(companyEvent.confidence, 'low')))
+        .orderBy(asc(companyEvent.date)),
+  ] as const)
   for (const p of people) {
     const f = emptyBadgeFacts()
     f.profile = {
@@ -671,6 +776,7 @@ export async function loadBadgeFacts(
         status: p.esCompanyStatus ?? 'unknown',
         founder: false,
         esCompany: true,
+        programmes: [],
       })
     }
     facts.set(p.id, f)
@@ -711,8 +817,28 @@ export async function loadBadgeFacts(
         status: job.status,
         founder: job.founder,
         esCompany: false,
+        programmes: [],
       })
     }
+  }
+  const firstDate = new Map<string, string>()
+  for (const e of programmeEvents) {
+    if (e.programmeId && !firstDate.has(e.programmeId)) firstDate.set(e.programmeId, e.date)
+  }
+  const programmesOf = new Map<string, BadgeProgrammeFact[]>()
+  for (const e of programmeEvents) {
+    programmesOf.set(e.companyId, [
+      ...(programmesOf.get(e.companyId) ?? []),
+      {
+        programmeId: e.programmeId,
+        kind: e.kind ?? 'other',
+        date: e.date,
+        first: e.programmeId !== null && firstDate.get(e.programmeId) === e.date,
+      },
+    ])
+  }
+  for (const f of facts.values()) {
+    for (const c of f.companies) c.programmes = programmesOf.get(c.companyId) ?? []
   }
   for (const { personId, n } of posts) {
     const f = facts.get(personId)
@@ -733,6 +859,8 @@ export async function loadBadgeFacts(
 export type BadgeRuleNames = {
   eventTypes: Map<string, string>
   events: Map<string, string>
+  /** Programmene (selskaper i ESAF). */
+  companies: Map<string, string>
 }
 
 const orList = (items: string[]) =>
@@ -758,6 +886,14 @@ const companyStatusNames: Record<CompanyStatus, string> = {
   acquired: 'kjøpt opp',
   closed: 'lagt ned',
   unknown: 'ukjent status',
+}
+
+/** Med ubestemt artikkel: «en akselerator». */
+const programmeKindNames: Record<ProgrammeKind, string> = {
+  accelerator: 'en akselerator',
+  incubator: 'en inkubator',
+  pre_incubator: 'en pre-inkubator',
+  other: 'et program',
 }
 
 const capitalize = (text: string) => text.charAt(0).toLocaleUpperCase('nb') + text.slice(1)
@@ -824,6 +960,23 @@ export function describeBadgeRule(rule: BadgeRule, names: BadgeRuleNames): strin
       if (rule.link === 'founder') return `Grunnlagt ${companies}${statuses}`
       return `Startet eller jobbet i ${companies}${statuses}`
     }
+    case 'programme': {
+      const which = rule.programmeIds.length
+        ? orList(
+            rule.programmeIds.map((id) => names.companies.get(id) ?? 'et program som er slettet'),
+          )
+        : rule.programmeKinds.length
+          ? orList(rule.programmeKinds.map((k) => programmeKindNames[k]))
+          : 'en akselerator eller inkubator'
+      const base =
+        rule.link === 'es_company'
+          ? `Startet et selskap på ES som gikk gjennom ${which}`
+          : rule.link === 'founder'
+            ? `Grunnlagt et selskap som gikk gjennom ${which}`
+            : `Startet eller jobbet i et selskap som gikk gjennom ${which}`
+      const first = rule.first ? ', som det første selskapet i ESAF' : ''
+      return `${base}${first}${rule.duringEs ? ', mens de gikk på ES' : ''}`
+    }
     case 'profile':
       return `Fylt ut ${andList(rule.fields.map((f) => badgeProfileFieldNames[f]))} på profilen`
     case 'community':
@@ -844,7 +997,10 @@ async function loadRuleNames(db: Db | Tx, rules: BadgeRule[]): Promise<BadgeRule
   const eventIds = [
     ...new Set(rules.flatMap((r) => (r.kind === 'event_attended' ? r.eventIds : []))),
   ]
-  const [types, events] = await inOrder([
+  const companyIds = [
+    ...new Set(rules.flatMap((r) => (r.kind === 'programme' ? r.programmeIds : []))),
+  ]
+  const [types, events, programmes] = await inOrder([
     () => db.select({ id: eventType.id, name: eventType.name }).from(eventType),
     () =>
       eventIds.length
@@ -853,10 +1009,18 @@ async function loadRuleNames(db: Db | Tx, rules: BadgeRule[]): Promise<BadgeRule
             .from(event)
             .where(inArray(event.id, eventIds))
         : Promise.resolve([]),
+    () =>
+      companyIds.length
+        ? db
+            .select({ id: company.id, name: company.name })
+            .from(company)
+            .where(inArray(company.id, companyIds))
+        : Promise.resolve([]),
   ] as const)
   return {
     eventTypes: new Map(types.map((t) => [t.id, t.name])),
     events: new Map(events.map((e) => [e.id, e.name])),
+    companies: new Map(programmes.map((c) => [c.id, c.name])),
   }
 }
 
@@ -1623,7 +1787,7 @@ export async function previewBadgeRule(
 /** Det skjemaet og MCP trenger for å bygge regler: typene, arrangementene, ikonene og fargene. */
 export async function badgeOptions(db: Db, viewer: Viewer) {
   assertCan(viewer, 'badges.manage')
-  const [types, events] = await Promise.all([
+  const [types, events, programmes] = await Promise.all([
     db
       .select({ id: eventType.id, slug: eventType.slug, name: eventType.name })
       .from(eventType)
@@ -1638,10 +1802,18 @@ export async function badgeOptions(db: Db, viewer: Viewer) {
       .from(event)
       // Alle, så arrangementer en regel viser til, alltid kan velges bort i skjemaet.
       .orderBy(desc(event.startDate)),
+    // Selskapene som er programmer: minst ett selskap har vært med der.
+    db
+      .selectDistinct({ id: company.id, slug: company.slug, name: company.name })
+      .from(company)
+      .innerJoin(companyEvent, eq(companyEvent.programmeCompanyId, company.id))
+      .orderBy(asc(company.name)),
   ])
   return {
     eventTypes: types,
     events,
+    programmes,
+    programmeKinds: programmeKinds.map((kind) => ({ kind, name: programmeKindLabels[kind] })),
     icons: badgeIcons,
     colors: badgeColors,
     ruleKinds: badgeRuleKinds,

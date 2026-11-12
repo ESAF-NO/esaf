@@ -182,6 +182,10 @@ export const badgeProfileFieldNames: Record<BadgeProfileField, string> = {
  * også selskaper de bare jobbet i.
  */
 export const badgeCompanyLinks = ['es_company', 'founder', 'founder_or_es', 'any'] as const
+
+/** Hendelsene i selskapshistorikken som kan gi merker (regeltypen `milestone`). */
+export const badgeMilestoneTypes = ['funding', 'award', 'launch'] as const
+export type BadgeMilestoneType = (typeof badgeMilestoneTypes)[number]
 export type BadgeCompanyLink = (typeof badgeCompanyLinks)[number]
 
 const companyStatuses = [
@@ -305,6 +309,20 @@ export const badgeRule = z
         duringEs: z.boolean().default(false),
       }),
       z.object({
+        /**
+         * Milepæler i historikken til selskaper personen var med å starte: hentet
+         * kapital, vant priser, lanserte. Teller hendelsene, så «Kapital ×3» betyr
+         * tre runder (i ett eller flere selskaper).
+         */
+        kind: z.literal('milestone'),
+        link: z.enum(badgeCompanyLinks, 'Ugyldig tilknytning.').default('founder_or_es'),
+        eventTypes: z
+          .array(z.enum(badgeMilestoneTypes, 'Ugyldig milepæl.'))
+          .min(1, 'Velg minst én milepæl.')
+          .max(badgeMilestoneTypes.length),
+        count: amount(50).default(1),
+      }),
+      z.object({
         /** Fylt ut feltene på profilen. */
         kind: z.literal('profile'),
         fields: z
@@ -387,6 +405,11 @@ export const badgeRuleKinds: { kind: BadgeRuleKind; label: string; help: string 
     label: 'Programmer',
     help: 'Vært med i et selskap som gikk gjennom en akselerator eller inkubator, eventuelt som det første i ESAF eller mens de gikk på ES.',
   },
+  {
+    kind: 'milestone',
+    label: 'Milepæler',
+    help: 'Et selskap de var med å starte har hentet kapital, vunnet en pris eller lansert noe, eventuelt minst så mange ganger.',
+  },
   { kind: 'profile', label: 'Profilen', help: 'Fylt ut feltene på profilen.' },
   {
     kind: 'community',
@@ -429,6 +452,8 @@ export type BadgeFacts = {
     esCompany: boolean
     /** Programmene selskapet gikk gjennom, eldste først. */
     programmes: BadgeProgrammeFact[]
+    /** Milepæler i historikken (kapital, priser, lanseringer), eldste først. */
+    milestones: { type: BadgeMilestoneType; date: string }[]
   }[]
   profile: Record<BadgeProfileField, boolean>
   posts: number
@@ -623,6 +648,19 @@ export function evaluateBadgeRule(rule: BadgeRule, f: BadgeFacts): BadgeResult {
         .sort((a, b) => a.date.localeCompare(b.date))
       return { earned: hits.length > 0, achievedOn: hits[0]?.date ?? null, progress: null }
     }
+    case 'milestone': {
+      const hits = f.companies
+        .filter((c) => companyLinkMatches(rule.link, c))
+        .flatMap((c) => c.milestones)
+        .filter((m) => rule.eventTypes.includes(m.type))
+        .sort((a, b) => a.date.localeCompare(b.date))
+      const earned = hits.length >= rule.count
+      return {
+        earned,
+        achievedOn: earned ? hits[rule.count - 1]!.date : null,
+        progress: rule.count > 1 ? progress(hits.length, rule.count) : null,
+      }
+    }
     case 'profile': {
       const done = rule.fields.filter((field) => f.profile[field]).length
       return {
@@ -667,6 +705,7 @@ export async function loadBadgeFacts(
     comments,
     standings,
     programmeEvents,
+    milestoneEvents,
   ] = await inOrder([
     () =>
       db
@@ -763,6 +802,21 @@ export async function loadBadgeFacts(
         .from(companyEvent)
         .where(and(eq(companyEvent.type, 'programme'), ne(companyEvent.confidence, 'low')))
         .orderBy(asc(companyEvent.date)),
+    () =>
+      db
+        .select({
+          companyId: companyEvent.companyId,
+          type: companyEvent.type,
+          date: companyEvent.date,
+        })
+        .from(companyEvent)
+        .where(
+          and(
+            inArray(companyEvent.type, [...badgeMilestoneTypes]),
+            ne(companyEvent.confidence, 'low'),
+          ),
+        )
+        .orderBy(asc(companyEvent.date)),
   ] as const)
   for (const p of people) {
     const f = emptyBadgeFacts()
@@ -784,6 +838,7 @@ export async function loadBadgeFacts(
         founder: false,
         esCompany: true,
         programmes: [],
+        milestones: [],
       })
     }
     facts.set(p.id, f)
@@ -825,6 +880,7 @@ export async function loadBadgeFacts(
         founder: job.founder,
         esCompany: false,
         programmes: [],
+        milestones: [],
       })
     }
   }
@@ -844,8 +900,18 @@ export async function loadBadgeFacts(
       },
     ])
   }
+  const milestonesOf = new Map<string, BadgeFacts['companies'][number]['milestones']>()
+  for (const e of milestoneEvents) {
+    milestonesOf.set(e.companyId, [
+      ...(milestonesOf.get(e.companyId) ?? []),
+      { type: e.type as BadgeMilestoneType, date: e.date },
+    ])
+  }
   for (const f of facts.values()) {
-    for (const c of f.companies) c.programmes = programmesOf.get(c.companyId) ?? []
+    for (const c of f.companies) {
+      c.programmes = programmesOf.get(c.companyId) ?? []
+      c.milestones = milestonesOf.get(c.companyId) ?? []
+    }
   }
   for (const { personId, n } of posts) {
     const f = facts.get(personId)
@@ -893,6 +959,13 @@ const companyStatusNames: Record<CompanyStatus, string> = {
   acquired: 'kjøpt opp',
   closed: 'lagt ned',
   unknown: 'ukjent status',
+}
+
+/** Som verb i perfektum: «har hentet kapital». */
+export const badgeMilestoneNames: Record<BadgeMilestoneType, string> = {
+  funding: 'hentet kapital',
+  award: 'vunnet en pris',
+  launch: 'lansert noe',
 }
 
 /** Med ubestemt artikkel: «en akselerator». */
@@ -989,6 +1062,19 @@ export function describeBadgeRule(rule: BadgeRule, names: BadgeRuleNames): strin
       const first = rule.first ? ', som det første selskapet i ESAF' : ''
       return `${base}${first}${rule.duringEs ? ', mens de gikk på ES' : ''}`
     }
+    case 'milestone': {
+      const what = orList(rule.eventTypes.map((t) => badgeMilestoneNames[t]))
+      const times = rule.count === 1 ? '' : ` minst ${rule.count} ganger`
+      const who =
+        rule.link === 'es_company'
+          ? 'Et selskap de startet på ES'
+          : rule.link === 'founder'
+            ? 'Et selskap de grunnla'
+            : rule.link === 'founder_or_es'
+              ? 'Et selskap de var med å starte'
+              : 'Et selskap de startet eller jobbet i'
+      return `${who} har ${what}${times}`
+    }
     case 'profile':
       return `Fylt ut ${andList(rule.fields.map((f) => badgeProfileFieldNames[f]))} på profilen`
     case 'community':
@@ -1074,6 +1160,7 @@ function ruleLevel(rule: BadgeRule): number {
   switch (rule.kind) {
     case 'event_count':
     case 'company':
+    case 'milestone':
     case 'community':
       return rule.count
     case 'event_streak':
@@ -1830,6 +1917,7 @@ export async function badgeOptions(db: Db, viewer: Viewer) {
     colors: badgeColors,
     ruleKinds: badgeRuleKinds,
     eventRoles: badgeEventRoles,
+    milestoneTypes: badgeMilestoneTypes.map((type) => ({ type, name: badgeMilestoneNames[type] })),
     profileFields: badgeProfileFields.map((field) => ({
       field,
       name: badgeProfileFieldNames[field],

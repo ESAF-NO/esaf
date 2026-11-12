@@ -7,6 +7,7 @@ import {
   addEventParticipants,
   addOwnParticipations,
   awardBadge,
+  communityOverview,
   createBadge,
   createEvent,
   createEventType,
@@ -554,5 +555,69 @@ describe.skipIf(!url)('merker', () => {
     await setOwnBadgeHidden(db, ola, two.id, true)
     // Skjulte merker teller ikke, heller ikke for personen selv.
     expect((await getProfile(db, ola, ola!.personId!)).level).toMatchObject({ xp: 25, badges: 1 })
+  })
+
+  it('kullkampen: rangert på andel, og det første fulle kullet beholder merket sitt', async () => {
+    const unclaimed = async (name: string, year: number) =>
+      (
+        await createProfile(db, admin, {
+          fullName: name,
+          cohorts: [{ graduationYear: year, relation: 'student' }],
+          emails: [],
+          status: 'active',
+        })
+      ).personId
+    const stranger = await unclaimed('Ola Ukjent', 2018)
+
+    // ES 2019 har alle med (Kari), ES 2018 halvparten (Ola av to).
+    let race = (await communityOverview(db, ola)).race
+    expect(race.map((r) => [r.graduationYear, r.rank, r.claimed, r.members])).toEqual([
+      [2019, 1, 1, 1],
+      [2018, 2, 1, 2],
+    ])
+    expect(race[0]!.completedPlace).toBeNull()
+
+    const first = await createBadge(
+      db,
+      admin,
+      badgeFields({ name: 'Først til 100 %', rule: { kind: 'cohort_complete', place: 1 } }),
+      { publish: true },
+    )
+    expect(await awards(first.id)).toMatchObject([{ personId: kari!.personId }])
+    race = (await communityOverview(db, ola)).race
+    expect(race[0]).toMatchObject({ graduationYear: 2019, completedPlace: 1 })
+    expect((await communityOverview(db, ola)).raceBadges).toMatchObject([
+      { id: first.id, place: 1 },
+    ])
+
+    // Et nytt medlem i ES 2019: kullet er ikke fullt lenger, men var først.
+    // Merket er kullets, så den nye får det også.
+    const newcomer = await unclaimed('Kari Ukjent', 2019)
+    await setPersonCohorts(db, admin, stranger, [])
+    await syncBadges(db)
+    race = (await communityOverview(db, ola)).race
+    expect(race.map((r) => [r.graduationYear, r.rank, r.completedPlace])).toEqual([
+      [2018, 1, 2],
+      [2019, 2, 1],
+    ])
+    expect((await awards(first.id)).map((a) => a.personId).sort()).toEqual(
+      [kari!.personId, newcomer].sort(),
+    )
+
+    // Et merke for alle fulle kull går til begge.
+    const all = await createBadge(
+      db,
+      admin,
+      badgeFields({ name: 'Fullt kull', rule: { kind: 'cohort_complete' } }),
+      { publish: true },
+    )
+    expect((await awards(all.id)).map((a) => a.personId).sort()).toEqual(
+      [ola!.personId, kari!.personId, newcomer].sort(),
+    )
+    const preview = await previewBadgeRule(db, admin, { kind: 'cohort_complete', place: 1 })
+    expect(preview).toMatchObject({
+      ruleText: 'Gått i det første kullet der alle tok i bruk profilen',
+      total: 2,
+    })
   })
 })

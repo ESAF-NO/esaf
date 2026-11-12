@@ -17,7 +17,9 @@ import {
   listEventTypes,
   listPeopleIndex,
   listRepresentativeOverview,
+  loadCohortStandings,
   matchEventParticipants,
+  rankCohorts,
   previewEventHistory,
   removeCohortRepresentative,
   removeEventParticipant,
@@ -91,14 +93,18 @@ export function registerCohortAndEventTools(server: McpServer, ctx: ToolContext)
     name: 'list_cohorts',
     title: 'List cohorts',
     description:
-      'All cohorts (by graduation year) with people counts, how many have claimed their profile, and current representatives.',
+      'All cohorts (by graduation year) with people counts, how many have claimed their profile, current representatives, ' +
+      'and the cohort race on /kull: `race.rank` (by share of active members who claimed, then by count; null = nobody yet) ' +
+      'and `race.completedPlace` (the order in which cohorts first reached 100 %, kept even if the cohort later gets a new profile).',
     input: z.object({}),
     effect: 'read',
     run: async (_args, ctx) => {
-      const [people, reps] = await Promise.all([
+      const [people, reps, standings] = await Promise.all([
         listPeopleIndex(ctx.db, ctx.viewer),
         listRepresentativeOverview(ctx.db, ctx.viewer),
+        loadCohortStandings(ctx.db),
       ])
+      const race = new Map(rankCohorts(standings).map((r) => [r.graduationYear, r]))
       const byYear = new Map<
         number,
         { total: number; claimed: number; active: number; staffOrMentors: number }
@@ -135,6 +141,14 @@ export function registerCohortAndEventTools(server: McpServer, ctx: ToolContext)
             personId: r.personId,
             fullName: r.fullName,
           })),
+          race: race.has(year)
+            ? {
+                rank: race.get(year)!.rank,
+                sharePercent: Math.round(race.get(year)!.share * 100),
+                completedPlace: race.get(year)!.completedPlace,
+                completedAt: race.get(year)!.completedAt?.toISOString() ?? null,
+              }
+            : null,
         }))
     },
   })

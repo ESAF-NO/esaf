@@ -6,6 +6,7 @@ import {
   emptyBadgeFacts,
   evaluateBadgeRule,
   levelFor,
+  rankCohorts,
   xpForLevel,
   type BadgeFacts,
   type BadgeRuleInput,
@@ -242,5 +243,84 @@ describe('spillet: sjeldenhet og nivå', () => {
     expect(levelFor(39).level).toBe(1)
     expect(levelFor(40)).toMatchObject({ level: 2, title: 'Deltaker', levelXp: 40, nextXp: 100 })
     expect(levelFor(5000)).toMatchObject({ title: 'Legende' })
+  })
+})
+
+describe('kullkampen', () => {
+  const standing = (
+    graduationYear: number,
+    claimed: number,
+    members: number,
+    completedPlace: number | null = null,
+  ) => ({
+    cohortId: String(graduationYear),
+    graduationYear,
+    members,
+    claimed,
+    share: claimed / members,
+    completedPlace,
+    completedAt: completedPlace ? new Date(2026, 0, completedPlace) : null,
+  })
+
+  it('rangerer på andel, så antall; like kull deler plass, og kull uten noen er ikke med', () => {
+    const ranked = rankCohorts([
+      standing(2010, 5, 10),
+      standing(2020, 20, 40),
+      standing(2008, 8, 8, 2),
+      standing(2024, 40, 40, 1),
+      standing(2012, 5, 10),
+      standing(2015, 0, 30),
+    ])
+    expect(ranked.map((r) => [r.graduationYear, r.rank])).toEqual([
+      [2024, 1],
+      [2008, 2],
+      [2020, 3],
+      [2012, 4],
+      [2010, 4],
+      [2015, null],
+    ])
+  })
+
+  const race = (
+    graduationYear: number,
+    claimed: number,
+    members: number,
+    completedPlace: number | null = null,
+  ) => ({
+    graduationYear,
+    members,
+    claimed,
+    completedPlace,
+    completedOn: completedPlace ? `2026-0${completedPlace}-01` : null,
+  })
+
+  it('fullt kull: det første kullet, eller et av de første', () => {
+    const first = rule({ kind: 'cohort_complete', place: 1 })
+    const anyFull = rule({ kind: 'cohort_complete' })
+    const second = facts({ cohortRace: [race(2019, 30, 30, 2)], cohortsCompleted: 2 })
+    expect(evaluateBadgeRule(first, second)).toEqual({
+      earned: false,
+      achievedOn: null,
+      progress: null,
+    })
+    expect(evaluateBadgeRule(anyFull, second)).toEqual({
+      earned: true,
+      achievedOn: '2026-02-01',
+      progress: null,
+    })
+    expect(evaluateBadgeRule(rule({ kind: 'cohort_complete', place: 2 }), second).earned).toBe(true)
+    // Fortsatt mulig: fremgangen er kullet som er nærmest.
+    expect(
+      evaluateBadgeRule(first, facts({ cohortRace: [race(2019, 12, 30), race(2020, 3, 4)] })),
+    ).toEqual({ earned: false, achievedOn: null, progress: { current: 3, target: 4 } })
+  })
+
+  it('forklarer regelen', () => {
+    expect(describeBadgeRule(rule({ kind: 'cohort_complete' }), names)).toBe(
+      'Gått i et kull der alle har tatt i bruk profilen',
+    )
+    expect(describeBadgeRule(rule({ kind: 'cohort_complete', place: 3 }), names)).toBe(
+      'Gått i et av de 3 første kullene der alle tok i bruk profilen',
+    )
   })
 })

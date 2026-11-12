@@ -2,6 +2,7 @@ import {
   awardBadge,
   badgeColors,
   badgeCompanyLinks,
+  badgeMilestoneTypes,
   badgeEventRoles,
   badgeIcons,
   badgeOptions,
@@ -188,6 +189,28 @@ export const badgeRuleInput = z
       })
       .describe(
         'A company of theirs went through an accelerator/incubator (company history events of type "programme"), e.g. "YC founder", "First from ESAF in Y Combinator", "Accelerator during ES".',
+      ),
+    z
+      .object({
+        kind: z.literal('milestone'),
+        link: z
+          .enum(badgeCompanyLinks)
+          .default('founder_or_es')
+          .describe('Which of their companies count, as for kind "company".'),
+        eventTypes: z
+          .array(z.enum(badgeMilestoneTypes))
+          .min(1)
+          .describe('funding, award and/or launch events in the company history.'),
+        count: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .default(1)
+          .describe('Minimum number of such events across their companies, e.g. 3 funding rounds.'),
+      })
+      .describe(
+        'Milestones in the history of companies they helped start: raised money, won a prize, launched. E.g. "Hentet kapital", "Kapital ×3", "Prisvinner".',
       ),
     z
       .object({
@@ -429,7 +452,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
       icon: badgeFields.icon,
       color: badgeFields.color,
       rule: badgeRuleInput.describe(
-        'The rule shared by all tiers; the threshold is replaced per tier. Kind must be event_count, event_streak, company or community.',
+        'The rule shared by all tiers; the threshold is replaced per tier. Kind must be event_count, event_streak, company, milestone or community.',
       ),
       tiers: z
         .array(
@@ -450,12 +473,15 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
       const key =
         rule.kind === 'event_streak'
           ? 'years'
-          : rule.kind === 'event_count' || rule.kind === 'company' || rule.kind === 'community'
+          : rule.kind === 'event_count' ||
+              rule.kind === 'company' ||
+              rule.kind === 'milestone' ||
+              rule.kind === 'community'
             ? 'count'
             : null
       if (!key)
         throw new DomainError(
-          'En serie må bruke event_count, event_streak, company eller community.',
+          'En serie må bruke event_count, event_streak, company, milestone eller community.',
         )
       const sorted = [...tiers].sort((a, b) => a.threshold - b.threshold)
       const created = []

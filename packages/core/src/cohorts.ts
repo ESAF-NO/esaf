@@ -2,6 +2,8 @@ import { schema, type Db } from '@esaf/db'
 import { and, arrayOverlaps, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { assertMember, type Viewer } from './access.ts'
 import { listCohortRepresentatives, type CohortRepresentatives } from './cohort-reps.ts'
+import { cohortRaceBadges, type CohortRaceBadge } from './badges.ts'
+import { loadCohortStandings, rankCohorts, type RankedCohort } from './cohort-race.ts'
 import { companySlug } from './companies.ts'
 import { NotFoundError } from './errors.ts'
 import { listPosts, type PostSummary } from './feed.ts'
@@ -74,12 +76,16 @@ export type CommunityOverview = {
   cohorts: CohortSummary[]
   /** Kullene den innloggede selv gikk i. */
   ownYears: number[]
+  /** Kullkampen: alle kull rangert etter andelen som har tatt i bruk profilen. */
+  race: RankedCohort[]
+  /** Merkene kullene spiller om, hvis styret har laget dem. */
+  raceBadges: CohortRaceBadge[]
 }
 
 /** Alle kull, totaltall og den innloggedes egne kull, til forsiden og kulloversikten. */
 export async function communityOverview(db: Db, viewer: Viewer): Promise<CommunityOverview> {
   assertMember(viewer)
-  const [cohorts, [totals], own] = await Promise.all([
+  const [cohorts, [totals], own, standings, raceBadges] = await Promise.all([
     listCohorts(db, viewer),
     db
       .select({
@@ -94,12 +100,16 @@ export async function communityOverview(db: Db, viewer: Viewer): Promise<Communi
       .from(personCohort)
       .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
       .where(eq(personCohort.personId, viewer.personId)),
+    loadCohortStandings(db),
+    cohortRaceBadges(db),
   ])
   return {
     members: totals?.members ?? 0,
     claimed: totals?.claimed ?? 0,
     cohorts,
     ownYears: own.map((o) => o.year).sort(),
+    race: rankCohorts(standings),
+    raceBadges,
   }
 }
 

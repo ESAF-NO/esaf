@@ -261,6 +261,8 @@ function defaultRule(kind: BadgeRuleKind, options: Options): RuleDraft {
       return { kind, roles: [], current: false }
     case 'cohort_representative':
       return { kind, current: false }
+    case 'cohort_complete':
+      return { kind, place: 1 }
     case 'company':
       return { kind, link: 'es_company', statuses: [], count: 1 }
     case 'profile':
@@ -769,6 +771,11 @@ function RuleEditor({
           checked={rule.current === true}
           onChange={(current) => set({ current })}
         />
+      )}
+      {rule.kind === 'cohort_complete' && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {number('place', 'Bare de første kullene (tomt: alle)', 1, 50)}
+        </div>
       )}
       {rule.kind === 'company' && (
         <>

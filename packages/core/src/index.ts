@@ -279,6 +279,13 @@ export {
   type CommunityOverview,
 } from './cohorts.ts'
 export {
+  loadCohortStandings,
+  rankCohorts,
+  recordCohortCompletions,
+  type CohortStanding,
+  type RankedCohort,
+} from './cohort-race.ts'
+export {
   addComment,
   commentInput,
   createPost,
@@ -796,6 +803,7 @@ export {
   listBadgesForAdmin,
   listMissedEvents,
   loadBadgeFacts,
+  cohortRaceBadges,
   loadPersonBadgesForAdmin,
   loadProfileBadges,
   previewBadgeRule,
@@ -813,6 +821,7 @@ export {
   type BadgeCompanyLink,
   type BadgeEventRole,
   type BadgeFacts,
+  type CohortRaceBadge,
   type BadgeIcon,
   type BadgeInput,
   type BadgeStep,

@@ -295,6 +295,13 @@
       "when": 1794481683017,
       "tag": "0041_fulle_kull",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1794484649301,
+      "tag": "0042_selskapsprogrammer",
+      "breakpoints": true
     }
   ]
 }

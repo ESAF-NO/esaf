@@ -1,8 +1,11 @@
 import { schema, type CompanyEventType, type CompanyStatus, type Db } from '@esaf/db'
 import { and, asc, eq, isNotNull } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { assertMember, can, type Viewer } from './access.ts'
+import { eventSummary } from './company-events.ts'
 
 const { company, companyEvent, cohort, experience, membership, person, personCohort } = schema
+const programme = alias(company, 'programme')
 
 /**
  * «ES-universet»: alle aktive medlemmer og selskapene de har startet, vært
@@ -112,8 +115,11 @@ export async function getUniverse(db: Db, viewer: Viewer): Promise<Universe> {
         type: companyEvent.type,
         text: companyEvent.text,
         confidence: companyEvent.confidence,
+        programmeName: programme.name,
+        programmeBatch: companyEvent.programmeBatch,
       })
       .from(companyEvent)
+      .leftJoin(programme, eq(programme.id, companyEvent.programmeCompanyId))
       .orderBy(asc(companyEvent.date)),
   ])
 
@@ -181,7 +187,7 @@ export async function getUniverse(db: Db, viewer: Viewer): Promise<Universe> {
           .map((e) => ({
             year: year(e.date),
             type: e.type,
-            text: e.text,
+            text: eventSummary(e),
             uncertain: e.confidence === 'low',
           })),
       }

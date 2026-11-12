@@ -44,6 +44,9 @@ Data model:
   cohort and mentor/staff in another.
 - company: unique slug from the name; renames and merges keep old slugs as aliases. Status active/acquired/closed/
   unknown. People are linked through experience (job title, years, founder) or as their ES company ("ES-selskap").
+- programmes: accelerators and incubators (Y Combinator, StartupLab, 6am, ESA BIC Norway) are companies too. A
+  company that went through one gets a history event of type "programme" pointing at it (kind, batch, date), and the
+  programme's page lists every company that went through it. Badges can use this (rule kind "programme").
 - events (ESAF-helgen etc.) with participants and roles; cohort representatives with terms; quotes; feed posts.
 - badges ("merker"): achievements shown on profiles and at /merker. Each has a rule that reads data already in the
   app (events and roles, years in a row, cohort, board, cohort representative, companies founded/at ES/acquired,
@@ -209,10 +212,10 @@ Research and enrich the company ${company} in ESAF.
 
 1. Find it with search, list_companies or get_company. Check for duplicates.
 2. Research: website, what it does (tagline + short description in Norwegian), founded year, location, status
-   (active/acquired/closed), industries, logo, key history events (founding, funding, awards, acquisition, closure)
-   and press coverage. Prefer the company site, Brønnøysundregistrene/proff.no and reputable news.
+   (active/acquired/closed), industries, logo, key history events (founding, programmes such as accelerators and
+   incubators, funding, awards, acquisition, closure) and press coverage. Prefer the company site, Brønnøysundregistrene/proff.no and reputable news.
 3. Show me the findings with sources. Then use update_company (with sources), set_company_logo, add_company_event
-   and add_company_article. Mark anything uncertain as confidence "low".
+   (type "programme" with the programme for accelerators/incubators) and add_company_article. Mark anything uncertain as confidence "low".
 `),
   )
 

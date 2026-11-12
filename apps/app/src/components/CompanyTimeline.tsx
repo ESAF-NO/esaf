@@ -1,5 +1,5 @@
 import type { CompanyEvent } from '@esaf/core'
-import { useRouter } from '@tanstack/react-router'
+import { Link, useRouter } from '@tanstack/react-router'
 import {
   ArrowUpRight,
   Award,
@@ -7,6 +7,7 @@ import {
   Check,
   CircleDot,
   Flag,
+  GraduationCap,
   Handshake,
   Pencil,
   Plus,
@@ -18,9 +19,17 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { CompanyInput } from './CompanyInput.tsx'
 import { Dialog, DialogActions } from './Dialog.tsx'
-import { Button, Card, cx, ErrorText, Field, Input, Select, Textarea } from './ui.tsx'
-import { eventTypeLabels, eventTypeOrder, type CompanyEventType } from '#/lib/companies.ts'
+import { Button, Card, CompanyLogo, cx, ErrorText, Field, Input, Select, Textarea } from './ui.tsx'
+import {
+  eventTypeLabels,
+  eventTypeOrder,
+  programmeKindLabels,
+  programmeKindOrder,
+  type CompanyEventType,
+  type ProgrammeKind,
+} from '#/lib/companies.ts'
 import {
   removeCompanyEvent,
   saveCompanyEvent,
@@ -38,6 +47,14 @@ const icons: Record<CompanyEventType, LucideIcon> = {
   dissolved: XCircle,
   closed: Flag,
   other: CircleDot,
+  programme: GraduationCap,
+}
+
+const emptyProgramme: NonNullable<CompanyEventFormValues['programme']> = {
+  name: '',
+  companyId: null,
+  kind: 'accelerator',
+  batch: '',
 }
 
 /** Skjemaverdiene for en hendelse, eller tomme for en ny. */
@@ -51,6 +68,7 @@ function formValues(event: CompanyEvent | null): CompanyEventFormValues {
       text: '',
       sourceUrl: '',
       sourceLabel: '',
+      programme: null,
     }
   }
   const [y, m, d] = event.date.split('-').map(Number)
@@ -62,7 +80,36 @@ function formValues(event: CompanyEvent | null): CompanyEventFormValues {
     text: event.text,
     sourceUrl: event.source?.url ?? '',
     sourceLabel: event.source?.label ?? '',
+    programme: event.programme
+      ? {
+          name: event.programme.company?.name ?? '',
+          companyId: event.programme.company?.id ?? null,
+          kind: event.programme.kind,
+          batch: event.programme.batch ?? '',
+        }
+      : null,
   }
+}
+
+/** Programmet, med lenke til siden, typen og kullet. */
+function ProgrammeLine({ programme: p }: { programme: NonNullable<CompanyEvent['programme']> }) {
+  const detail = [programmeKindLabels[p.kind], p.batch].filter(Boolean).join(' · ')
+  if (!p.company) {
+    return <p className="mt-1 text-sm text-stone-500">Programmet er slettet · {detail}</p>
+  }
+  return (
+    <Link
+      to="/selskaper/$slug"
+      params={{ slug: p.company.slug }}
+      className="mt-1.5 inline-flex max-w-full items-center gap-2.5 rounded-xl py-1 pr-3 pl-1 ring-1 ring-stone-200 transition ring-inset hover:bg-stone-50"
+    >
+      <CompanyLogo name={p.company.name} logo={p.company.logo} size="sm" />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-stone-900">{p.company.name}</span>
+        <span className="block truncate text-xs text-stone-500">{detail}</span>
+      </span>
+    </Link>
+  )
 }
 
 function EventRow({
@@ -129,7 +176,8 @@ function EventRow({
             </span>
           )}
         </p>
-        <p className="mt-1 text-sm leading-relaxed text-stone-800">{e.text}</p>
+        {e.programme && <ProgrammeLine programme={e.programme} />}
+        {e.text && <p className="mt-1 text-sm leading-relaxed text-stone-800">{e.text}</p>}
         {(e.source || e.moreSources.length > 0 || canEdit) && (
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
             {e.source &&
@@ -251,8 +299,8 @@ export function CompanyTimeline({
         <EventList events={confirmed} canEdit={canEdit} onEdit={setEditing} />
       ) : (
         <p className="mt-2 text-sm text-stone-500">
-          Ingen hendelser ennå. Legg til når {name} ble grunnlagt, fikk kapital, vant priser eller
-          lanserte noe.
+          Ingen hendelser ennå. Legg til når {name} ble grunnlagt, var med i en akselerator, fikk
+          kapital, vant priser eller lanserte noe.
         </p>
       )}
       {review.length > 0 && (
@@ -297,14 +345,18 @@ function EventDialog({
   const [saving, setSaving] = useState(false)
   const set = (patch: Partial<CompanyEventFormValues>) => setValues((v) => ({ ...v, ...patch }))
   const thisYear = new Date().getFullYear()
+  const programme = values.type === 'programme' ? (values.programme ?? emptyProgramme) : null
+  const setProgramme = (patch: Partial<NonNullable<CompanyEventFormValues['programme']>>) =>
+    set({ programme: { ...(values.programme ?? emptyProgramme), ...patch } })
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setSaving(true)
     setError(null)
     try {
+      const data = { ...values, programme }
       await saveCompanyEvent({
-        data: event ? { eventId: event.id, values } : { companyId, values },
+        data: event ? { eventId: event.id, values: data } : { companyId, values: data },
       })
       await router.invalidate()
       onClose()
@@ -385,14 +437,53 @@ function EventDialog({
             />
           </Field>
         </div>
-        <Field label="Hva skjedde">
+        {programme && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CompanyInput
+              className="sm:col-span-2"
+              label="Program"
+              value={{ name: programme.name, companyId: programme.companyId }}
+              onChange={(v) => setProgramme({ name: v.name, companyId: v.companyId })}
+              placeholder="Y Combinator, StartupLab, 6am …"
+              excludeId={companyId}
+            />
+            <Field label="Type">
+              <Select
+                value={programme.kind}
+                onChange={(e) => setProgramme({ kind: e.target.value as ProgrammeKind })}
+              >
+                {programmeKindOrder.map((k) => (
+                  <option key={k} value={k}>
+                    {programmeKindLabels[k]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Kull" hint="Valgfritt.">
+              <Input
+                value={programme.batch}
+                onChange={(e) => setProgramme({ batch: e.target.value })}
+                maxLength={40}
+                placeholder="W22"
+              />
+            </Field>
+          </div>
+        )}
+        <Field
+          label={programme ? 'Mer om det' : 'Hva skjedde'}
+          hint={programme ? 'Valgfritt.' : undefined}
+        >
           <Textarea
             value={values.text}
             onChange={(e) => set({ text: e.target.value })}
             rows={3}
             maxLength={500}
-            required
-            placeholder="Hentet 12 MNOK fra Investinor og Equinor Ventures."
+            required={!programme}
+            placeholder={
+              programme
+                ? 'Tre måneder i San Francisco, avsluttet med Demo Day.'
+                : 'Hentet 12 MNOK fra Investinor og Equinor Ventures.'
+            }
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">

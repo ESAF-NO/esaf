@@ -1,6 +1,7 @@
 import {
   awardBadge,
   badgeColors,
+  badgeRarities,
   badgeCompanyLinks,
   badgeMilestoneTypes,
   badgeEventRoles,
@@ -275,6 +276,15 @@ const badgeFields = {
     .describe(
       'Lower first (default 100). Within a series, the higher tier must have the higher sortOrder.',
     ),
+  rarity: z
+    .enum(badgeRarities)
+    .nullable()
+    .optional()
+    .describe(
+      'Fixed rarity, which sets the XP: common 25, uncommon 40, rare 70, epic 120, legendary 200. null = from the ' +
+        'share of active members holding it. Set it while few members have claimed their profile (almost everything ' +
+        'is rare by share then): common for badges anyone can get by showing up, legendary only for real feats.',
+    ),
 }
 
 function summary(ctx: ToolContext, b: AdminBadge, stats?: BadgeStats) {
@@ -290,6 +300,7 @@ function summary(ctx: ToolContext, b: AdminBadge, stats?: BadgeStats) {
     status: b.status,
     series: b.series,
     sortOrder: b.sortOrder,
+    fixedRarity: b.rarity,
     ruleText: b.ruleText,
     rule: b.rule,
     manual: b.manual,
@@ -366,7 +377,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
     title: 'List badges',
     description:
       'All badges (published, drafts, archived) with the rule in words, the rule itself, how many have each, and for ' +
-      'published ones the rarity (common/uncommon/rare/epic/legendary from the share of active members holding it) ' +
+      'published ones the rarity (common/uncommon/rare/epic/legendary: fixed on the badge, or from the share of active members holding it) ' +
       'and the XP it gives. Members level up from XP; badges and the level are shown on profiles.',
     input: z.object({
       status: z
@@ -429,11 +440,11 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
         .describe('Publish and award right away. Default false (draft).'),
     }),
     effect: 'write',
-    run: async ({ publish, series, ...values }, ctx) => {
+    run: async ({ publish, series, rarity, ...values }, ctx) => {
       const { id } = await createBadge(
         ctx.db,
         ctx.viewer,
-        { ...values, series: series ?? null },
+        { ...values, series: series ?? null, rarity: rarity ?? null },
         { publish },
       )
       return details(ctx, id, 25)
@@ -460,6 +471,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
             threshold: z.number().int().min(1).max(1000),
             name: badgeFields.name,
             description: badgeFields.description,
+            rarity: badgeFields.rarity,
           }),
         )
         .min(2)
@@ -492,6 +504,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
           {
             name: tier.name,
             description: tier.description,
+            rarity: tier.rarity ?? null,
             icon,
             color,
             series,
@@ -522,6 +535,7 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
       color: badgeFields.color.optional(),
       series: badgeFields.series,
       sortOrder: badgeFields.sortOrder,
+      rarity: badgeFields.rarity,
       rule: badgeRuleInput.optional(),
     }),
     effect: 'write',

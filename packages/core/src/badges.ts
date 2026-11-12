@@ -26,9 +26,11 @@ import { z } from 'zod'
 import { assertCan, assertMember, type Viewer } from './access.ts'
 import { badgeImageUrls, deleteBadgeImageFiles, type BadgeImage } from './badge-images.ts'
 import {
+  badgeRarities,
   loadBadgeStats,
   playerStanding,
   type BadgeRarity,
+  type BadgeRarityTier,
   type PlayerStanding,
 } from './badge-game.ts'
 import { boardRoleNames, boardRoles } from './board.ts'
@@ -1686,6 +1688,8 @@ export const badgeInput = z.object({
   rule: badgeRule,
   series: optionalText(40).default(null),
   sortOrder: z.number().int().min(0).max(10_000).default(100),
+  /** Fast sjeldenhet. Null: regnes ut fra hvor mange som har merket. */
+  rarity: z.enum(badgeRarities, 'Velg en sjeldenhet.').nullable().default(null),
 })
 export type BadgeInput = z.input<typeof badgeInput>
 export type BadgeValues = z.output<typeof badgeInput>
@@ -1726,6 +1730,8 @@ export type AdminBadge = BadgeChip & {
   status: BadgeStatus
   series: string | null
   sortOrder: number
+  /** Fast sjeldenhet, eller null når den regnes ut fra andelen. */
+  rarity: BadgeRarityTier | null
   rule: BadgeRule
   ruleText: string
   manual: boolean
@@ -1746,6 +1752,7 @@ export async function listBadgesForAdmin(db: Db, viewer: Viewer): Promise<AdminB
       status: badge.status,
       series: badge.series,
       sortOrder: badge.sortOrder,
+      rarity: sql<BadgeRarityTier | null>`${badge.rarity}`,
       rule: badge.rule,
       publishedAt: badge.publishedAt,
       updatedAt: badge.updatedAt,
@@ -2008,6 +2015,7 @@ export async function updateBadge(
       rule: stored,
       series: current.series,
       sortOrder: current.sortOrder,
+      rarity: current.rarity,
       ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)),
     })
     const rule = await validRule(tx, values.rule)

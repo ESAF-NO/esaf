@@ -274,8 +274,9 @@ Design badges ("merker") for the ESAF member app${theme ? `, focused on: ${theme
    volunteered), firsts and specific historic events, started a company at ES, founder, exit (acquired), mentor,
    board, cohort representative, a complete profile, and a few manual ones for special effort.
 3. Run preview_badge for each and show me one table: name, rule in words, how many would get it now. Rarity (and
-   XP) follows the share of active members who have a badge, so aim for a ladder from common to legendary: a few
-   easy ones everyone gets, and some that only a handful reach. Adjust thresholds that give nobody or everybody.
+   XP) follows the share of active members who have a badge unless the badge has a fixed rarity; set one while few
+   members have claimed their profile. Aim for a ladder from common to legendary: a few easy ones everyone gets,
+   and some that only a handful reach. Adjust thresholds that give nobody or everybody.
 4. Names and descriptions in Norwegian bokmål: short, warm and plain ("ESAF-helgen ×5", "Vært på fem ESAF-helger."),
    no slang, no emoji. One colour per family, an icon that fits. If I give you artwork for a badge, use
    set_badge_image on the draft before publishing.

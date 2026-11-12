@@ -991,10 +991,21 @@ export const badge = pgTable(
     series: text(),
     /** Lavest først. */
     sortOrder: integer().notNull().default(100),
+    /**
+     * Fast sjeldenhet, satt av en admin (`badgeRarities` i @esaf/core). Null:
+     * sjeldenheten regnes ut fra hvor mange aktive medlemmer som har merket.
+     */
+    rarity: text(),
     publishedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
-  (t) => [check('badge_slug', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`)],
+  (t) => [
+    check('badge_slug', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    check(
+      'badge_rarity',
+      sql`${t.rarity} is null or ${t.rarity} in ('common', 'uncommon', 'rare', 'epic', 'legendary')`,
+    ),
+  ],
 )
 
 /** Fra regelen, regnet ut av serveren, eller delt ut av en admin. */

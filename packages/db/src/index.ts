@@ -12,6 +12,7 @@ export type {
   CohortRelation,
   CompanyArticleSource,
   CompanyEventType,
+  ProgrammeKind,
   CompanyLinkRole,
   CompanySuggestionChanges,
   CompanySuggestionKind,

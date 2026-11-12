@@ -37,7 +37,7 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
     id: 'companies',
     title: 'Selskaper',
     description:
-      'Opprette, rette og slå sammen selskaper, logoer, historikk (stiftet, investeringer, oppkjøp) og omtale i media.',
+      'Opprette, rette og slå sammen selskaper, logoer, historikk (stiftet, programmer som akseleratorer, investeringer, oppkjøp) og omtale i media.',
     tools: [
       'list_companies',
       'get_company',

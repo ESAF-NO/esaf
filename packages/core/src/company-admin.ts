@@ -254,6 +254,11 @@ export async function deleteCompany(
       throw new DomainError('Skriv en kort begrunnelse når koblinger fjernes. Den lagres i loggen.')
     }
     const events = await tx.$count(companyEvent, eq(companyEvent.companyId, current.id))
+    // Selskaper som var med i programmet, beholder hendelsen, uten kobling.
+    const programmeEvents = await tx.$count(
+      companyEvent,
+      eq(companyEvent.programmeCompanyId, current.id),
+    )
     const quotes = await tx.$count(quote, eq(quote.companyId, current.id))
     const suggestions = await tx.$count(
       companySuggestion,
@@ -287,6 +292,7 @@ export async function deleteCompany(
         experience: jobs.length,
         esTeam: team.length,
         events,
+        programmeEvents,
         quotes,
         suggestions,
         links,

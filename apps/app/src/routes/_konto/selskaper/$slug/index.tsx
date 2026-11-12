@@ -6,6 +6,7 @@ import {
   Briefcase,
   CalendarDays,
   Globe,
+  GraduationCap,
   Hand,
   History,
   Landmark,
@@ -22,6 +23,7 @@ import { DocumentsCard } from '#/components/Attachments.tsx'
 import { AddPersonDialog, JoinCompanyDialog } from '#/components/CompanyLinkDialogs.tsx'
 import { CompanyArticles } from '#/components/CompanyArticles.tsx'
 import { CompanyTimeline } from '#/components/CompanyTimeline.tsx'
+import { ProgrammeCompaniesCard, ProgrammesCard } from '#/components/Programmes.tsx'
 import { LinkRequestCard, SuggestionCard, useAction } from '#/components/Contributions.tsx'
 import { QuoteList } from '#/components/Quotes.tsx'
 import { RemoveSourceButton } from '#/components/SourceNote.tsx'
@@ -38,7 +40,7 @@ import {
 import { statusLabels } from '#/lib/companies.ts'
 import { fetchCompany } from '#/lib/companies.functions.ts'
 import { leaveCompany } from '#/lib/contributions.functions.ts'
-import { longDay, yearSpan } from '#/lib/format.ts'
+import { longDay, plural, yearSpan } from '#/lib/format.ts'
 import { companyFieldLabels, confidenceLabels } from '#/lib/sources.ts'
 
 export const Route = createFileRoute('/_konto/selskaper/$slug/')({
@@ -117,6 +119,7 @@ function PersonRow({ person: p }: { person: Member }) {
 function CompanyPage() {
   const c = Route.useLoaderData()
   const facts = Boolean(c.foundedYear || c.location || c.website)
+  const programmes = c.events.some((e) => e.programme && !e.review)
   const bare = !c.tagline && !c.description && !c.website && !c.location && !c.industries.length
 
   return (
@@ -150,7 +153,19 @@ function CompanyPage() {
                 Sist nevnt på ES-siden {c.lastSeenOnEsSite.slice(0, 4)}
               </p>
             )}
-            {!c.startedByAlumni && (
+            {c.programmeCompanies.length > 0 && (
+              <p className="mt-3 flex items-center gap-1.5 text-sm text-stone-500">
+                <GraduationCap className="size-4" aria-hidden />
+                Program for oppstartsselskaper ·{' '}
+                {plural(
+                  new Set(c.programmeCompanies.map((p) => p.company.id)).size,
+                  'selskap',
+                  'selskaper',
+                )}{' '}
+                fra ES-miljøet har vært med
+              </p>
+            )}
+            {!c.startedByAlumni && (c.people.length > 0 || !c.programmeCompanies.length) && (
               <p className="mt-3 inline-flex items-center gap-1.5 text-sm text-stone-500">
                 {c.boardOnly ? (
                   <>
@@ -249,7 +264,7 @@ function CompanyPage() {
       <div
         className={cx(
           'mt-6 grid gap-6',
-          (facts || c.industries.length > 0 || c.sources.length > 0) &&
+          (facts || programmes || c.industries.length > 0 || c.sources.length > 0) &&
             'lg:grid-cols-[minmax(0,1fr)_280px]',
         )}
       >
@@ -291,6 +306,8 @@ function CompanyPage() {
               </p>
             )}
           </Card>
+
+          <ProgrammeCompaniesCard name={c.name} companies={c.programmeCompanies} />
 
           <CompanyTimeline
             companyId={c.id}
@@ -343,6 +360,7 @@ function CompanyPage() {
               </dl>
             </Card>
           )}
+          <ProgrammesCard events={c.events} />
           {c.industries.length > 0 && (
             <Card className="p-5">
               <h2 className="text-sm font-semibold text-stone-950">Bransjer</h2>

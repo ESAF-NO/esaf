@@ -3,6 +3,7 @@ import {
   addCompanyEvent,
   addFieldSources,
   companyEventTypes,
+  programmeKinds,
   companySourceFields,
   COMPANY_INDUSTRY_MAX,
   companyStatuses,
@@ -79,9 +80,40 @@ const eventFields = {
   month: z.number().int().min(1).max(12).nullable().default(null).describe('Omit if unknown.'),
   day: z.number().int().min(1).max(31).nullable().default(null).describe('Needs month.'),
   type: z.enum(companyEventTypes),
-  text: z.string().max(500).describe('What happened, one sentence in Norwegian.'),
+  text: z
+    .string()
+    .max(500)
+    .default('')
+    .describe(
+      'What happened, one sentence in Norwegian. Optional for type "programme" (the programme is shown).',
+    ),
   sourceUrl: z.string().max(500).nullable().default(null),
   sourceLabel: z.string().max(80).nullable().default(null),
+  programme: z
+    .object({
+      companyId: z
+        .uuid()
+        .nullable()
+        .default(null)
+        .describe('The programme as an ESAF company (search first, e.g. "6am Accelerator").'),
+      name: z
+        .string()
+        .max(120)
+        .default('')
+        .describe(
+          'Programme name, used when companyId is null: an existing company with the same slug is used, otherwise one is created.',
+        ),
+      kind: z.enum(programmeKinds).describe('accelerator, incubator, pre_incubator or other.'),
+      batch: z
+        .string()
+        .max(40)
+        .nullable()
+        .default(null)
+        .describe('The batch as the programme names it, e.g. "W22", "Kull 3".'),
+    })
+    .nullable()
+    .default(null)
+    .describe('Required for type "programme", ignored otherwise. Date = when they started.'),
 }
 
 const articleFields = {
@@ -143,8 +175,29 @@ async function companyDetails(ctx: ToolContext, ref: { companyId?: string; slug?
       precision: e.datePrecision,
       type: e.type,
       text: e.text,
+      ...(e.programme
+        ? {
+            programme: {
+              companyId: e.programme.company?.id ?? null,
+              slug: e.programme.company?.slug ?? null,
+              name: e.programme.company?.name ?? null,
+              kind: e.programme.kind,
+              batch: e.programme.batch,
+            },
+          }
+        : {}),
       source: e.source,
       needsReview: e.review,
+    })),
+    programmeCompanies: details.programmeCompanies.map((p) => ({
+      companyId: p.company.id,
+      slug: p.company.slug,
+      name: p.company.name,
+      date: p.date,
+      precision: p.datePrecision,
+      kind: p.kind,
+      batch: p.batch,
+      companyEventId: p.eventId,
     })),
     articles: details.articles.map((a) => ({
       articleId: a.id,
@@ -262,8 +315,10 @@ export function registerCompanyTools(server: McpServer, ctx: ToolContext) {
     name: 'get_company',
     title: 'Get company',
     description:
-      'Everything about one company: info, people from ES (founders, ES team, employees), history events, ' +
-      'articles ("I media"), quotes and field sources. Give companyId or slug (old slugs redirect).',
+      'Everything about one company: info, people from ES (founders, ES team, employees), history events ' +
+      '(programme events link to the programme), articles ("I media"), quotes and field sources. ' +
+      'For a programme (accelerator/incubator), programmeCompanies lists the companies that went through it. ' +
+      'Give companyId or slug (old slugs redirect).',
     input: z.object({
       companyId: z.uuid().optional(),
       slug: z.string().max(200).optional(),
@@ -439,8 +494,10 @@ export function registerCompanyTools(server: McpServer, ctx: ToolContext) {
     name: 'add_company_event',
     title: 'Add company history event',
     description:
-      'Add an event to the company history: founded, funding, award, launch, acquired, bankrupt, dissolved, closed or other. ' +
-      'Include a source URL. Shown to all members.',
+      'Add an event to the company history: founded, funding, award, launch, acquired, bankrupt, dissolved, closed, other, ' +
+      'or programme (went through an accelerator/incubator such as Y Combinator, StartupLab, 6am; set `programme`). ' +
+      'The programme is itself an ESAF company, and its page lists every company that went through it. ' +
+      'Include a source URL (the programme portfolio page is best). Shown to all members.',
     input: z.object({ companyId: id('The company'), ...eventFields }),
     effect: 'write',
     run: async ({ companyId, ...event }, ctx) => {

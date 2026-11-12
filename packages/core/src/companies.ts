@@ -24,7 +24,12 @@ import {
   moveCompanyArticles,
   type CompanyArticle,
 } from './company-articles.ts'
-import { loadCompanyEvents, type CompanyEvent } from './company-events.ts'
+import {
+  loadCompanyEvents,
+  loadProgrammeCompanies,
+  type CompanyEvent,
+  type ProgrammeCompany,
+} from './company-events.ts'
 import {
   listMyLinkRequests,
   loadCompanySuggestions,
@@ -234,6 +239,8 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   people: (CompanyPerson & { cohortYears: number[] })[]
   /** Historikken, nyeste først. */
   events: CompanyEvent[]
+  /** Selskapene som har vært med, når selskapet er et program (akselerator, inkubator). */
+  programmeCompanies: ProgrammeCompany[]
   /** «I media»: saker om selskapet, nyeste først og de uten dato sist. */
   articles: CompanyArticle[]
   /** Sitater om selskapet eller fra folk i det. */
@@ -600,6 +607,7 @@ export async function getCompany(
   )
   const [
     events,
+    programmeCompanies,
     articles,
     quotes,
     sources,
@@ -609,6 +617,7 @@ export async function getCompany(
     requestedLinks,
   ] = await Promise.all([
     loadCompanyEvents(db, row.id, { includeReview: canEdit }),
+    loadProgrammeCompanies(db, row.id),
     loadCompanyArticles(db, row.id),
     loadQuotes(db, viewer, { companyId: row.id }),
     loadFieldSources(db, viewer, 'company', row.id, shown),
@@ -628,6 +637,7 @@ export async function getCompany(
     websiteLabel: websiteLabel(row.website),
     people: people.map((p) => ({ ...p, cohortYears: years.get(p.personId) ?? [] })),
     events,
+    programmeCompanies,
     articles,
     quotes,
     sources,
@@ -1014,6 +1024,8 @@ export async function deleteOrphanCompanies(tx: Tx, companyIds: (string | null)[
             isNull(company.logoKey),
             sql`not exists (select 1 from ${experience} where ${experience.companyId} = ${company.id})`,
             sql`not exists (select 1 from ${person} where ${person.esCompanyId} = ${company.id})`,
+            // Et program noen selskaper har vært med i.
+            sql`not exists (select 1 from ${companyEvent} where ${companyEvent.programmeCompanyId} = ${company.id})`,
           ),
         )
         .returning({ id: company.id })
@@ -1157,6 +1169,18 @@ export async function mergeCompanies(
       .update(companyEvent)
       .set({ companyId: target.id })
       .where(eq(companyEvent.companyId, source.id))
+    // Selskaper som var med i duplikatet som program, var med i selskapet det slås
+    // sammen med. Var selskapet selv med i duplikatet, gir det ingen mening lenger.
+    await tx
+      .update(companyEvent)
+      .set({ programmeCompanyId: null })
+      .where(
+        and(eq(companyEvent.programmeCompanyId, source.id), eq(companyEvent.companyId, target.id)),
+      )
+    await tx
+      .update(companyEvent)
+      .set({ programmeCompanyId: target.id })
+      .where(eq(companyEvent.programmeCompanyId, source.id))
     await tx.update(quote).set({ companyId: target.id }).where(eq(quote.companyId, source.id))
     // Dokumentene også.
     await tx.update(asset).set({ companyId: target.id }).where(eq(asset.companyId, source.id))

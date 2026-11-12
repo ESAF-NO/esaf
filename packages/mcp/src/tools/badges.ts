@@ -8,6 +8,7 @@ import {
   badgeProfileFields,
   boardRoles,
   createBadge,
+  programmeKinds,
   DomainError,
   deleteBadge,
   getBadgeForAdmin,
@@ -134,6 +135,41 @@ export const badgeRuleInput = z
       })
       .describe(
         'Started or worked at companies; e.g. "Started a company at ES", "Exit", "Serial founder".',
+      ),
+    z
+      .object({
+        kind: z.literal('programme'),
+        link: z
+          .enum(badgeCompanyLinks)
+          .default('founder')
+          .describe('Which of their companies count, as for kind "company".'),
+        programmeIds: z
+          .array(z.uuid())
+          .max(20)
+          .default([])
+          .describe(
+            'The programmes (ESAF company ids, see badge_options.programmes), e.g. Y Combinator. Empty = any programme.',
+          ),
+        programmeKinds: z
+          .array(z.enum(programmeKinds))
+          .max(4)
+          .default([])
+          .describe('accelerator, incubator, pre_incubator, other. Empty = any.'),
+        first: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Only the first ESAF company in that programme (earliest programme event; ties all count). For "first from ESAF in Y Combinator".',
+          ),
+        duringEs: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Only when the programme year was while the person studied at ES (ES 2024 ran 2022–2024).',
+          ),
+      })
+      .describe(
+        'A company of theirs went through an accelerator/incubator (company history events of type "programme"), e.g. "YC founder", "First from ESAF in Y Combinator", "Accelerator during ES".',
       ),
     z
       .object({

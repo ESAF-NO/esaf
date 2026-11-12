@@ -375,6 +375,16 @@ export const companyEventType = pgEnum('company_event_type', [
   'dissolved',
   'closed',
   'other',
+  /** Gikk gjennom en akselerator, inkubator eller lignende (`programmeCompanyId`). */
+  'programme',
+])
+
+/** Hva slags program et selskap gikk gjennom. */
+export const programmeKind = pgEnum('programme_kind', [
+  'accelerator',
+  'incubator',
+  'pre_incubator',
+  'other',
 ])
 
 /**
@@ -382,6 +392,11 @@ export const companyEventType = pgEnum('company_event_type', [
  * oppkjøp, konkurs. Fra import (Brreg, nyhetssaker) eller lagt inn i appen.
  * `date` lagres som en hel dato; `datePrecision` sier hvor mye av den som vises
  * («2019», «juni 2019» eller «4. juni 2019»).
+ *
+ * Hendelser av typen `programme` peker på programmet (Y Combinator, StartupLab,
+ * 6am), som selv er et selskap i ESAF, så programmet får en liste over
+ * selskapene som har vært med. Slettes programmet, blir hendelsen stående uten
+ * kobling (teksten sier fortsatt hva det var).
  */
 export const companyEvent = pgTable(
   'company_event',
@@ -407,9 +422,25 @@ export const companyEvent = pgTable(
       .default([]),
     /** Hendelser lagt inn eller bekreftet i appen er `high`. */
     confidence: sourceConfidence().notNull().default('high'),
+    /** Programmet selskapet gikk gjennom. Bare for `programme`. */
+    programmeCompanyId: uuid().references(() => company.id, { onDelete: 'set null' }),
+    programmeKind: programmeKind(),
+    /** Kullet slik programmet kaller det, f.eks. «W22» eller «Kull 3». */
+    programmeBatch: text(),
     ...timestamps,
   },
-  (t) => [index().on(t.companyId, t.date)],
+  (t) => [
+    index().on(t.companyId, t.date),
+    index().on(t.programmeCompanyId),
+    check(
+      'company_event_programme',
+      sql`${t.type}::text = 'programme' or (${t.programmeCompanyId} is null and ${t.programmeKind} is null and ${t.programmeBatch} is null)`,
+    ),
+    check(
+      'company_event_not_own_programme',
+      sql`${t.programmeCompanyId} is null or ${t.programmeCompanyId} <> ${t.companyId}`,
+    ),
+  ],
 )
 
 /**
@@ -559,6 +590,13 @@ export type CompanySuggestionChanges =
         text: string
         sourceUrl: string | null
         sourceLabel: string | null
+        /** Bare for `programme`. Uten `companyId` lages programmet fra navnet når forslaget godtas. */
+        programme?: {
+          name: string
+          companyId: string | null
+          kind: ProgrammeKind
+          batch: string | null
+        } | null
       }
     }
   | {
@@ -1398,6 +1436,7 @@ export type CompanyStatus = (typeof companyStatus.enumValues)[number]
 export type SourceConfidence = (typeof sourceConfidence.enumValues)[number]
 export type DatePrecision = (typeof datePrecision.enumValues)[number]
 export type CompanyEventType = (typeof companyEventType.enumValues)[number]
+export type ProgrammeKind = (typeof programmeKind.enumValues)[number]
 export type FieldSourceEntity = (typeof fieldSourceEntity.enumValues)[number]
 export type ContributionStatus = (typeof contributionStatus.enumValues)[number]
 export type CompanySuggestionKind = (typeof companySuggestionKind.enumValues)[number]

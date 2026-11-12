@@ -1,0 +1,2 @@
+ALTER TABLE "badge" ADD COLUMN "rarity" text;--> statement-breakpoint
+ALTER TABLE "badge" ADD CONSTRAINT "badge_rarity" CHECK ("badge"."rarity" is null or "badge"."rarity" in ('common', 'uncommon', 'rare', 'epic', 'legendary'));

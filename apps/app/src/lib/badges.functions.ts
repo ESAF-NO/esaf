@@ -3,6 +3,7 @@ import {
   awardBadge,
   badgeColors,
   badgeIcons,
+  badgeRarities,
   badgeOptions,
   createBadge,
   deleteBadge,
@@ -55,6 +56,7 @@ const badgeFields = z.object({
   rule,
   series: z.string().max(200).nullable(),
   sortOrder: z.number().int(),
+  rarity: z.enum(badgeRarities).nullable(),
 })
 
 export const fetchAdminBadges = createServerFn({ method: 'GET' }).handler(() =>

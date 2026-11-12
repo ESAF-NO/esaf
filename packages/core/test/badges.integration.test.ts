@@ -557,6 +557,36 @@ describe.skipIf(!url)('merker', () => {
     expect((await getProfile(db, ola, ola!.personId!)).level).toMatchObject({ xp: 25, badges: 1 })
   })
 
+  it('fast sjeldenhet på merket overstyrer andelen, og kan tas bort igjen', async () => {
+    await attend(await weekend('2018-09-07'), ola)
+    const { id } = await createBadge(
+      db,
+      admin,
+      badgeFields({
+        rarity: 'common',
+        rule: { kind: 'event_count', eventTypeId: weekendType, count: 1 },
+      }),
+      { publish: true },
+    )
+    // Én av tre aktive har merket, men det er satt fast til vanlig.
+    expect(await badgesOn(kari, ola!.personId!)).toMatchObject([
+      { id, rarity: { tier: 'common', xp: 25, fixed: true } },
+    ])
+    expect((await listBadgesForAdmin(db, admin)).find((b) => b.id === id)?.rarity).toBe('common')
+
+    await updateBadge(db, admin, id, { rarity: 'legendary' })
+    expect((await getProfile(db, kari, ola!.personId!)).level).toMatchObject({ xp: 200 })
+
+    // Uten fast sjeldenhet regnes den ut fra andelen igjen (én av tre: uvanlig).
+    await updateBadge(db, admin, id, { rarity: null })
+    expect(await badgesOn(kari, ola!.personId!)).toMatchObject([
+      { id, rarity: { tier: 'uncommon', fixed: false } },
+    ])
+    await expect(
+      updateBadge(db, admin, id, { rarity: 'mythic' as unknown as 'common' }),
+    ).rejects.toThrow('Velg en sjeldenhet.')
+  })
+
   it('kullkampen: rangert på andel, og det første fulle kullet beholder merket sitt', async () => {
     const unclaimed = async (name: string, year: number) =>
       (

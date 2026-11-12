@@ -8,7 +8,7 @@ import type {
 } from '@esaf/core'
 import { createFileRoute, Link, notFound, useNavigate, useRouter } from '@tanstack/react-router'
 import { Archive, Award, Gift, ImageUp, Pencil, Plus, Send, Trash2, X } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import {
   BadgeMedal,
@@ -28,6 +28,7 @@ import {
   Field,
   Input,
   Select,
+  Tag,
   Textarea,
 } from '#/components/ui.tsx'
 import {
@@ -43,7 +44,14 @@ import {
   saveBadge,
   takeBadge,
 } from '#/lib/badges.functions.ts'
-import { plural } from '#/lib/format.ts'
+import {
+  filterHolders,
+  HOLDER_SEARCH_FROM,
+  holderSourceLabel,
+  holderStatusLabel,
+  sortHolders,
+} from '#/lib/badge-holders.ts'
+import { partialDate, plural } from '#/lib/format.ts'
 import { checkPhotoFile, deleteBadgeImage, PHOTO_ACCEPT, uploadBadgeImage } from '#/lib/photos.ts'
 
 /** Fra vanligst til sjeldnest, som `badgeRarities` i @esaf/core. */
@@ -73,6 +81,7 @@ function AdminBadgesPage() {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [awarding, setAwarding] = useState<AdminBadge | null>(null)
+  const [holding, setHolding] = useState<AdminBadge | null>(null)
   const editing = badges.find((b) => b.id === merke) ?? null
   const close = () => navigate({ to: '/admin/merker', search: {}, replace: true })
 
@@ -111,7 +120,12 @@ function AdminBadgesPage() {
             </h2>
             <Card className="divide-y divide-stone-100">
               {g.badges.map((b) => (
-                <BadgeRow key={b.id} badge={b} onAward={() => setAwarding(b)} />
+                <BadgeRow
+                  key={b.id}
+                  badge={b}
+                  onAward={() => setAwarding(b)}
+                  onShowHolders={() => setHolding(b)}
+                />
               ))}
             </Card>
           </section>
@@ -123,11 +137,20 @@ function AdminBadgesPage() {
         <BadgeEditor key={editing.id} badge={editing} options={options} onClose={close} />
       )}
       {awarding && <AwardDialog badge={awarding} onClose={() => setAwarding(null)} />}
+      {holding && <HoldersDialog badge={holding} onClose={() => setHolding(null)} />}
     </div>
   )
 }
 
-function BadgeRow({ badge: b, onAward }: { badge: AdminBadge; onAward: () => void }) {
+function BadgeRow({
+  badge: b,
+  onAward,
+  onShowHolders,
+}: {
+  badge: AdminBadge
+  onAward: () => void
+  onShowHolders: () => void
+}) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -164,11 +187,21 @@ function BadgeRow({ badge: b, onAward }: { badge: AdminBadge; onAward: () => voi
           </p>
           <p className="text-sm text-stone-600">{b.ruleText}</p>
           <p className="text-xs text-stone-500">
-            {b.status === 'draft'
-              ? 'Ikke delt ut'
-              : `${plural(b.visible, 'medlem', 'medlemmer')} har det${
-                  b.awarded > b.visible ? ` (${b.awarded} med profiler som ikke er aktive)` : ''
-                }`}
+            {b.status === 'draft' ? (
+              'Ikke delt ut'
+            ) : b.awarded === 0 ? (
+              'Ingen har det ennå'
+            ) : (
+              <button
+                type="button"
+                onClick={onShowHolders}
+                aria-haspopup="dialog"
+                className="rounded-sm underline decoration-stone-300 underline-offset-2 hover:text-stone-900 hover:decoration-stone-500 focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none"
+              >
+                {plural(b.visible, 'medlem', 'medlemmer')} har det
+                {b.awarded > b.visible && ` (${b.awarded} med profiler som ikke er aktive)`}
+              </button>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -1060,27 +1093,12 @@ type Candidate = Awaited<ReturnType<typeof fetchAwardCandidates>>[number]
 type Holders = Awaited<ReturnType<typeof fetchAdminBadge>>['awards']
 
 function AwardDialog({ badge, onClose }: { badge: AdminBadge; onClose: () => void }) {
-  const router = useRouter()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Candidate[]>([])
   const [picked, setPicked] = useState<Candidate[]>([])
   const [citation, setCitation] = useState('')
-  const [holders, setHolders] = useState<Holders | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const [version, setVersion] = useState(0)
-
-  // Hvem som har merket: når dialogen åpnes, og etter hver endring (`version`).
-  useEffect(() => {
-    let current = true
-    void fetchAdminBadge({ data: { badgeId: badge.id } }).then((b) => {
-      if (current) setHolders(b.awards)
-    })
-    return () => {
-      current = false
-    }
-  }, [badge.id, version])
+  const { holders, loadError, reload } = useBadgeHolders(badge.id)
+  const { busy, error, act } = useBadgeAction(reload)
 
   // Søket kjører når det er minst to tegn; kortere viser ingen treff.
   const searching = query.trim().length >= 2
@@ -1097,20 +1115,6 @@ function AwardDialog({ badge, onClose }: { badge: AdminBadge; onClose: () => voi
     }
   }, [query, searching])
   const shown = searching ? results : []
-
-  async function act(action: () => Promise<unknown>) {
-    setBusy(true)
-    setError(null)
-    try {
-      await action()
-      setVersion((v) => v + 1)
-      await router.invalidate()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const award = () =>
     act(async () => {
@@ -1206,40 +1210,221 @@ function AwardDialog({ badge, onClose }: { badge: AdminBadge; onClose: () => voi
           </Button>
         </div>
 
-        <section aria-labelledby="har-det" className="border-t border-stone-100 pt-4">
-          <h3 id="har-det" className="mb-2 text-sm font-semibold text-stone-950">
-            Har det{holders ? ` (${holders.length})` : ''}
-          </h3>
-          {!holders ? (
-            <p className="text-sm text-stone-500">Henter …</p>
-          ) : holders.length === 0 ? (
-            <p className="text-sm text-stone-500">Ingen ennå.</p>
-          ) : (
-            <ul className="max-h-60 divide-y divide-stone-100 overflow-y-auto">
-              {holders.map((h) => (
-                <li key={h.personId} className="flex items-center justify-between gap-3 py-2">
-                  <span className="min-w-0 text-sm">
-                    <span className="font-medium text-stone-900">{h.fullName}</span>
-                    {h.citation && (
-                      <span className="block text-xs text-stone-500 italic">«{h.citation}»</span>
-                    )}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      act(() => takeBadge({ data: { badgeId: badge.id, personIds: [h.personId] } }))
-                    }
-                  >
-                    Ta tilbake
-                  </Button>
-                </li>
+        <div className="border-t border-stone-100 pt-4">
+          <HolderList
+            heading="Har det"
+            holders={holders}
+            loadError={loadError}
+            busy={busy}
+            onTake={(h) =>
+              act(() => takeBadge({ data: { badgeId: badge.id, personIds: [h.personId] } }))
+            }
+          />
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Hvem som har merket
+// ---------------------------------------------------------------------------
+
+type Holder = Holders[number]
+
+/** Hvem som har merket: når dialogen åpnes, og på nytt med `reload` etter en endring. */
+function useBadgeHolders(badgeId: string) {
+  const [holders, setHolders] = useState<Holders | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [version, setVersion] = useState(0)
+  useEffect(() => {
+    let current = true
+    fetchAdminBadge({ data: { badgeId } }).then(
+      (b) => {
+        if (!current) return
+        setHolders(b.awards)
+        setLoadError(null)
+      },
+      (e: unknown) => {
+        if (current) setLoadError(e instanceof Error ? e.message : 'Kunne ikke hente lista.')
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [badgeId, version])
+  const reload = useCallback(() => setVersion((v) => v + 1), [])
+  return { holders, loadError, reload }
+}
+
+/** En endring på merket: opptatt mens den lagres, feilen, og lista og siden hentes på nytt. */
+function useBadgeAction(reload: () => void) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function act(action: () => Promise<unknown>) {
+    setBusy(true)
+    setError(null)
+    try {
+      await action()
+      reload()
+      await router.invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Kunne ikke lagre.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return { busy, error, act }
+}
+
+/** Alle som har merket, med «Ta tilbake» for merker for hånd. */
+function HoldersDialog({ badge, onClose }: { badge: AdminBadge; onClose: () => void }) {
+  const { holders, loadError, reload } = useBadgeHolders(badge.id)
+  const { busy, error, act } = useBadgeAction(reload)
+  // Arkiverte merker for hånd kan også tas tilbake, som i MCP.
+  const onTake = badge.manual
+    ? (h: Holder) => act(() => takeBadge({ data: { badgeId: badge.id, personIds: [h.personId] } }))
+    : undefined
+  return (
+    <Dialog
+      title={`Har «${badge.name}»`}
+      description={badge.ruleText}
+      onClose={onClose}
+      busy={busy}
+      className="sm:max-w-xl"
+    >
+      <div className="space-y-4">
+        <HolderList
+          heading="Har merket"
+          holders={holders}
+          loadError={loadError}
+          busy={busy}
+          onTake={onTake}
+          autoFocus
+        />
+        {error && <ErrorText>{error}</ErrorText>}
+        <DialogActions>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Lukk
+          </Button>
+        </DialogActions>
+      </div>
+    </Dialog>
+  )
+}
+
+function HolderList({
+  heading,
+  holders,
+  loadError,
+  busy,
+  onTake,
+  autoFocus = false,
+}: {
+  heading: string
+  holders: Holders | null
+  loadError: string | null
+  busy: boolean
+  onTake?: (holder: Holder) => void
+  /** Søkefeltet får fokus når dialogen åpnes. */
+  autoFocus?: boolean
+}) {
+  const headingId = useId()
+  const [query, setQuery] = useState('')
+  const sorted = useMemo(() => (holders ? sortHolders(holders) : []), [holders])
+  const searchable = sorted.length > HOLDER_SEARCH_FROM
+  const shown = searchable ? filterHolders(sorted, query) : sorted
+  const filtered = searchable && query.trim() !== ''
+
+  return (
+    <section aria-labelledby={headingId} className="space-y-2">
+      <h3 id={headingId} className="text-sm font-semibold text-stone-950">
+        {heading}
+        {holders && (
+          <span className="ml-1.5 font-normal text-stone-500 tabular-nums">{holders.length}</span>
+        )}
+      </h3>
+      {loadError && !holders ? (
+        <ErrorText>{loadError}</ErrorText>
+      ) : !holders ? (
+        <p className="text-sm text-stone-500">Henter …</p>
+      ) : holders.length === 0 ? (
+        <p className="text-sm text-stone-500">Ingen ennå.</p>
+      ) : (
+        <>
+          {searchable && (
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Søk etter navn"
+              aria-label="Søk etter navn"
+              data-autofocus={autoFocus || undefined}
+            />
+          )}
+          {filtered && (
+            <p className="text-xs text-stone-500" aria-live="polite">
+              {shown.length === 0 ? 'Ingen treff.' : `${shown.length} av ${holders.length}`}
+            </p>
+          )}
+          {shown.length > 0 && (
+            <ul className="max-h-[50dvh] divide-y divide-stone-100 overflow-y-auto">
+              {shown.map((h) => (
+                <HolderRow key={h.personId} holder={h} busy={busy} onTake={onTake} />
               ))}
             </ul>
           )}
-        </section>
+        </>
+      )}
+    </section>
+  )
+}
+
+function HolderRow({
+  holder: h,
+  busy,
+  onTake,
+}: {
+  holder: Holder
+  busy: boolean
+  onTake?: (holder: Holder) => void
+}) {
+  const status = holderStatusLabel(h.status)
+  const source =
+    h.source === 'manual' && h.awardedBy
+      ? `${holderSourceLabel(h.source)} av ${h.awardedBy}`
+      : holderSourceLabel(h.source)
+  return (
+    <li className="flex items-center justify-between gap-3 py-2">
+      <div className="min-w-0 text-sm">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Link
+            to="/medlemmer/$personId"
+            params={{ personId: h.personId }}
+            className="font-medium text-stone-900 hover:underline"
+          >
+            {h.fullName}
+          </Link>
+          {status && <Tag>{status}</Tag>}
+          {h.hidden && <Tag>Skjult av personen</Tag>}
+        </div>
+        <p className="text-xs text-stone-500">
+          {h.achievedOn ? partialDate(h.achievedOn, 'day') : 'Uten dato'} · {source}
+        </p>
+        {h.citation && <p className="text-xs text-stone-500 italic">«{h.citation}»</p>}
       </div>
-    </Dialog>
+      {onTake && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => onTake(h)}
+          aria-label={`Ta tilbake fra ${h.fullName}`}
+        >
+          Ta tilbake
+        </Button>
+      )}
+    </li>
   )
 }

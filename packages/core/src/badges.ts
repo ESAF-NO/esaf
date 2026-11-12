@@ -176,7 +176,12 @@ export const badgeProfileFieldNames: Record<BadgeProfileField, string> = {
 }
 
 /** Hvordan personen er knyttet til et selskap: ES-selskapet, som gründer, eller begge og ansatt. */
-export const badgeCompanyLinks = ['es_company', 'founder', 'any'] as const
+/**
+ * Hvilke av personens selskaper en regel teller: selskapet de startet på ES,
+ * selskaper de grunnla, begge deler (`founder_or_es`, «var med å starte»), eller
+ * også selskaper de bare jobbet i.
+ */
+export const badgeCompanyLinks = ['es_company', 'founder', 'founder_or_es', 'any'] as const
 export type BadgeCompanyLink = (typeof badgeCompanyLinks)[number]
 
 const companyStatuses = [
@@ -483,7 +488,9 @@ function companyLinkMatches(
   c: Pick<BadgeFacts['companies'][number], 'founder' | 'esCompany'>,
 ) {
   return (
-    link === 'any' || (link === 'founder' && c.founder) || (link === 'es_company' && c.esCompany)
+    link === 'any' ||
+    ((link === 'founder' || link === 'founder_or_es') && c.founder) ||
+    ((link === 'es_company' || link === 'founder_or_es') && c.esCompany)
   )
 }
 
@@ -958,6 +965,9 @@ export function describeBadgeRule(rule: BadgeRule, names: BadgeRuleNames): strin
       const companies = rule.count === 1 ? 'et selskap' : `minst ${rule.count} selskaper`
       if (rule.link === 'es_company') return `Startet ${companies} på ES${statuses}`
       if (rule.link === 'founder') return `Grunnlagt ${companies}${statuses}`
+      if (rule.link === 'founder_or_es') {
+        return `Grunnlagt ${companies} eller startet det på ES${statuses}`
+      }
       return `Startet eller jobbet i ${companies}${statuses}`
     }
     case 'programme': {
@@ -973,7 +983,9 @@ export function describeBadgeRule(rule: BadgeRule, names: BadgeRuleNames): strin
           ? `Startet et selskap på ES som gikk gjennom ${which}`
           : rule.link === 'founder'
             ? `Grunnlagt et selskap som gikk gjennom ${which}`
-            : `Startet eller jobbet i et selskap som gikk gjennom ${which}`
+            : rule.link === 'founder_or_es'
+              ? `Var med å starte et selskap som gikk gjennom ${which}`
+              : `Startet eller jobbet i et selskap som gikk gjennom ${which}`
       const first = rule.first ? ', som det første selskapet i ESAF' : ''
       return `${base}${first}${rule.duringEs ? ', mens de gikk på ES' : ''}`
     }

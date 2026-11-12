@@ -167,6 +167,53 @@ describe('regler for merker', () => {
     expect(evaluateBadgeRule(rule({ kind: 'company', link: 'any', count: 4 }), f).earned).toBe(
       false,
     )
+    // Gründer eller ES-selskap: a (begge) og b (gründer), ikke c (bare ansatt).
+    expect(
+      evaluateBadgeRule(rule({ kind: 'company', link: 'founder_or_es', count: 2 }), f).earned,
+    ).toBe(true)
+    expect(
+      evaluateBadgeRule(rule({ kind: 'company', link: 'founder_or_es', count: 3 }), f).earned,
+    ).toBe(false)
+  })
+
+  it('programmer med «grunnlagt eller startet på ES» teller begge slags selskaper', () => {
+    const programme = (programmeId: string) => [
+      { programmeId, kind: 'incubator' as const, date: '2024-01-01', first: false },
+    ]
+    const f = facts({
+      companies: [
+        {
+          companyId: 'es',
+          status: 'active',
+          founder: false,
+          esCompany: true,
+          programmes: programme(YC),
+        },
+        {
+          companyId: 'own',
+          status: 'active',
+          founder: true,
+          esCompany: false,
+          programmes: programme(LAB),
+        },
+        {
+          companyId: 'job',
+          status: 'active',
+          founder: false,
+          esCompany: false,
+          programmes: programme(OTHER),
+        },
+      ],
+    })
+    const earned = (programmeIds: string[]) =>
+      evaluateBadgeRule(rule({ kind: 'programme', link: 'founder_or_es', programmeIds }), f).earned
+    expect(earned([YC])).toBe(true)
+    expect(earned([LAB])).toBe(true)
+    expect(earned([OTHER])).toBe(false)
+    expect(
+      evaluateBadgeRule(rule({ kind: 'programme', link: 'es_company', programmeIds: [LAB] }), f)
+        .earned,
+    ).toBe(false)
   })
 
   it('programmer: bestemte programmer, typer, først i ESAF og mens de gikk på ES', () => {
@@ -275,6 +322,9 @@ describe('regler for merker', () => {
     expect(text({ kind: 'company', link: 'es_company' })).toBe('Startet et selskap på ES')
     expect(text({ kind: 'company', link: 'founder', statuses: ['acquired'] })).toBe(
       'Grunnlagt et selskap som er kjøpt opp',
+    )
+    expect(text({ kind: 'programme', link: 'founder_or_es', programmeIds: [YC] })).toBe(
+      'Var med å starte et selskap som gikk gjennom Y Combinator',
     )
     expect(text({ kind: 'programme', programmeIds: [YC], first: true })).toBe(
       'Grunnlagt et selskap som gikk gjennom Y Combinator, som det første selskapet i ESAF',

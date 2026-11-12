@@ -104,6 +104,24 @@ export const badgeRuleInput = z
       ),
     z
       .object({
+        kind: z.literal('cohort_complete'),
+        place: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .nullable()
+          .default(null)
+          .describe(
+            '1 = only the first cohort where everyone claimed their profile; n = one of the first n; null = every cohort that got there.',
+          ),
+      })
+      .describe(
+        'Is in a cohort where every active member has claimed their profile (the cohort race on /kull). ' +
+          'The first time a cohort reaches 100 % is recorded and kept, so the order never changes.',
+      ),
+    z
+      .object({
         kind: z.literal('board'),
         roles: z.array(z.enum(boardRoles)).max(4).default([]).describe('Empty = any board role.'),
         current: z.boolean().default(false).describe('Only people on the board now.'),
@@ -308,6 +326,8 @@ export function registerBadgeTools(server: McpServer, ctx: ToolContext) {
           { name: 'Exit', rule: { kind: 'company', link: 'founder', statuses: ['acquired'] } },
           { name: 'Mentor', rule: { kind: 'cohort', relations: ['mentor'] } },
           { name: 'Styremedlem', rule: { kind: 'board' } },
+          { name: 'Først til 100 %', rule: { kind: 'cohort_complete', place: 1 } },
+          { name: 'Fullt kull', rule: { kind: 'cohort_complete' } },
           {
             name: 'Komplett profil',
             rule: { kind: 'profile', fields: ['photo', 'bio', 'experience'] },

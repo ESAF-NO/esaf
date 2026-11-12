@@ -1,5 +1,5 @@
 {
-  "id": "3809f451-2b81-47ca-b3fa-860141bfce07",
+  "id": "a4dc0e8b-ec7b-4549-b83a-6c0f5fcec3f3",
   "prevId": "3ca87ae8-308c-4065-ac2c-f026e1881de8",
   "version": "7",
   "dialect": "postgresql",
@@ -1373,6 +1373,58 @@
       },
       "isRLSEnabled": false
     },
+    "public.cohort_completion": {
+      "name": "cohort_completion",
+      "schema": "",
+      "columns": {
+        "cohort_id": {
+          "name": "cohort_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "members": {
+          "name": "members",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cohort_completion_cohort_id_cohort_id_fk": {
+          "name": "cohort_completion_cohort_id_cohort_id_fk",
+          "tableFrom": "cohort_completion",
+          "tableTo": "cohort",
+          "columnsFrom": [
+            "cohort_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.cohort_representative": {
       "name": "cohort_representative",
       "schema": "",
@@ -2151,25 +2203,6 @@
           "notNull": true,
           "default": "'high'"
         },
-        "programme_company_id": {
-          "name": "programme_company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "programme_kind": {
-          "name": "programme_kind",
-          "type": "programme_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "programme_batch": {
-          "name": "programme_batch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2206,21 +2239,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "company_event_programme_company_id_index": {
-          "name": "company_event_programme_company_id_index",
-          "columns": [
-            {
-              "expression": "programme_company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -2236,34 +2254,12 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "company_event_programme_company_id_company_id_fk": {
-          "name": "company_event_programme_company_id_company_id_fk",
-          "tableFrom": "company_event",
-          "tableTo": "company",
-          "columnsFrom": [
-            "programme_company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "company_event_programme": {
-          "name": "company_event_programme",
-          "value": "\"company_event\".\"type\"::text = 'programme' or (\"company_event\".\"programme_company_id\" is null and \"company_event\".\"programme_kind\" is null and \"company_event\".\"programme_batch\" is null)"
-        },
-        "company_event_not_own_programme": {
-          "name": "company_event_not_own_programme",
-          "value": "\"company_event\".\"programme_company_id\" is null or \"company_event\".\"programme_company_id\" <> \"company_event\".\"company_id\""
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.company_link_request": {
@@ -6800,8 +6796,7 @@
         "bankrupt",
         "dissolved",
         "closed",
-        "other",
-        "programme"
+        "other"
       ]
     },
     "public.company_link_role": {
@@ -7008,16 +7003,6 @@
         "lansering",
         "jobb",
         "arrangement"
-      ]
-    },
-    "public.programme_kind": {
-      "name": "programme_kind",
-      "schema": "public",
-      "values": [
-        "accelerator",
-        "incubator",
-        "pre_incubator",
-        "other"
       ]
     },
     "public.review_dismissal_kind": {

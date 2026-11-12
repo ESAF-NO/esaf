@@ -32,6 +32,7 @@ import {
   type PlayerStanding,
 } from './badge-game.ts'
 import { boardRoleNames, boardRoles } from './board.ts'
+import { loadCohortStandings, recordCohortCompletions } from './cohort-race.ts'
 import { companySlug } from './companies.ts'
 import { programmeKindLabels, programmeKinds } from './company-events.ts'
 import { DomainError, NotFoundError } from './errors.ts'
@@ -245,6 +246,21 @@ export const badgeRule = z
         toYear: ruleYear,
       }),
       z.object({
+        /**
+         * Gått i et kull der alle har tatt i bruk profilen (kullkampen), eventuelt
+         * et av de første kullene som klarte det.
+         */
+        kind: z.literal('cohort_complete'),
+        /** 1: bare det første kullet. Null: alle kull som har klart det. */
+        place: z
+          .number('Må være et tall.')
+          .int('Må være et helt tall.')
+          .min(1, 'Minst 1.')
+          .max(50, 'Høyst 50.')
+          .nullable()
+          .default(null),
+      }),
+      z.object({
         /** Sittet i styret i ESAF, eventuelt i en rolle, eventuelt nå. */
         kind: z.literal('board'),
         roles: z.array(z.enum(boardRoles, 'Ugyldig rolle.')).max(4).default([]),
@@ -342,6 +358,11 @@ export const badgeRuleKinds: { kind: BadgeRuleKind; label: string; help: string 
     help: 'Student, ansatt eller mentor på ES, eventuelt i noen av kullene.',
   },
   {
+    kind: 'cohort_complete',
+    label: 'Fullt kull',
+    help: 'Gått i et kull der alle har tatt i bruk profilen, eventuelt et av de første kullene som klarte det.',
+  },
+  {
     kind: 'board',
     label: 'Styret',
     help: 'Sittet i styret i ESAF, eventuelt i en rolle eller nå.',
@@ -381,6 +402,18 @@ export type BadgeFacts = {
   /** Arrangementer som har startet, eldste først. */
   participations: { eventId: string; typeId: string; startDate: string; role: EventRole | null }[]
   cohorts: { graduationYear: number; relation: CohortRelation }[]
+  /** Kullkampen for kullene personen er med i (som aktivt medlem). */
+  cohortRace: {
+    graduationYear: number
+    members: number
+    claimed: number
+    /** Nummer i rekken av fulle kull. Null: aldri vært fullt. */
+    completedPlace: number | null
+    /** Datoen kullet ble fullt (Oslo). */
+    completedOn: string | null
+  }[]
+  /** Hvor mange kull i alt som har vært fulle. */
+  cohortsCompleted: number
   board: { role: BoardRole; endYear: number | null }[]
   representative: { endYear: number | null }[]
   /** Ett innslag per selskap. */
@@ -411,6 +444,8 @@ export type BadgeProgrammeFact = {
 export const emptyBadgeFacts = (): BadgeFacts => ({
   participations: [],
   cohorts: [],
+  cohortRace: [],
+  cohortsCompleted: 0,
   board: [],
   representative: [],
   companies: [],
@@ -515,6 +550,25 @@ export function evaluateBadgeRule(rule: BadgeRule, f: BadgeFacts): BadgeResult {
       )
       return { earned, achievedOn: null, progress: null }
     }
+    case 'cohort_complete': {
+      const hits = f.cohortRace
+        .filter(
+          (c) =>
+            c.completedPlace !== null && (rule.place === null || c.completedPlace <= rule.place),
+        )
+        .sort((a, b) => a.completedPlace! - b.completedPlace!)
+      if (hits.length) return { earned: true, achievedOn: hits[0]!.completedOn, progress: null }
+      // Plassene er tatt: da er det ikke noe å telle mot.
+      const open = rule.place === null || f.cohortsCompleted < rule.place
+      const best = f.cohortRace
+        .filter((c) => c.members > 0)
+        .sort((a, b) => b.claimed / b.members - a.claimed / a.members)[0]
+      return {
+        earned: false,
+        achievedOn: null,
+        progress: open && best ? progress(best.claimed, best.members) : null,
+      }
+    }
     case 'board': {
       const earned = f.board.some(
         (t) =>
@@ -595,101 +649,114 @@ export async function loadBadgeFacts(
   const ids = personIds ? [...new Set(personIds)] : null
   const today = osloToday()
   // Etter hverandre: synkroniseringen kaller dette inne i en transaksjon.
-  const [people, participations, cohorts, board, reps, jobs, posts, comments, programmeEvents] =
-    await inOrder([
-      () =>
-        db
-          .select({
-            id: person.id,
-            photoKey: person.photoKey,
-            bio: person.bio,
-            expertise: person.expertise,
-            industries: person.industries,
-            city: person.city,
-            linkedinUrl: person.linkedinUrl,
-            studyBackground: person.studyBackground,
-            esCompanyId: person.esCompanyId,
-            esCompanyStatus: company.status,
-          })
-          .from(person)
-          .leftJoin(company, eq(company.id, person.esCompanyId))
-          .where(within(person.id, ids)),
-      () =>
-        db
-          .select({
-            personId: eventParticipation.personId,
-            eventId: eventParticipation.eventId,
-            role: eventParticipation.role,
-            typeId: event.typeId,
-            startDate: event.startDate,
-          })
-          .from(eventParticipation)
-          .innerJoin(event, eq(event.id, eventParticipation.eventId))
-          .where(and(within(eventParticipation.personId, ids), lte(event.startDate, today)))
-          .orderBy(asc(event.startDate), asc(event.id)),
-      () =>
-        db
-          .select({
-            personId: personCohort.personId,
-            graduationYear: cohort.graduationYear,
-            relation: personCohort.relation,
-          })
-          .from(personCohort)
-          .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
-          .where(within(personCohort.personId, ids)),
-      () =>
-        db
-          .select({
-            personId: boardMember.personId,
-            role: boardMember.role,
-            endYear: boardMember.endYear,
-          })
-          .from(boardMember)
-          .where(within(boardMember.personId, ids)),
-      () =>
-        db
-          .select({
-            personId: cohortRepresentative.personId,
-            endYear: cohortRepresentative.endYear,
-          })
-          .from(cohortRepresentative)
-          .where(within(cohortRepresentative.personId, ids)),
-      () =>
-        db
-          .select({
-            personId: experience.personId,
-            companyId: experience.companyId,
-            founder: experience.founder,
-            status: company.status,
-          })
-          .from(experience)
-          .innerJoin(company, eq(company.id, experience.companyId))
-          .where(within(experience.personId, ids)),
-      () =>
-        db
-          .select({ personId: post.authorPersonId, n: sql<number>`count(*)::int` })
-          .from(post)
-          .where(and(within(post.authorPersonId, ids), isNull(post.deletedAt)))
-          .groupBy(post.authorPersonId),
-      () =>
-        db
-          .select({ personId: comment.authorPersonId, n: sql<number>`count(*)::int` })
-          .from(comment)
-          .where(and(within(comment.authorPersonId, ids), isNull(comment.deletedAt)))
-          .groupBy(comment.authorPersonId),
-      // Alle, også for selskaper ingen av personene er i: «først» gjelder hele ESAF.
-      () =>
-        db
-          .select({
-            companyId: companyEvent.companyId,
-            programmeId: companyEvent.programmeCompanyId,
-            kind: companyEvent.programmeKind,
-            date: companyEvent.date,
-          })
-          .from(companyEvent)
-          .where(and(eq(companyEvent.type, 'programme'), ne(companyEvent.confidence, 'low')))
-          .orderBy(asc(companyEvent.date)),
-    ] as const)
+  const [
+    people,
+    participations,
+    cohorts,
+    board,
+    reps,
+    jobs,
+    posts,
+    comments,
+    standings,
+    programmeEvents,
+  ] = await inOrder([
+    () =>
+      db
+        .select({
+          id: person.id,
+          photoKey: person.photoKey,
+          bio: person.bio,
+          expertise: person.expertise,
+          industries: person.industries,
+          city: person.city,
+          linkedinUrl: person.linkedinUrl,
+          studyBackground: person.studyBackground,
+          esCompanyId: person.esCompanyId,
+          esCompanyStatus: company.status,
+        })
+        .from(person)
+        .leftJoin(company, eq(company.id, person.esCompanyId))
+        .where(within(person.id, ids)),
+    () =>
+      db
+        .select({
+          personId: eventParticipation.personId,
+          eventId: eventParticipation.eventId,
+          role: eventParticipation.role,
+          typeId: event.typeId,
+          startDate: event.startDate,
+        })
+        .from(eventParticipation)
+        .innerJoin(event, eq(event.id, eventParticipation.eventId))
+        .where(and(within(eventParticipation.personId, ids), lte(event.startDate, today)))
+        .orderBy(asc(event.startDate), asc(event.id)),
+    () =>
+      db
+        .select({
+          personId: personCohort.personId,
+          graduationYear: cohort.graduationYear,
+          relation: personCohort.relation,
+          active: sql<boolean>`coalesce(${membership.status} = 'active', false)`,
+        })
+        .from(personCohort)
+        .innerJoin(cohort, eq(cohort.id, personCohort.cohortId))
+        .leftJoin(membership, eq(membership.personId, personCohort.personId))
+        .where(within(personCohort.personId, ids)),
+    () =>
+      db
+        .select({
+          personId: boardMember.personId,
+          role: boardMember.role,
+          endYear: boardMember.endYear,
+        })
+        .from(boardMember)
+        .where(within(boardMember.personId, ids)),
+    () =>
+      db
+        .select({
+          personId: cohortRepresentative.personId,
+          endYear: cohortRepresentative.endYear,
+        })
+        .from(cohortRepresentative)
+        .where(within(cohortRepresentative.personId, ids)),
+    () =>
+      db
+        .select({
+          personId: experience.personId,
+          companyId: experience.companyId,
+          founder: experience.founder,
+          status: company.status,
+        })
+        .from(experience)
+        .innerJoin(company, eq(company.id, experience.companyId))
+        .where(within(experience.personId, ids)),
+    () =>
+      db
+        .select({ personId: post.authorPersonId, n: sql<number>`count(*)::int` })
+        .from(post)
+        .where(and(within(post.authorPersonId, ids), isNull(post.deletedAt)))
+        .groupBy(post.authorPersonId),
+    () =>
+      db
+        .select({ personId: comment.authorPersonId, n: sql<number>`count(*)::int` })
+        .from(comment)
+        .where(and(within(comment.authorPersonId, ids), isNull(comment.deletedAt)))
+        .groupBy(comment.authorPersonId),
+    () => loadCohortStandings(db),
+    // Alle, også for selskaper ingen av personene er i: «først» gjelder hele ESAF.
+    () =>
+      db
+        .select({
+          companyId: companyEvent.companyId,
+          programmeId: companyEvent.programmeCompanyId,
+          kind: companyEvent.programmeKind,
+          date: companyEvent.date,
+        })
+        .from(companyEvent)
+        .where(and(eq(companyEvent.type, 'programme'), ne(companyEvent.confidence, 'low')))
+        .orderBy(asc(companyEvent.date)),
+  ] as const)
   for (const p of people) {
     const f = emptyBadgeFacts()
     f.profile = {
@@ -717,7 +784,25 @@ export async function loadBadgeFacts(
   for (const { personId, role, ...rest } of participations) {
     facts.get(personId)?.participations.push({ ...rest, role: normalizeRole(role) })
   }
-  for (const { personId, ...c } of cohorts) facts.get(personId)?.cohorts.push(c)
+  const race = new Map(standings.map((s) => [s.graduationYear, s]))
+  const cohortsCompleted = standings.filter((s) => s.completedPlace !== null).length
+  for (const f of facts.values()) f.cohortsCompleted = cohortsCompleted
+  for (const { personId, active, ...c } of cohorts) {
+    const f = facts.get(personId)
+    if (!f) continue
+    f.cohorts.push(c)
+    // Bare aktive medlemmer telles i kullet, så bare de er med i kampen.
+    const s = race.get(c.graduationYear)
+    if (active && s && !f.cohortRace.some((r) => r.graduationYear === c.graduationYear)) {
+      f.cohortRace.push({
+        graduationYear: s.graduationYear,
+        members: s.members,
+        claimed: s.claimed,
+        completedPlace: s.completedPlace,
+        completedOn: s.completedAt ? osloToday(s.completedAt) : null,
+      })
+    }
+  }
   for (const { personId, ...t } of board) facts.get(personId)?.board.push(t)
   for (const { personId, ...t } of reps) facts.get(personId)?.representative.push(t)
   for (const job of jobs) {
@@ -860,6 +945,12 @@ export function describeBadgeRule(rule: BadgeRule, names: BadgeRuleNames): strin
     }
     case 'cohort_representative':
       return rule.current ? 'Er kullrepresentant nå' : 'Vært kullrepresentant'
+    case 'cohort_complete':
+      return rule.place === null
+        ? 'Gått i et kull der alle har tatt i bruk profilen'
+        : rule.place === 1
+          ? 'Gått i det første kullet der alle tok i bruk profilen'
+          : `Gått i et av de ${rule.place} første kullene der alle tok i bruk profilen`
     case 'company': {
       const statuses = rule.statuses.length
         ? ` som er ${orList(rule.statuses.map((s) => companyStatusNames[s]))}`
@@ -1000,6 +1091,8 @@ export async function syncBadges(
   return db.transaction(async (tx) => {
     // To synkroniseringer samtidig ville sett de samme manglende radene.
     await lockBadgeWork(tx)
+    // Kull som har blitt fulle siden sist, før reglene leser kullkampen.
+    await recordCohortCompletions(tx)
     const badges = (
       await tx
         .select({ id: badge.id, name: badge.name, rule: badge.rule })
@@ -1307,6 +1400,29 @@ export async function badgeChips(db: Db | Tx, badgeIds: string[]): Promise<Earne
     () => loadBadgeStats(db),
   ] as const)
   return rows.map((row) => ({ ...chip(row), rarity: stats.rarity(row.id) }))
+}
+
+/** Et publisert merke for fulle kull, til kullkampen. */
+export type CohortRaceBadge = EarnedBadge & {
+  /** 1: bare det første kullet. Null: alle fulle kull. */
+  place: number | null
+}
+
+/** De publiserte merkene for fulle kull, så kullkampen kan vise hva man spiller om. */
+export async function cohortRaceBadges(db: Db | Tx): Promise<CohortRaceBadge[]> {
+  const rows = await db
+    .select({ id: badge.id, rule: badge.rule })
+    .from(badge)
+    .where(and(eq(badge.status, 'published'), sql`${badge.rule}->>'kind' = 'cohort_complete'`))
+  const places = new Map<string, number | null>()
+  for (const r of rows) {
+    const rule = storedRule(r.rule)
+    if (rule.kind === 'cohort_complete') places.set(r.id, rule.place)
+  }
+  const chips = await badgeChips(db, [...places.keys()])
+  return chips
+    .map((c) => ({ ...c, place: places.get(c.id) ?? null }))
+    .sort((a, b) => (a.place ?? Infinity) - (b.place ?? Infinity))
 }
 
 /** Merkene den innloggede nettopp fikk, og nivået etterpå. */

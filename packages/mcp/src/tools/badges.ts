@@ -140,7 +140,7 @@ export const badgeRuleInput = z
           .enum(badgeCompanyLinks)
           .default('founder')
           .describe(
-            'es_company = the company they started at ES; founder = founded (experience with founder=true); any = founded or worked at, or their ES company.',
+            'es_company = the company they started at ES; founder = founded (experience with founder=true); founder_or_es = either of those ("helped start it", usually right for programme badges); any = also companies they only worked at.',
           ),
         statuses: z
           .array(z.enum(['active', 'acquired', 'closed', 'unknown']))

@@ -268,7 +268,7 @@ function defaultRule(kind: BadgeRuleKind, options: Options): RuleDraft {
     case 'programme':
       return {
         kind,
-        link: 'founder',
+        link: 'founder_or_es',
         programmeIds: [],
         programmeKinds: [],
         first: false,
@@ -646,6 +646,7 @@ const companyStatusNames = {
 const companyLinkNames = {
   es_company: 'Selskapet de startet på ES',
   founder: 'Grunnlagt (gründer)',
+  founder_or_es: 'Grunnlagt eller startet på ES',
   any: 'Grunnlagt eller jobbet i',
 } as const
 

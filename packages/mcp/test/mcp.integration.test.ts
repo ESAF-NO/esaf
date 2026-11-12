@@ -650,11 +650,35 @@ describe.skipIf(!url)('MCP-serveren over HTTP', () => {
       }>(client, 'get_company', { slug: 'syrlig-as' })
       expect(details.events).toHaveLength(1)
       expect(details.articles[0]!.url).toBe('https://www.adressa.no/sak')
+
       expect(details.quotes).toHaveLength(1)
       expect(details.sources.map((s) => s.field)).toEqual(['website'])
 
       const list = await call<{ total: number }>(client, 'list_companies', { missing: ['logo'] })
       expect(list.total).toBe(0)
+
+      // Et program er selv et selskap, og viser selskapene som har vært med.
+      await call(client, 'add_company_event', {
+        companyId,
+        year: 2020,
+        month: 8,
+        type: 'programme',
+        programme: { name: '6am Accelerator', kind: 'accelerator', batch: 'Kull 4' },
+        sourceUrl: 'https://6am.no/portfolio',
+      })
+      const programme = await call<{ programmeCompanies: { slug: string; batch: string }[] }>(
+        client,
+        'get_company',
+        { slug: '6am-accelerator' },
+      )
+      expect(programme.programmeCompanies).toMatchObject([{ slug: 'syrlig-as', batch: 'Kull 4' }])
+      const withProgramme = await call<{
+        events: { type: string; programme?: { slug: string; kind: string } }[]
+      }>(client, 'get_company', { slug: 'syrlig-as' })
+      expect(withProgramme.events.find((e) => e.type === 'programme')?.programme).toMatchObject({
+        slug: '6am-accelerator',
+        kind: 'accelerator',
+      })
       await client.close()
     })
 

@@ -23,7 +23,7 @@ import {
 } from './companies.ts'
 import { insertArticle, parseArticle } from './company-articles.ts'
 import { insertCompany } from './company-admin.ts'
-import { companyEventInput, eventValues } from './company-events.ts'
+import { companyEventInput, eventValues, resolveProgramme } from './company-events.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import type { Tx } from './members.ts'
@@ -599,9 +599,10 @@ export async function decideSuggestion(
           slug = written.slug
           fields = written.changed
         } else if (row.changes.kind === 'event') {
+          const event = parse(companyEventInput, row.changes.event)
           await tx.insert(companyEvent).values({
             companyId: row.companyId,
-            ...eventValues(parse(companyEventInput, row.changes.event)),
+            ...eventValues(event, await resolveProgramme(tx, row.companyId, event)),
             confidence: 'high',
           })
         } else {

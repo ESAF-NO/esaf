@@ -16,6 +16,9 @@ const OTHER = '00000000-0000-4000-8000-000000000002'
 const EVENT_A = '00000000-0000-4000-8000-0000000000a1'
 const EVENT_B = '00000000-0000-4000-8000-0000000000b1'
 
+const YC = '00000000-0000-4000-8000-0000000000c1'
+const LAB = '00000000-0000-4000-8000-0000000000c2'
+
 const rule = (input: BadgeRuleInput) => badgeRule.parse(input)
 
 function facts(patch: Partial<BadgeFacts> = {}): BadgeFacts {
@@ -30,6 +33,7 @@ const went = (
 ) => ({ eventId, typeId, startDate, role })
 
 const names = {
+  companies: new Map([[YC, 'Y Combinator']]),
   eventTypes: new Map([
     [WEEKEND, 'ESAF-helgen'],
     [OTHER, 'Fagkveld'],
@@ -143,9 +147,9 @@ describe('regler for merker', () => {
   it('selskaper: ES-selskapet, gründer, og status som «kjøpt opp»', () => {
     const f = facts({
       companies: [
-        { companyId: 'a', status: 'acquired', founder: true, esCompany: true },
-        { companyId: 'b', status: 'active', founder: true, esCompany: false },
-        { companyId: 'c', status: 'active', founder: false, esCompany: false },
+        { companyId: 'a', status: 'acquired', founder: true, esCompany: true, programmes: [] },
+        { companyId: 'b', status: 'active', founder: true, esCompany: false, programmes: [] },
+        { companyId: 'c', status: 'active', founder: false, esCompany: false, programmes: [] },
       ],
     })
     expect(evaluateBadgeRule(rule({ kind: 'company', link: 'es_company' }), f).earned).toBe(true)
@@ -162,6 +166,58 @@ describe('regler for merker', () => {
     expect(evaluateBadgeRule(rule({ kind: 'company', link: 'any', count: 4 }), f).earned).toBe(
       false,
     )
+  })
+
+  it('programmer: bestemte programmer, typer, først i ESAF og mens de gikk på ES', () => {
+    const f = facts({
+      cohorts: [{ graduationYear: 2022, relation: 'student' }],
+      companies: [
+        {
+          companyId: 'a',
+          status: 'active',
+          founder: true,
+          esCompany: true,
+          programmes: [
+            { programmeId: LAB, kind: 'incubator', date: '2021-08-01', first: false },
+            { programmeId: YC, kind: 'accelerator', date: '2023-01-01', first: true },
+          ],
+        },
+        {
+          companyId: 'b',
+          status: 'active',
+          founder: false,
+          esCompany: false,
+          programmes: [{ programmeId: LAB, kind: 'incubator', date: '2019-01-01', first: true }],
+        },
+      ],
+    })
+    expect(evaluateBadgeRule(rule({ kind: 'programme' }), f)).toMatchObject({
+      earned: true,
+      achievedOn: '2021-08-01',
+    })
+    expect(
+      evaluateBadgeRule(rule({ kind: 'programme', programmeIds: [YC], first: true }), f),
+    ).toMatchObject({ earned: true, achievedOn: '2023-01-01' })
+    // YC var etter ES 2022 (2020–2022); StartupLab var mens de gikk der.
+    expect(
+      evaluateBadgeRule(rule({ kind: 'programme', programmeIds: [YC], duringEs: true }), f).earned,
+    ).toBe(false)
+    expect(
+      evaluateBadgeRule(
+        rule({ kind: 'programme', programmeKinds: ['incubator'], duringEs: true }),
+        f,
+      ).earned,
+    ).toBe(true)
+    // Det første i StartupLab var et selskap personen bare jobbet i.
+    expect(
+      evaluateBadgeRule(rule({ kind: 'programme', programmeIds: [LAB], first: true }), f).earned,
+    ).toBe(false)
+    expect(
+      evaluateBadgeRule(
+        rule({ kind: 'programme', link: 'any', programmeIds: [LAB], first: true }),
+        f,
+      ).earned,
+    ).toBe(true)
   })
 
   it('profilen og feeden teller mot et mål', () => {
@@ -219,6 +275,17 @@ describe('regler for merker', () => {
     expect(text({ kind: 'company', link: 'founder', statuses: ['acquired'] })).toBe(
       'Grunnlagt et selskap som er kjøpt opp',
     )
+    expect(text({ kind: 'programme', programmeIds: [YC], first: true })).toBe(
+      'Grunnlagt et selskap som gikk gjennom Y Combinator, som det første selskapet i ESAF',
+    )
+    expect(
+      text({
+        kind: 'programme',
+        link: 'es_company',
+        programmeKinds: ['accelerator'],
+        duringEs: true,
+      }),
+    ).toBe('Startet et selskap på ES som gikk gjennom en akselerator, mens de gikk på ES')
     expect(text({ kind: 'profile', fields: ['photo', 'bio', 'experience'] })).toBe(
       'Fylt ut bilde, om deg og erfaring på profilen',
     )

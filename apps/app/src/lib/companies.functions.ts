@@ -12,6 +12,7 @@ import {
   getEditableCompany,
   listCompanies,
   mergeCompanies,
+  programmeKinds,
   searchCompanies,
   setCompanyFormerNames,
   updateCompany,
@@ -82,6 +83,14 @@ const eventFields = z.object({
   text: z.string().max(2000),
   sourceUrl: z.string().max(1000),
   sourceLabel: z.string().max(200),
+  programme: z
+    .object({
+      name: z.string().max(500),
+      companyId: z.uuid().nullable(),
+      kind: z.enum(programmeKinds),
+      batch: z.string().max(200),
+    })
+    .nullable(),
 })
 
 export type CompanyEventFormValues = z.infer<typeof eventFields>

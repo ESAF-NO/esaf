@@ -288,6 +288,13 @@
       "when": 1793913109883,
       "tag": "0040_reaksjoner_paa_innlegg",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794481255445,
+      "tag": "0041_selskapsprogrammer",
+      "breakpoints": true
     }
   ]
 }

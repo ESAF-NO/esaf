@@ -1,6 +1,7 @@
 {
   "name": "esaf",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@12.16.1",
   "engines": {
@@ -28,10 +29,13 @@
     "data:bundle": "pnpm --filter @esaf/core data:bundle",
     "data:import": "pnpm --filter @esaf/core data:import",
     "verify:site": "node scripts/verify-site-build.mjs",
+    "check:pii": "node scripts/check-pii.mjs --tree",
+    "check:pii:history": "node scripts/check-pii.mjs --history",
     "search:download-model": "pnpm --filter @esaf/core search:download-model",
     "search:reindex": "pnpm --filter @esaf/core search:reindex",
     "search:query": "pnpm --filter @esaf/core search:query",
-    "search:eval": "pnpm --filter @esaf/core search:eval"
+    "search:eval": "pnpm --filter @esaf/core search:eval",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

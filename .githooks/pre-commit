@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stopper persondata fra kullisten før commit. Gjør ingenting uten de lokale dataene.
+exec node scripts/check-pii.mjs --staged

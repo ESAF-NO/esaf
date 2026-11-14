@@ -2,6 +2,8 @@
 
 Monorepo for ESAF – Entreprenørskolens Alumniforening. Det inneholder den offentlige nettsiden for `esaf.no` og grunnmuren til ESAF-appen, en lukket app for godkjente medlemmer.
 
+_In English: the member app and website of ESAF, the alumni association of NTNU's School of Entrepreneurship. The code, docs and UI are in Norwegian. MIT licensed. Report security issues privately, see [SECURITY.md](SECURITY.md)._
+
 ## Mappestruktur
 
 ```
@@ -43,6 +45,7 @@ Bare én av dem: `pnpm dev:site` (krever ingen database) eller `pnpm dev:app`.
 | `pnpm lint`                   | ESLint og Prettier-sjekk (`pnpm format` retter formatering)                                                                                                                                                                                                     |
 | `pnpm test`                   | Enhetstester og integrasjonstester mot `TEST_DATABASE_URL`                                                                                                                                                                                                      |
 | `pnpm verify:site`            | Sjekker at `apps/site/dist` ikke inneholder hemmeligheter, appkode eller ukjente e-postadresser                                                                                                                                                                 |
+| `pnpm check:pii`              | Leter etter navn, e-post og telefon fra de lokale kullistedataene i alle filer i repoet (`check:pii:history`: i hele historikken), se «Persondata i git»                                                                                                        |
 | `pnpm db:up` / `pnpm db:down` | Starter eller stopper lokal Postgres                                                                                                                                                                                                                            |
 | `pnpm db:generate`            | Lager en ny SQL-migrering fra endringer i `packages/db/src/schema.ts`                                                                                                                                                                                           |
 | `pnpm db:migrate`             | Kjører migreringer mot `DATABASE_URL`                                                                                                                                                                                                                           |
@@ -766,15 +769,26 @@ Dette gjenstår før appen kan brukes av medlemmer:
 
 E-post er ikke nødvendig for lansering: folk kommer inn med invitasjoner, og glemte passord løses med lenker fra en admin (se «Invitasjoner og lenker for nytt passord»). Med Cloudflare Email Service slått på (se «E-post») sendes invitasjonene og lenkene på e-post, medlemmer kan be om nytt passord selv, og registrering med e-postbekreftelse, «Hvem er du?» og godkjenning er åpent ved siden av invitasjonene.
 
-## Før repoet gjøres offentlig
+## Persondata i git
 
-Repoet er privat. CI er laget for å være trygt også som offentlig repo: PR-er fra forks kjører med lesetilgang og uten hemmeligheter, deploy-jobben hoppes over i forks, og ingen arbeidsflyt bruker `pull_request_target`. Dette må gjøres før repoet åpnes, i denne rekkefølgen:
+Ingen persondata fra kullisten, berikelsen eller produksjon skal i git, verken i filer, commit-meldinger, PR-er eller issues. Repoet er offentlig, og historikken kan ikke trekkes tilbake. Tester, eksempler og `pnpm db:seed` bruker oppdiktede personer og `example.test`-adresser. Unntaket er styret på esaf.no (`apps/site/src/board.ts`), som er offentlig.
 
-1. **Fjern Gmail-adressen fra historikken.** Foreningens interne Gmail-adresse ligger i den første commiten (`9b9b9ff`), i `apps/site/KILDER.md` og `apps/site/src/site.config.ts`. Dagens filer har den ikke. Skriv om historikken, for eksempel med `git filter-repo --replace-text`, force-push alle grener og be alle med en klone om å klone på nytt. GitHub kan fortsatt vise gamle commits via SHA en stund. Be derfor GitHub Support rydde dem, eller opprett et nytt repo fra den ryddede historikken.
-2. **Skann historikken på nytt**, for eksempel med gitleaks. En gjennomgang i oktober 2026 fant ingen nøkler eller ekte persondata utenom Gmail-adressen. Testdata bruker `example.test`-adresser og oppdiktede telefonnumre.
-3. **Slå på secret scanning og push protection** under Settings → Code security.
-4. **Beskytt `main`** med en ruleset som blokkerer force-push og sletting. Det er ikke tilgjengelig for private repoer på gratisplanen.
-5. **Sjekk commit-forfattere.** E-postadressene i commitene blir synlige. Bruk GitHubs noreply-adresse framover hvis det ikke er ønsket.
+`scripts/check-pii.mjs` håndhever det for den som har dataene lokalt. Den leser navn, e-post og telefonnumre fra `.data/enrichment/out` og stopper en commit som legger dem til (`.githooks/pre-commit`) eller har dem i meldingen (`.githooks/commit-msg`). `pnpm install` slår på hookene (`core.hooksPath`). Uten de lokale dataene gjør den ingenting. Treffene vises som fil og linje, aldri selve verdien. Kjør `pnpm check:pii:history` før en større opprydding eller når dataene er oppdatert.
+
+Skriv om ekte medlemmer i PR-er og issues uten navn («et medlem fikk feilmeldingen …»).
+
+## Offentlig repo
+
+Koden er MIT-lisensiert (se `LICENSE`). Sårbarheter meldes privat (se `SECURITY.md`).
+
+CI er laget for å være trygt i et offentlig repo: PR-er fra forks kjører med lesetilgang og uten hemmeligheter, deploy-jobbene hoppes over i forks, og ingen arbeidsflyt bruker `pull_request_target`. Innstillinger i GitHub (Settings):
+
+- **Code security:** secret scanning, push protection og private sårbarhetsmeldinger er på.
+- **Actions → General:** arbeidsflyter fra forks krever godkjenning for alle eksterne bidragsytere.
+- **Rules:** `main` krever grønn «Sjekk og bygg» og blokkerer force-push og sletting.
+- **Commit-forfattere:** e-postadressen i en commit blir offentlig. Bruk GitHubs noreply-adresse.
+
+Historikken ble gjennomgått før repoet ble åpnet (november 2026): ingen nøkler, og ingen persondata fra kullisten i filer, commit-meldinger eller PR-er.
 
 ## Åpne beslutninger
 
@@ -782,9 +796,7 @@ Repoet er privat. CI er laget for å være trygt også som offentlig repo: PR-er
 - **Hvem skal få medlemsinnsyn:** Alumni, nåværende studenter, ansatte og/eller mentorer? Datamodellen støtter alle fire via `person_cohort.relation`, men godkjenningen skiller ikke mellom dem ennå.
 - **Medlemsstatus for importerte profiler:** `active` (standard) eller `venter`, se sikkerhetsavveiingen over.
 - **Hva medlemmer ser om hverandre:** Alle profilfelt er synlige for aktive medlemmer. E-post og telefon fra kullisten vises også som standard, og hver person kan skjule dem (bestemt oktober 2026, se «Kontaktinfo»).
-- **Hosting for appen:** Ikke valgt. Repoet er `ESAF-NO/esaf` og er privat.
 - **Innlogging:** Invitasjoner fra styret, passord og passkeys, og tofaktor. Registrering med e-postbekreftelse slås på med en e-postleverandør. Magisk lenke eller Google-innlogging kan legges til når e-post er på plass.
-- **MCP:** Ikke implementert. Bygg på `@esaf/core` med den offisielle MCP TypeScript SDK. Better Auths MCP-plugin er i beta og bør testes i en egen integrasjonstest før den velges.
 
 ## Versjoner og begrensninger
 

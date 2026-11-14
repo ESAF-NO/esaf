@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { domainToUnicode } from 'node:url'
-import { schema, type CompanyStatus, type Db } from '@esaf/db'
+import { schema, type CompanyLinkRole, type CompanyStatus, type Db } from '@esaf/db'
 import {
   and,
   arrayOverlaps,
@@ -16,7 +16,15 @@ import {
   sql,
 } from 'drizzle-orm'
 import { z } from 'zod'
-import { assertCan, assertMember, can, type Viewer } from './access.ts'
+import {
+  activeRole,
+  assertCan,
+  assertMember,
+  can,
+  permissions,
+  roleAtLeast,
+  type Viewer,
+} from './access.ts'
 import { assetViews, loadAssets, type AssetView } from './assets.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import {
@@ -33,6 +41,7 @@ import {
 import {
   listMyLinkRequests,
   loadCompanySuggestions,
+  loadAddedLinks,
   loadRequestedLinks,
   viewerCompanyRoles,
   type LinkRequestView,
@@ -263,6 +272,8 @@ export type CompanyDetails = Omit<Company, 'people'> & {
   linkRequests: LinkRequestView[]
   /** Den innloggede har lagt til andre her, og venter på at de bekrefter. */
   requestedLinks: LinkRequestView[]
+  /** Personer uten konto den innloggede la til her, og kan fjerne igjen. */
+  addedLinks: { requestId: string; personId: string; role: CompanyLinkRole }[]
   /**
    * «Dokumenter»: pitch deck, pressemateriale og lignende. Alle medlemmer kan
    * laste ned; de som kan redigere selskapet, laster opp og fjerner.
@@ -530,6 +541,35 @@ export async function companyForEdit(
   return { ...row, adminEdit: !connected }
 }
 
+/**
+ * Selskapet, for å rette eller slette en hendelse eller sak: som `companyForEdit`,
+ * men den som la den inn, kan alltid rette og slette sin egen, også uten å være
+ * knyttet til selskapet. `own` betyr at det er rettigheten som brukes; det logges.
+ */
+export async function companyForOwnEdit(
+  db: Db | Tx,
+  viewer: Viewer,
+  companyId: string,
+  addedByPersonId: string | null,
+) {
+  assertMember(viewer)
+  const [row] = await db
+    .select({ id: company.id, slug: company.slug, name: company.name })
+    .from(company)
+    .where(eq(company.id, companyId))
+  if (!row) throw new NotFoundError('Fant ikke selskapet.')
+  const connected = await isConnected(db, viewer.personId, companyId)
+  if (connected) return { ...row, adminEdit: false, own: false }
+  // Admins går alltid den vanlige veien, med sterk innlogging og logging som admin.
+  const own = addedByPersonId !== null && addedByPersonId === viewer.personId
+  const role = activeRole(viewer)
+  if (own && !(role && roleAtLeast(role, permissions['profiles.edit']))) {
+    return { ...row, adminEdit: false, own: true }
+  }
+  assertCan(viewer, 'profiles.edit')
+  return { ...row, adminEdit: true, own: false }
+}
+
 /** Så mye kan et medlem legge til på selskaper de ikke er knyttet til, per døgn. */
 const ADDITIONS_PER_DAY = 20
 
@@ -615,16 +655,18 @@ export async function getCompany(
     suggestions,
     linkRequests,
     requestedLinks,
+    addedLinks,
   ] = await Promise.all([
-    loadCompanyEvents(db, row.id, { includeReview: canEdit }),
+    loadCompanyEvents(db, row.id, { includeReview: canEdit, viewerPersonId: viewer.personId }),
     loadProgrammeCompanies(db, row.id),
-    loadCompanyArticles(db, row.id),
+    loadCompanyArticles(db, row.id, { viewerPersonId: viewer.personId }),
     loadQuotes(db, viewer, { companyId: row.id }),
     loadFieldSources(db, viewer, 'company', row.id, shown),
     viewerCompanyRoles(db, viewer.personId, row.id),
     loadCompanySuggestions(db, viewer, row.id, { canEdit }),
     listMyLinkRequests(db, viewer, { companyId: row.id }),
     loadRequestedLinks(db, viewer, row.id),
+    loadAddedLinks(db, viewer, row.id),
   ])
   const moderator = can(viewer, 'content.moderate')
   const documents = assetViews(
@@ -648,6 +690,7 @@ export async function getCompany(
     suggestions,
     linkRequests,
     requestedLinks,
+    addedLinks,
     documents,
   }
 }

@@ -185,7 +185,7 @@ export function CompanyArticles({
         <>
           <ul id={`saker-${companyId}`} className="mt-4 divide-y divide-stone-100">
             {shown.map((a) => (
-              <ArticleRow key={a.id} article={a} canEdit={canEdit} onEdit={setEditing} />
+              <ArticleRow key={a.id} article={a} canEdit={canEdit || a.mine} onEdit={setEditing} />
             ))}
           </ul>
           {articles.length > VISIBLE && (

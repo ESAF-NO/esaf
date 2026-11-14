@@ -17,6 +17,7 @@ import {
   grantRoleAsOperator,
   listMyLinkRequests,
   listNotifications,
+  removeAddedCompanyLink,
   loadViewer,
   mergeCompanies,
   listReview,
@@ -422,13 +423,13 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       return row!
     }
 
-    it('alle medlemmer legger til hendelser med en gang, men retter bare med tilknytning', async () => {
+    it('alle medlemmer legger til hendelser med en gang; andres retter bare de som er knyttet', async () => {
       const { id } = await addCompanyEvent(db, kari, syrligId, event)
       expect((await page(per)).events).toMatchObject([{ text: 'Hentet 4 MNOK.', review: false }])
       const [logged] = await audit('company.member_event_add')
       expect(logged).toMatchObject({ actorPersonId: kari!.personId })
-      expect(await denial(updateCompanyEvent(db, kari, id, event))).toBe('forbidden')
-      expect(await denial(deleteCompanyEvent(db, kari, id))).toBe('forbidden')
+      expect(await denial(updateCompanyEvent(db, per, id, event))).toBe('forbidden')
+      expect(await denial(deleteCompanyEvent(db, per, id))).toBe('forbidden')
 
       // Den som er knyttet til selskapet, logges ikke.
       await addCompanyEvent(db, ola, syrligId, event)
@@ -585,6 +586,84 @@ describe.skipIf(!url)('bidrag fra medlemmer', () => {
       const [logged] = await audit('company.member_link_add')
       expect(logged).toMatchObject({ actorPersonId: kari!.personId, subjectPersonId: personId })
       await expect(requestCompanyLink(db, kari, syrligId, link)).rejects.toThrow(/står allerede/)
+
+      // Gründeren får vite at noen utenfor la til en person.
+      expect(
+        (await notifications(ola)).map((n) => [n.type, n.additionKind, n.actor?.personId]),
+      ).toEqual([['company_addition', 'person', kari!.personId]])
+    })
+
+    it('den som la til en profil uten konto, kan fjerne den igjen, til profilen tas i bruk', async () => {
+      const { personId } = await createProfile(db, admin, {
+        fullName: 'Profil Uten Konto',
+        cohorts: [{ graduationYear: 2016, relation: 'student' }],
+        emails: [],
+        status: 'active',
+      })
+      const founderLink = {
+        personId,
+        role: 'founder',
+        title: null,
+        startYear: 2016,
+        endYear: null,
+      } as const
+      const { id } = await requestCompanyLink(db, kari, syrligId, founderLink)
+      const team = await requestCompanyLink(db, kari, syrligId, { ...founderLink, role: 'es' })
+      expect((await page(kari)).addedLinks).toEqual([
+        { requestId: id, personId, role: 'founder' },
+        { requestId: team.id, personId, role: 'es' },
+      ])
+      expect((await page(per)).addedLinks).toEqual([])
+
+      // Bare den som la til, kan fjerne.
+      await expect(removeAddedCompanyLink(db, per, id)).rejects.toThrow(/Fant ikke/)
+      await removeAddedCompanyLink(db, kari, id)
+      await removeAddedCompanyLink(db, kari, team.id)
+      expect((await page(per)).people.map((p) => p.personId)).not.toContain(personId)
+      expect((await page(kari)).addedLinks).toEqual([])
+      await expect(removeAddedCompanyLink(db, kari, id)).rejects.toThrow(/Fant ikke/)
+      const [logged] = await audit('company.member_link_remove')
+      expect(logged).toMatchObject({ actorPersonId: kari!.personId, subjectPersonId: personId })
+      expect(logged!.details).toMatchObject({ companyId: syrligId, role: 'founder', requestId: id })
+
+      // Når profilen er tatt i bruk, bestemmer personen selv.
+      const again = await requestCompanyLink(db, kari, syrligId, founderLink)
+      const userId = randomUUID()
+      await db.insert(schema.user).values({
+        id: userId,
+        name: 'Profil',
+        email: 'profil@example.test',
+        emailVerified: true,
+      })
+      await db.update(schema.person).set({ userId }).where(eq(schema.person.id, personId))
+      expect((await page(kari)).addedLinks).toEqual([])
+      await expect(removeAddedCompanyLink(db, kari, again.id)).rejects.toThrow(/tatt i bruk/)
+      expect((await page(per)).people.map((p) => p.personId)).toContain(personId)
+    })
+
+    it('personer som gründeren legger til, gir ikke varsel', async () => {
+      const { personId } = await createProfile(db, admin, {
+        fullName: 'Profil Uten Konto',
+        cohorts: [{ graduationYear: 2016, relation: 'student' }],
+        emails: [],
+        status: 'active',
+      })
+      await requestCompanyLink(db, ola, syrligId, {
+        personId,
+        role: 'employee',
+        title: null,
+        startYear: null,
+        endYear: null,
+      })
+      await requestCompanyLink(db, kari, syrligId, {
+        personId,
+        role: 'founder',
+        title: null,
+        startYear: null,
+        endYear: null,
+      })
+      // Kari er ikke knyttet til selskapet: Ola får varsel om det Kari la til, ikke om sitt eget.
+      expect((await notifications(ola)).map((n) => n.actor?.personId)).toEqual([kari!.personId])
     })
 
     it('admins avslår forespørsler om personer med konto, og det logges', async () => {

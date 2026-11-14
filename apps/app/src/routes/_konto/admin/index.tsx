@@ -438,6 +438,14 @@ function WelcomeStatus({ request: r }: { request: AccessRequestView }) {
   }, [pending, router, r])
 
   async function run() {
+    if (
+      w?.status === 'sent' &&
+      !confirm(
+        `Velkomsten ble sendt ${timeAgo(w.at)}${w.by ? ` av ${w.by}` : ' automatisk'}. Sende den på nytt?`,
+      )
+    ) {
+      return
+    }
     setBusy(true)
     setResult(null)
     try {
@@ -465,7 +473,7 @@ function WelcomeStatus({ request: r }: { request: AccessRequestView }) {
           : !w
             ? 'Ingen velkomst på e-post'
             : w.status === 'sent'
-              ? `Velkomst sendt ${timeAgo(w.at)}`
+              ? `Velkomst sendt ${timeAgo(w.at)}${w.by ? ` av ${w.by}` : ''}`
               : `Velkomsten feilet ${timeAgo(w.at)}`}
       </span>
       {!pending && (

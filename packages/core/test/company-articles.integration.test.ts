@@ -22,6 +22,7 @@ import {
   type ObjectStorage,
   type ProfileInput,
   type Viewer,
+  listNotifications,
 } from '../src/index.ts'
 
 loadRootEnv()
@@ -206,6 +207,7 @@ describe.skipIf(!url)('I media', () => {
     expect((await page(kari)).articles).toEqual([
       {
         id,
+        mine: false,
         url: 'https://www.adressa.no/syrlig',
         title: 'Syrlig vil erobre Europa',
         publisher: 'Adresseavisen',
@@ -296,7 +298,7 @@ describe.skipIf(!url)('I media', () => {
     }
   })
 
-  it('alle medlemmer legger til saker med en gang, men retter bare med tilknytning', async () => {
+  it('alle medlemmer legger til saker med en gang; andres retter bare de som er knyttet til selskapet', async () => {
     const { id } = await addCompanyArticle(db, kari, syrligId, article)
     expect((await page(ola)).articles).toHaveLength(1)
     const [row] = await db.select().from(schema.companyArticle)
@@ -308,9 +310,31 @@ describe.skipIf(!url)('I media', () => {
     await expect(
       addCompanyArticle(db, kari, syrligId, { ...article, url: 'mailto:ola@example.test' }),
     ).rejects.toThrow(/Ugyldig lenke/)
-    expect(await denial(updateCompanyArticle(db, kari, id, article))).toBe('forbidden')
-    expect(await denial(deleteCompanyArticle(db, kari, id))).toBe('forbidden')
-    await deleteCompanyArticle(db, ola, id)
+    const per = await member('Per')
+    expect(await denial(updateCompanyArticle(db, per, id, article))).toBe('forbidden')
+    expect(await denial(deleteCompanyArticle(db, per, id))).toBe('forbidden')
+    expect((await page(kari)).articles[0]).toMatchObject({ id, mine: true })
+    expect((await page(per)).articles[0]).toMatchObject({ id, mine: false })
+
+    // Gründeren får vite at noen utenfor la inn en sak.
+    const { items } = await listNotifications(db, ola)
+    expect(items.map((n) => [n.type, n.additionKind, n.actor?.personId])).toEqual([
+      ['company_addition', 'article', kari!.personId],
+    ])
+
+    // Den som la inn saken, kan rette og fjerne den selv.
+    await updateCompanyArticle(db, kari, id, { ...article, title: 'Rettet tittel' })
+    expect((await page(per)).articles[0]!.title).toBe('Rettet tittel')
+    await deleteCompanyArticle(db, kari, id)
+    expect((await page(per)).articles).toEqual([])
+    for (const action of ['company.member_article_edit', 'company.member_article_remove']) {
+      const [entry] = await audit(action)
+      expect(entry, action).toMatchObject({ actorPersonId: kari!.personId })
+    }
+
+    // Saker andre har lagt inn, retter gründeren.
+    const { id: again } = await addCompanyArticle(db, kari, syrligId, article)
+    await deleteCompanyArticle(db, ola, again)
   })
 
   it('et gammelt forslag om en sak som er lagt inn i mellomtiden, godtas uten duplikat', async () => {

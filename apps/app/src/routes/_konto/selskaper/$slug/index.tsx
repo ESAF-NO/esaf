@@ -39,7 +39,7 @@ import {
 } from '#/components/ui.tsx'
 import { statusLabels } from '#/lib/companies.ts'
 import { fetchCompany } from '#/lib/companies.functions.ts'
-import { leaveCompany } from '#/lib/contributions.functions.ts'
+import { leaveCompany, removeAddedLink } from '#/lib/contributions.functions.ts'
 import { longDay, plural, yearSpan } from '#/lib/format.ts'
 import { companyFieldLabels, confidenceLabels } from '#/lib/sources.ts'
 
@@ -88,11 +88,16 @@ function Fact({
   )
 }
 
-function PersonRow({ person: p }: { person: Member }) {
+/** Raden i tilknytningen (`CompanyLinkRole`) som gir personen denne plassen på siden. */
+const linkRoleOf = (role: Member['role']) =>
+  role === 'founder' ? 'founder' : role === 'es' ? 'es' : role === 'board' ? null : 'employee'
+
+function PersonRow({ person: p, addedId }: { person: Member; addedId?: string }) {
   const years = p.startYear || p.endYear ? yearSpan(p.startYear, p.endYear) : null
   const detail = [p.title, years].filter(Boolean).join(' · ')
+  const { busy, error, run } = useAction()
   return (
-    <li>
+    <li className="flex items-center gap-2">
       <Link
         to="/medlemmer/$personId"
         params={{ personId: p.personId }}
@@ -112,6 +117,23 @@ function PersonRow({ person: p }: { person: Member }) {
           </span>
         )}
       </Link>
+      {addedId && (
+        <span className="flex shrink-0 flex-col items-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            title="Du la til personen. Fjern om det ble feil."
+            onClick={() => {
+              if (!confirm(`Fjerne ${p.fullName} fra selskapet? Du la til personen selv.`)) return
+              void run(() => removeAddedLink({ data: { requestId: addedId } }))
+            }}
+          >
+            {busy ? 'Fjerner …' : 'Fjern'}
+          </Button>
+          {error && <span className="max-w-48 text-right text-xs text-red-700">{error}</span>}
+        </span>
+      )}
     </li>
   )
 }
@@ -539,7 +561,15 @@ function People({ company: c }: { company: CompanyDetails }) {
               <h3 className="text-xs font-medium text-stone-500">{title}</h3>
               <ul className="mt-1 divide-y divide-stone-100">
                 {people.map((p) => (
-                  <PersonRow key={p.personId} person={p} />
+                  <PersonRow
+                    key={p.personId}
+                    person={p}
+                    addedId={
+                      c.addedLinks.find(
+                        (l) => l.personId === p.personId && l.role === linkRoleOf(p.role),
+                      )?.requestId
+                    }
+                  />
                 ))}
               </ul>
             </section>

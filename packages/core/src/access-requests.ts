@@ -6,6 +6,7 @@ import {
   type MemberRole,
 } from '@esaf/db'
 import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import { accessLevel, assertCan, assertMember, type Viewer } from './access.ts'
 import { EmailError, type Mailer } from './email.ts'
@@ -28,6 +29,8 @@ const {
   personEmail,
   user,
 } = schema
+const welcomed = alias(person, 'welcomed')
+const sender = alias(person, 'sender')
 
 /**
  * Tilgang til ESAF krever at en admin godkjenner en forespørsel. Ingenting skjer
@@ -265,7 +268,12 @@ export type AccessRequestView = {
    * For godkjente: den siste velkomsten på e-post («Du er med i ESAF») og hvordan
    * det gikk, eller null om ingen er sendt (e-postloggen begynte 3. november 2026).
    */
-  welcomeEmail: { status: EmailStatus; at: Date } | null
+  welcomeEmail: {
+    status: EmailStatus
+    at: Date
+    /** Admin som sendte den for hånd. Null når den ble sendt automatisk. */
+    by: string | null
+  } | null
   /**
    * Nettopp godkjent, og den automatiske velkomsten er på vei: e-postjobben går
    * hvert minutt. Admin skal ikke sende den selv imens, da får personen to.
@@ -349,7 +357,37 @@ export async function listAccessRequests(
         .where(and(eq(emailLog.kind, 'welcome'), inArray(person.userId, approvedUsers)))
         .orderBy(person.userId, desc(emailLog.createdAt))
     : []
-  const welcomeOf = new Map(welcomes.map((w) => [w.userId, { status: w.status, at: w.at }]))
+  // Velkomster sendt for hånd står i revisjonsloggen med hvem som sendte dem.
+  const manual = welcomes.length
+    ? await db
+        .selectDistinctOn([welcomed.userId], {
+          userId: welcomed.userId,
+          at: auditEvent.createdAt,
+          by: sender.fullName,
+        })
+        .from(auditEvent)
+        .innerJoin(welcomed, eq(welcomed.id, auditEvent.subjectPersonId))
+        .leftJoin(sender, eq(sender.id, auditEvent.actorPersonId))
+        .where(
+          and(
+            eq(auditEvent.action, 'email.welcome'),
+            inArray(
+              welcomed.userId,
+              welcomes.map((w) => w.userId!),
+            ),
+          ),
+        )
+        .orderBy(welcomed.userId, desc(auditEvent.createdAt))
+    : []
+  const manualOf = new Map(manual.map((m) => [m.userId, m]))
+  const welcomeOf = new Map(
+    welcomes.map((w) => {
+      const m = manualOf.get(w.userId)
+      // Samme sending: loggen skrives rett etter e-posten.
+      const byHand = m && Math.abs(m.at.getTime() - w.at.getTime()) < 60_000
+      return [w.userId, { status: w.status, at: w.at, by: byHand ? m.by : null }]
+    }),
+  )
 
   // Nettopp godkjente uten velkomst: er den i køen, og kan e-postjobben sende den nå?
   const recent = new Date(Date.now() - WELCOME_PENDING_MS)

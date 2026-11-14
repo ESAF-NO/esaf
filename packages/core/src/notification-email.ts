@@ -107,13 +107,14 @@ export const notificationCategories = [
   {
     id: 'companies',
     label: 'Selskapene dine',
-    help: 'Forslag til selskaper du er knyttet til, svar på forslagene dine, og når noen sier at du var med i et selskap.',
+    help: 'Når noen utenfor selskapene dine legger til noe der, forslag til dem, svar på forslagene dine, og når noen sier at du var med i et selskap.',
     types: [
       'company_suggestion',
       'suggestion_accepted',
       'suggestion_rejected',
       'company_link_request',
       'company_link_confirmed',
+      'company_addition',
     ],
     default: 'instant',
   },
@@ -428,6 +429,16 @@ export function describeNotification(
       }
     case 'company_link_confirmed':
       return { text: `${who} bekreftet at de var ${role} i ${company}`, url: companyUrl() }
+    case 'company_addition':
+      return {
+        text:
+          n.additionKind === 'event'
+            ? `${who} la til en hendelse i historikken til ${company}`
+            : n.additionKind === 'article'
+              ? `${who} la til en sak om ${company} under «I media»`
+              : `${who} la til en person i ${company}`,
+        url: companyUrl(),
+      }
     case 'cohort_joined':
       return {
         text: `${who}${n.graduationYear ? ` fra ES ${n.graduationYear}` : ''} er med i ESAF nå`,

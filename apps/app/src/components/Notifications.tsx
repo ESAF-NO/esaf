@@ -90,6 +90,20 @@ function Sentence({ n }: { n: NotificationView }) {
           {who} bekreftet at de var {role} i {company}
         </>
       )
+    case 'company_addition':
+      return n.additionKind === 'event' ? (
+        <>
+          {who} la til en hendelse i historikken til {company}
+        </>
+      ) : n.additionKind === 'article' ? (
+        <>
+          {who} la til en sak om {company} under «I media»
+        </>
+      ) : (
+        <>
+          {who} la til en person i {company}
+        </>
+      )
     case 'comment_on_post':
       return (
         <>

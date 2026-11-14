@@ -375,6 +375,7 @@ export {
   decideCompanyLink,
   decideSuggestion,
   listMyLinkRequests,
+  removeAddedCompanyLink,
   removeSelfFromCompany,
   requestCompanyLink,
   startCompany,

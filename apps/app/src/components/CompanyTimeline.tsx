@@ -257,7 +257,7 @@ function EventList(props: {
   return (
     <ol className="mt-4">
       {props.events.map((e) => (
-        <EventRow key={e.id} event={e} canEdit={props.canEdit} onEdit={props.onEdit} />
+        <EventRow key={e.id} event={e} canEdit={props.canEdit || e.mine} onEdit={props.onEdit} />
       ))}
     </ol>
   )

@@ -27,7 +27,7 @@ import { companyEventInput, eventValues, resolveProgramme } from './company-even
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import type { Tx } from './members.ts'
-import { deliver } from './notifications.ts'
+import { deliver, notifyCompanyAddition } from './notifications.ts'
 import { photoUrls, type ProfilePhoto } from './photos.ts'
 import { recordFieldEdits } from './sources.ts'
 import { optionalText, yearInput } from './validation.ts'
@@ -54,7 +54,10 @@ const {
  * - **Tillit:** Medlemmene er invitert eller godkjent, så det som bare legger til
  *   noe, trenger ingen godkjenning. Det gjelder hendelser, saker (se
  *   `company-events.ts` og `company-articles.ts`) og personer uten konto. Det som
- *   endrer eller fjerner noe andre står bak, gjør de som er knyttet til det.
+ *   endrer eller fjerner noe andre står bak, gjør de som er knyttet til det. Den
+ *   som la til noe, kan rette og fjerne det selv (`companyForOwnEdit`,
+ *   `removeAddedCompanyLink`). De som er eller har vært knyttet til selskapet, får
+ *   varsel når noen utenfor legger til noe (`notifyCompanyAddition`).
  * - **Forslag:** Medlemmer som ikke kan redigere selskapet, kan foreslå endringer
  *   i selskapsinfoen (bare feltene som endres lagres, med verdien før og etter).
  *   De som kan redigere selskapet, og admins med `profiles.edit`, godtar eller
@@ -65,7 +68,8 @@ const {
  *   lagres det som en forespørsel personen selv må bekrefte (varsel og knapper
  *   på selskapssiden og profilen). Den vises ikke for andre før den er bekreftet.
  *   Har personen ingen konto, er det ingen å spørre: det vises med en gang og
- *   logges, og personen kan fjerne det når de tar profilen i bruk. Admins kan
+ *   logges, og personen kan fjerne det når de tar profilen i bruk. Til da kan den
+ *   som la personen til, fjerne det igjen. Admins kan
  *   avslå forespørsler, for å rydde bort feil.
  * - **Grenser:** Høyst 10 åpne forslag per medlem, 3 per selskap og 20 nye i
  *   døgnet; høyst 20 åpne forespørsler om andre og 20 nye i døgnet.
@@ -898,6 +902,14 @@ export async function requestCompanyLink(
           requestId: added!.id,
         },
       })
+      if (!can(viewer, 'profiles.edit') && !(await isConnected(tx, viewer.personId, companyId))) {
+        await notifyCompanyAddition(tx, {
+          companyId,
+          actorPersonId: viewer.personId,
+          kind: 'person',
+          id: added!.id,
+        })
+      }
       return { id: added!.id, added: true }
     }
 
@@ -1031,6 +1043,96 @@ export async function withdrawCompanyLink(db: Db, viewer: Viewer, requestId: str
       .set({ status: 'withdrawn', decidedAt: new Date(), decidedByPersonId: viewer.personId })
       .where(eq(companyLinkRequest.id, requestId))
   })
+}
+
+/**
+ * Angrer en person den innloggede la til i selskapet. Gjelder bare profiler ingen
+ * har tatt i bruk: med konto er det personens egen profil. Erfaringen eller
+ * ES-selskapet fjernes, også om det er rettet siden.
+ */
+export async function removeAddedCompanyLink(db: Db, viewer: Viewer, requestId: string) {
+  assertMember(viewer)
+  await db.transaction(async (tx) => {
+    const row = await lockLinkRequest(tx, requestId)
+    if (row.requestedByPersonId !== viewer.personId || row.status !== 'accepted') {
+      throw new NotFoundError('Fant ikke personen du la til.')
+    }
+    if (row.claimed) {
+      throw new DomainError(
+        `${row.fullName} har tatt i bruk profilen sin og bestemmer selv over den.`,
+      )
+    }
+    await tx.select({ id: person.id }).from(person).where(eq(person.id, row.personId)).for('update')
+    if (row.role === 'es') {
+      await tx
+        .update(person)
+        .set({ esCompanyId: null })
+        .where(and(eq(person.id, row.personId), eq(person.esCompanyId, row.companyId)))
+    } else {
+      await tx
+        .delete(experience)
+        .where(
+          and(
+            eq(experience.personId, row.personId),
+            eq(experience.companyId, row.companyId),
+            eq(experience.founder, row.role === 'founder'),
+          ),
+        )
+    }
+    await recordFieldEdits(
+      tx,
+      'person',
+      row.personId,
+      [row.role === 'es' ? 'esCompany' : 'experience'],
+      'forget',
+    )
+    await tx
+      .update(companyLinkRequest)
+      .set({ status: 'withdrawn', decidedAt: new Date(), decidedByPersonId: viewer.personId })
+      .where(eq(companyLinkRequest.id, requestId))
+    const target = await companyName(tx, row.companyId)
+    await tx.insert(auditEvent).values({
+      actorPersonId: viewer.personId,
+      action: 'company.member_link_remove',
+      subjectPersonId: row.personId,
+      details: {
+        companyId: target.id,
+        slug: target.slug,
+        name: target.name,
+        role: row.role,
+        requestId,
+      },
+    })
+  })
+}
+
+/**
+ * Personene den innloggede har lagt til i selskapet, som ingen har tatt i bruk
+ * profilen til. De kan fjernes igjen med `removeAddedCompanyLink`.
+ */
+export async function loadAddedLinks(
+  db: Db,
+  viewer: NonNullable<Viewer> & { personId: string },
+  companyId: string,
+): Promise<{ requestId: string; personId: string; role: CompanyLinkRole }[]> {
+  const rows = await db
+    .select({
+      requestId: companyLinkRequest.id,
+      personId: companyLinkRequest.personId,
+      role: companyLinkRequest.role,
+    })
+    .from(companyLinkRequest)
+    .innerJoin(person, eq(person.id, companyLinkRequest.personId))
+    .where(
+      and(
+        eq(companyLinkRequest.requestedByPersonId, viewer.personId),
+        eq(companyLinkRequest.companyId, companyId),
+        eq(companyLinkRequest.status, 'accepted'),
+        isNull(person.userId),
+      ),
+    )
+    .orderBy(asc(companyLinkRequest.createdAt))
+  return rows
 }
 
 const named = alias(person, 'named')

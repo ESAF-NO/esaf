@@ -447,8 +447,14 @@ describe.skipIf(!url)('varsler på e-post', () => {
     })
     expect(to).toBe('nina.ny@example.test')
     expect(sent.map((m) => m.subject)).toEqual(['Du er med i ESAF'])
+    // Sendt for hånd: forespørselen sier hvem som sendte den, så ingen sender den igjen uten å vite det.
+    const [adminPerson] = await db
+      .select({ fullName: schema.person.fullName })
+      .from(schema.person)
+      .where(eq(schema.person.id, admin!.personId!))
     expect((await listAccessRequests(db, admin, 'approved'))[0]!.welcomeEmail).toMatchObject({
       status: 'sent',
+      by: adminPerson!.fullName,
     })
     // Den automatiske kommer ikke i tillegg.
     await run(new Date())

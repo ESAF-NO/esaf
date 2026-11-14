@@ -19,6 +19,7 @@ import {
   getProfile,
   grantRoleAsOperator,
   listCompanies,
+  listNotifications,
   loadViewer,
   mergeCompanies,
   parseProfileSheet,
@@ -285,6 +286,47 @@ describe.skipIf(!url)('historikk, sitater og kilder', () => {
         .where(eq(schema.user.email, 'admin@example.test'))
       const without2fa = await loadViewer(db, admin!.userId)
       expect(await denial(deleteCompanyEvent(db, without2fa, other))).toBe('strong_auth_required')
+    })
+
+    it('den som la til en hendelse uten å være knyttet, kan rette og slette sin egen, og de knyttet får varsel', async () => {
+      const { id } = await syrlig()
+      const { id: eventId } = await addCompanyEvent(db, kari, id, event)
+
+      expect((await page(kari)).events[0]).toMatchObject({ id: eventId, mine: true })
+      expect((await page(per)).events[0]).toMatchObject({ id: eventId, mine: false })
+      expect((await page(ola)).events[0]).toMatchObject({ id: eventId, mine: false })
+
+      // Gründeren får vite at noen utenfor la til noe.
+      const { items } = await listNotifications(db, ola)
+      expect(items).toHaveLength(1)
+      expect(items[0]).toMatchObject({
+        type: 'company_addition',
+        additionKind: 'event',
+        actor: { personId: kari!.personId },
+        company: { slug: 'syrlig' },
+      })
+      expect((await listNotifications(db, kari)).items).toEqual([])
+
+      // Andre utenfor selskapet kan ikke røre den.
+      expect(await denial(updateCompanyEvent(db, per, eventId, event))).toBe('forbidden')
+      expect(await denial(deleteCompanyEvent(db, per, eventId))).toBe('forbidden')
+
+      await updateCompanyEvent(db, kari, eventId, { ...event, text: 'Rettet.' })
+      expect((await page(per)).events[0]!.text).toBe('Rettet.')
+      await deleteCompanyEvent(db, kari, eventId)
+      expect((await page(per)).events).toEqual([])
+      for (const action of ['company.member_event_edit', 'company.member_event_remove']) {
+        const [logged] = await audit(action)
+        expect(logged).toMatchObject({ actorPersonId: kari!.personId })
+        expect(logged!.details).toMatchObject({ companyId: id, eventId })
+      }
+
+      // Gründerens egne tillegg gir ikke varsel, og den knyttede kan rette alles.
+      await addCompanyEvent(db, ola, id, event)
+      const { id: karis } = await addCompanyEvent(db, kari, id, event)
+      await deleteCompanyEvent(db, ola, karis)
+      expect((await listNotifications(db, ola)).items).toHaveLength(2)
+      expect(await audit('company.member_event_remove')).toHaveLength(1)
     })
 
     it('usikre hendelser vises bare for dem som kan redigere, og blir bekreftet når de lagres', async () => {

@@ -554,6 +554,32 @@ const sentences: Record<string, (p: Parts) => ReactNode> = {
       {actor} la til {subject} som {linkRole(details.role)} i <Company details={details} />.
     </>
   ),
+  'company.member_link_remove': ({ actor, subject, details }) => (
+    <>
+      {actor} fjernet {subject} som {linkRole(details.role)} fra <Company details={details} />, som
+      de selv hadde lagt til.
+    </>
+  ),
+  'company.member_event_edit': ({ actor, details }) => (
+    <>
+      {actor} rettet sin egen hendelse i historikken til <Company details={details} />.
+    </>
+  ),
+  'company.member_event_remove': ({ actor, details }) => (
+    <>
+      {actor} slettet sin egen hendelse i historikken til <Company details={details} />.
+    </>
+  ),
+  'company.member_article_edit': ({ actor, details }) => (
+    <>
+      {actor} rettet sin egen sak under «I media» hos <Company details={details} />.
+    </>
+  ),
+  'company.member_article_remove': ({ actor, details }) => (
+    <>
+      {actor} fjernet sin egen sak under «I media» hos <Company details={details} />.
+    </>
+  ),
   'company.admin_event_edit': ({ actor, details }) => (
     <>
       {actor} rettet en hendelse i historikken til <Company details={details} />.

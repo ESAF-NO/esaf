@@ -2,9 +2,10 @@ import { schema, type CompanyArticleSource, type Db, type DatePrecision } from '
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Viewer } from './access.ts'
-import { companyForAdding, companyForEdit } from './companies.ts'
+import { companyForAdding, companyForOwnEdit, lockCompany } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import type { Tx } from './members.ts'
+import { notifyCompanyAddition } from './notifications.ts'
 import { hostLabel, optionalText, safeHttpUrl } from './validation.ts'
 
 const { auditEvent, companyArticle } = schema
@@ -127,6 +128,8 @@ export type CompanyArticleValues = z.output<typeof companyArticleInput>
 /** En sak slik den vises på selskapssiden. */
 export type CompanyArticle = {
   id: string
+  /** Den innloggede la den inn, og kan rette og slette den uten å være knyttet til selskapet. */
+  mine: boolean
   /** Alltid http eller https. */
   url: string
   title: string
@@ -168,6 +171,7 @@ export function parseArticle(input: unknown): CompanyArticleValues {
 export async function loadCompanyArticles(
   db: Db | Tx,
   companyId: string,
+  { viewerPersonId = null }: { viewerPersonId?: string | null } = {},
 ): Promise<CompanyArticle[]> {
   const rows = await db
     .select()
@@ -185,6 +189,7 @@ export async function loadCompanyArticles(
     return [
       {
         id: r.id,
+        mine: viewerPersonId !== null && r.addedByPersonId === viewerPersonId,
         url,
         title: r.title,
         publisher: r.publisher,
@@ -240,7 +245,12 @@ const duplicate = () => new DomainError('Saken står allerede under «I media».
 
 async function lockArticle(tx: Tx, articleId: string) {
   const [row] = await tx
-    .select({ id: companyArticle.id, companyId: companyArticle.companyId, url: companyArticle.url })
+    .select({
+      id: companyArticle.id,
+      companyId: companyArticle.companyId,
+      url: companyArticle.url,
+      addedByPersonId: companyArticle.addedByPersonId,
+    })
     .from(companyArticle)
     .where(eq(companyArticle.id, articleId))
     .for('update')
@@ -255,7 +265,9 @@ async function logAdminChange(
     | 'company.admin_article_add'
     | 'company.admin_article_edit'
     | 'company.admin_article_remove'
-    | 'company.member_article_add',
+    | 'company.member_article_add'
+    | 'company.member_article_edit'
+    | 'company.member_article_remove',
   target: { id: string; slug: string; name: string },
   article: { id: string; url: string },
 ) {
@@ -292,6 +304,14 @@ export async function addCompanyArticle(
       const action = target.adminEdit ? 'company.admin_article_add' : 'company.member_article_add'
       await logAdminChange(tx, viewer, action, target, { id: row.id, url: values.url })
     }
+    if (target.outsider) {
+      await notifyCompanyAddition(tx, {
+        companyId,
+        actorPersonId: viewer!.personId!,
+        kind: 'article',
+        id: row.id,
+      })
+    }
     return row
   })
 }
@@ -306,17 +326,17 @@ export async function updateCompanyArticle(
   const values = parseArticle(input)
   await db.transaction(async (tx) => {
     const article = await lockArticle(tx, articleId)
-    const target = await companyForEdit(tx, viewer, article.companyId, { lock: true })
+    // Låsen på selskapet hindrer at to samtidige lagringer gir to like saker.
+    await lockCompany(tx, article.companyId)
+    const target = await companyForOwnEdit(tx, viewer, article.companyId, article.addedByPersonId)
     if (await findDuplicateArticle(tx, article.companyId, values.url, articleId)) throw duplicate()
     await tx
       .update(companyArticle)
       .set(articleValues(values))
       .where(eq(companyArticle.id, articleId))
-    if (target.adminEdit) {
-      await logAdminChange(tx, viewer, 'company.admin_article_edit', target, {
-        id: articleId,
-        url: values.url,
-      })
+    if (target.adminEdit || target.own) {
+      const action = target.adminEdit ? 'company.admin_article_edit' : 'company.member_article_edit'
+      await logAdminChange(tx, viewer, action, target, { id: articleId, url: values.url })
     }
   })
 }
@@ -329,10 +349,13 @@ export async function deleteCompanyArticle(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const article = await lockArticle(tx, articleId)
-    const target = await companyForEdit(tx, viewer, article.companyId)
+    const target = await companyForOwnEdit(tx, viewer, article.companyId, article.addedByPersonId)
     await tx.delete(companyArticle).where(eq(companyArticle.id, articleId))
-    if (target.adminEdit) {
-      await logAdminChange(tx, viewer, 'company.admin_article_remove', target, article)
+    if (target.adminEdit || target.own) {
+      const action = target.adminEdit
+        ? 'company.admin_article_remove'
+        : 'company.member_article_remove'
+      await logAdminChange(tx, viewer, action, target, article)
     }
   })
 }

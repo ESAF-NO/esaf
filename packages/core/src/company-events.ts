@@ -12,12 +12,14 @@ import type { Viewer } from './access.ts'
 import {
   companyForAdding,
   companyForEdit,
+  companyForOwnEdit,
   deleteOrphanCompanies,
   resolveCompanies,
 } from './companies.ts'
 import { DomainError, NotFoundError } from './errors.ts'
 import { logoUrls, type CompanyLogoUrls } from './logos.ts'
 import type { Tx } from './members.ts'
+import { notifyCompanyAddition } from './notifications.ts'
 import { hostLabel, optionalSourceUrl, optionalText, safeHttpUrl } from './validation.ts'
 
 const { auditEvent, company, companyEvent } = schema
@@ -119,6 +121,8 @@ export type EventProgramme = {
 /** En hendelse slik den vises på selskapssiden. */
 export type CompanyEvent = {
   id: string
+  /** Den innloggede la den inn, og kan rette og slette den uten å være knyttet til selskapet. */
+  mine: boolean
   /** `YYYY-MM-DD`. Bare delen `datePrecision` sier, er kjent. */
   date: string
   datePrecision: DatePrecision
@@ -204,7 +208,10 @@ const programmeCompany = alias(company, 'programme_company')
 export async function loadCompanyEvents(
   db: Db,
   companyId: string,
-  { includeReview }: { includeReview: boolean },
+  {
+    includeReview,
+    viewerPersonId = null,
+  }: { includeReview: boolean; viewerPersonId?: string | null },
 ): Promise<CompanyEvent[]> {
   const rows = await db
     .select({
@@ -230,6 +237,7 @@ export async function loadCompanyEvents(
     const label = r.sourceLabel ?? hostLabel(url)
     return {
       id: r.id,
+      mine: viewerPersonId !== null && r.addedByPersonId === viewerPersonId,
       date: r.date,
       datePrecision: r.datePrecision,
       type: r.type,
@@ -335,6 +343,7 @@ async function lockEvent(tx: Tx, eventId: string) {
       companyId: companyEvent.companyId,
       type: companyEvent.type,
       programmeCompanyId: companyEvent.programmeCompanyId,
+      addedByPersonId: companyEvent.addedByPersonId,
     })
     .from(companyEvent)
     .where(eq(companyEvent.id, eventId))
@@ -351,7 +360,9 @@ async function logAdminChange(
     | 'company.admin_event_edit'
     | 'company.admin_event_confirm'
     | 'company.admin_event_remove'
-    | 'company.member_event_add',
+    | 'company.member_event_add'
+    | 'company.member_event_edit'
+    | 'company.member_event_remove',
   target: { id: string; slug: string; name: string },
   event: { id: string; type: CompanyEventType; programmeCompanyId?: string | null },
 ) {
@@ -382,7 +393,12 @@ export async function addCompanyEvent(
     const programmeCompanyId = await resolveProgramme(tx, companyId, values)
     const [row] = await tx
       .insert(companyEvent)
-      .values({ companyId, ...eventValues(values, programmeCompanyId), confidence: 'high' })
+      .values({
+        companyId,
+        ...eventValues(values, programmeCompanyId),
+        confidence: 'high',
+        addedByPersonId: viewer!.personId,
+      })
       .returning({ id: companyEvent.id })
     if (target.adminEdit || target.outsider) {
       const action = target.adminEdit ? 'company.admin_event_add' : 'company.member_event_add'
@@ -390,6 +406,14 @@ export async function addCompanyEvent(
         id: row!.id,
         type: values.type,
         programmeCompanyId,
+      })
+    }
+    if (target.outsider) {
+      await notifyCompanyAddition(tx, {
+        companyId,
+        actorPersonId: viewer!.personId!,
+        kind: 'event',
+        id: row!.id,
       })
     }
     return { id: row!.id }
@@ -406,7 +430,7 @@ export async function updateCompanyEvent(
   const values = parse(input)
   await db.transaction(async (tx) => {
     const event = await lockEvent(tx, eventId)
-    const target = await companyForEdit(tx, viewer, event.companyId)
+    const target = await companyForOwnEdit(tx, viewer, event.companyId, event.addedByPersonId)
     const programmeCompanyId = await resolveProgramme(tx, event.companyId, values)
     await tx
       .update(companyEvent)
@@ -416,8 +440,9 @@ export async function updateCompanyEvent(
     if (event.programmeCompanyId !== programmeCompanyId) {
       await deleteOrphanCompanies(tx, [event.programmeCompanyId])
     }
-    if (target.adminEdit) {
-      await logAdminChange(tx, viewer, 'company.admin_event_edit', target, {
+    if (target.adminEdit || target.own) {
+      const action = target.adminEdit ? 'company.admin_event_edit' : 'company.member_event_edit'
+      await logAdminChange(tx, viewer, action, target, {
         id: eventId,
         type: values.type,
         programmeCompanyId,
@@ -430,11 +455,12 @@ export async function updateCompanyEvent(
 export async function deleteCompanyEvent(db: Db, viewer: Viewer, eventId: string): Promise<void> {
   await db.transaction(async (tx) => {
     const event = await lockEvent(tx, eventId)
-    const target = await companyForEdit(tx, viewer, event.companyId)
+    const target = await companyForOwnEdit(tx, viewer, event.companyId, event.addedByPersonId)
     await tx.delete(companyEvent).where(eq(companyEvent.id, eventId))
     await deleteOrphanCompanies(tx, [event.programmeCompanyId])
-    if (target.adminEdit) {
-      await logAdminChange(tx, viewer, 'company.admin_event_remove', target, event)
+    if (target.adminEdit || target.own) {
+      const action = target.adminEdit ? 'company.admin_event_remove' : 'company.member_event_remove'
+      await logAdminChange(tx, viewer, action, target, event)
     }
   })
 }

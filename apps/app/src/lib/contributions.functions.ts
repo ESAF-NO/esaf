@@ -6,6 +6,7 @@ import {
   decideCompanyLink,
   decideSuggestion,
   listMyLinkRequests,
+  removeAddedCompanyLink,
   removeSelfFromCompany,
   requestCompanyLink,
   searchPeople,
@@ -131,6 +132,11 @@ export const answerCompanyLink = createServerFn({ method: 'POST' })
 export const retractCompanyLink = createServerFn({ method: 'POST' })
   .validator(z.object({ requestId: z.uuid() }))
   .handler(({ data }) => run((viewer) => withdrawCompanyLink(db, viewer, data.requestId)))
+
+/** Fjerner en person uten konto som den innloggede la til i et selskap. */
+export const removeAddedLink = createServerFn({ method: 'POST' })
+  .validator(z.object({ requestId: z.uuid() }))
+  .handler(({ data }) => run((viewer) => removeAddedCompanyLink(db, viewer, data.requestId)))
 
 /** Forespørsler om at den innloggede var med i et selskap, som venter på svar. */
 export const fetchMyLinkRequests = createServerFn({ method: 'GET' }).handler(() =>

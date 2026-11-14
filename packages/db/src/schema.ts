@@ -427,6 +427,11 @@ export const companyEvent = pgTable(
     programmeKind: programmeKind(),
     /** Kullet slik programmet kaller det, f.eks. «W22» eller «Kull 3». */
     programmeBatch: text(),
+    /**
+     * Den som la inn hendelsen i appen. Kan rette og slette den, også uten å være
+     * knyttet til selskapet. Null fra import og for hendelser fra før kolonnen fantes.
+     */
+    addedByPersonId: uuid().references(() => person.id, { onDelete: 'set null' }),
     ...timestamps,
   },
   (t) => [
@@ -1619,6 +1624,8 @@ export const notificationType = pgEnum('notification_type', [
   'company_link_request',
   /** Personen mottakeren la til i et selskap, bekreftet det. */
   'company_link_confirmed',
+  /** Noen som ikke er knyttet til selskapet, la til en hendelse, en sak eller en person. */
+  'company_addition',
 ])
 
 export type NotificationPayload = {
@@ -1631,6 +1638,8 @@ export type NotificationPayload = {
   /** Tilknytningen varselet gjelder. */
   linkRequestId?: string
   linkRole?: CompanyLinkRole
+  /** Hva som ble lagt til i selskapet: en hendelse, en sak eller en person. */
+  additionKind?: 'event' | 'article' | 'person'
   /** Velkomsten etter at en admin godkjente forespørselen: sendes også på e-post. */
   emailWelcome?: boolean
 }

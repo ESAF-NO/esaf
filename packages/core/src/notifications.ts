@@ -7,7 +7,7 @@ import { NotFoundError } from './errors.ts'
 import { mentionsToPlainText, reachablePeople } from './mentions.ts'
 import type { Tx } from './members.ts'
 
-const { cohort, comment, company, notification, person, personCohort, post } = schema
+const { cohort, comment, company, experience, notification, person, personCohort, post } = schema
 
 /**
  * Varsler lages i samme transaksjon som det de handler om, så et varsel aldri
@@ -43,6 +43,44 @@ export async function deliver(tx: Tx, rows: NewNotification[]) {
   )
   const values = wanted.filter((r) => reachable.has(r.recipientPersonId))
   if (values.length) await tx.insert(notification).values(values).onConflictDoNothing()
+}
+
+/**
+ * Noen som ikke er knyttet til selskapet, la til en hendelse, en sak eller en
+ * person. Alle som er eller har vært knyttet til selskapet (erfaring eller
+ * ES-team) får vite det, så de kan rette eller fjerne det om det er feil.
+ * Endringer fra dem som er knyttet til selskapet, gir ikke varsel: de er like mye
+ * selskapets som noen andres.
+ */
+export async function notifyCompanyAddition(
+  tx: Tx,
+  input: {
+    companyId: string
+    actorPersonId: string
+    kind: NonNullable<NotificationPayload['additionKind']>
+    /** Hendelsen, saken eller tilknytningen (forespørselen). */
+    id: string
+  },
+): Promise<void> {
+  const [roles, team] = await Promise.all([
+    tx
+      .selectDistinct({ personId: experience.personId })
+      .from(experience)
+      .where(eq(experience.companyId, input.companyId)),
+    tx.select({ personId: person.id }).from(person).where(eq(person.esCompanyId, input.companyId)),
+  ])
+  const recipients = [...new Set([...roles, ...team].map((r) => r.personId))]
+  await deliver(
+    tx,
+    recipients.map((recipientPersonId) => ({
+      recipientPersonId,
+      type: 'company_addition' as const,
+      actorPersonId: input.actorPersonId,
+      companyId: input.companyId,
+      eventKey: `addition:${input.kind}:${input.id}`,
+      payload: { additionKind: input.kind },
+    })),
+  )
 }
 
 const commentEvent = (commentId: string) => `comment:${commentId}`
@@ -196,6 +234,8 @@ export type NotificationView = {
   suggestionKind: NotificationPayload['suggestionKind'] | null
   /** Rollen i en tilknytning: gründer, ES-team eller ansatt. */
   linkRole: NotificationPayload['linkRole'] | null
+  /** Hva som ble lagt til i selskapet, for `company_addition`. */
+  additionKind: NotificationPayload['additionKind'] | null
   /** Starten på kommentaren eller innlegget, med omtaler som vanlig tekst. */
   excerpt: string | null
   graduationYear: number | null
@@ -302,6 +342,7 @@ export async function selectNotificationViews(
     company: r.companySlug && r.companyName ? { slug: r.companySlug, name: r.companyName } : null,
     suggestionKind: r.payload.suggestionKind ?? null,
     linkRole: r.payload.linkRole ?? null,
+    additionKind: r.payload.additionKind ?? null,
     excerpt: excerptOf(r.commentBody ?? r.postBody),
     graduationYear: r.payload.graduationYear ?? null,
   }))

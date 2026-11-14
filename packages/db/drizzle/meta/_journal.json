@@ -309,6 +309,13 @@
       "when": 1794493280748,
       "tag": "0043_merker_fast_sjeldenhet",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794620281426,
+      "tag": "0044_selskap_egne_tillegg",
+      "breakpoints": true
     }
   ]
 }

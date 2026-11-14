@@ -755,19 +755,15 @@ Appen sender e-post med [Cloudflare Email Service](https://developers.cloudflare
 
 Det som er av, sendes ikke, og forsøket står i loggen med grunnen. Invitasjoner og lenker for nytt passord lages likevel, og admin deler dem selv. Er bekreftelsen av, er registrering stengt; er «Glemt passord» av, er «Glemt passord?» stengt, også på serveren. Når noe slås på igjen, sendes ikke varslene som kom mens det var av, men velkomster sendes. Alt står i revisjonsloggen med begrunnelse. Uten `EMAIL_PROVIDER` er e-post av uansett. Reglene står i `packages/core/src/email-switch.ts`.
 
-## Før produksjon
+## Gjenstår i drift
 
-Dette gjenstår før appen kan brukes av medlemmer:
+Appen er i bruk på https://app.esaf.no, med Coolify, Postgres, R2 og e-post fra Cloudflare (se «Deploy» og «E-post»), og `main` er beskyttet (se «Offentlig repo»). Dette er ikke gjort eller ikke bekreftet ennå:
 
-1. **Coolify.** Sett opp appen, Postgres, domenet og backup som beskrevet i «Appen med Coolify». Opprett en privat R2-bøtte for profilbilder (se «Profilbilder») og en for backup.
-2. **Backup.** Test én gjenoppretting, og avklar lagringstid.
-3. **Beskytt `main`.** Krev grønn «Sjekk og bygg» før merge, og ingen direkte push.
-4. **Rate-grenser.** Better Auth holder tellerne i minnet, per prosess. Kjører appen i flere prosesser, må de flyttes til en delt lagring (`rateLimit.storage`).
-5. **Overvåking.** Oppetidssjekk mot `/api/health`, innsamling av feillogger og varsling til en navngitt person.
-6. **Medlemsimport.** Importverktøyene finnes (se over og «Fylle produksjon med datasettet»). Det som gjenstår, er å avgjøre hvem som eier og verifiserer kullisten, rydde e-postadressene, få tillatelse fra Entreprenørskolen til bilder og persondata fra nettsiden deres, og kjøre importen mot produksjon sammen med invitasjonen.
-7. **Personvern.** Behandlingsgrunnlag, personvernerklæring og rutine for sletting.
-
-E-post er ikke nødvendig for lansering: folk kommer inn med invitasjoner, og glemte passord løses med lenker fra en admin (se «Invitasjoner og lenker for nytt passord»). Med Cloudflare Email Service slått på (se «E-post») sendes invitasjonene og lenkene på e-post, medlemmer kan be om nytt passord selv, og registrering med e-postbekreftelse, «Hvem er du?» og godkjenning er åpent ved siden av invitasjonene.
+1. **Backup.** Test én gjenoppretting til en ny database, og avklar lagringstid.
+2. **Rate-grenser.** Better Auth holder tellerne i minnet, per prosess. Appen kjører i én prosess; kjører den i flere, må de flyttes til en delt lagring (`rateLimit.storage`).
+3. **Overvåking.** Cloudflare varsler når tunnelen er nede, og GitHub når en deploy feiler. Det mangler en oppetidssjekk mot `/api/health`, innsamling av feillogger og en navngitt person som får varslene.
+4. **Persondata fra Entreprenørskolen.** Bilder, bio og sitater fra entreprenorskolen.no tas ikke inn før skolen har gitt tillatelse (se «Fylle produksjon med datasettet»).
+5. **Personvern.** Behandlingsgrunnlag, personvernerklæring og rutine for sletting.
 
 ## Persondata i git
 
@@ -796,7 +792,7 @@ Historikken ble gjennomgått før repoet ble åpnet (november 2026): ingen nøkl
 - **Hvem skal få medlemsinnsyn:** Alumni, nåværende studenter, ansatte og/eller mentorer? Datamodellen støtter alle fire via `person_cohort.relation`, men godkjenningen skiller ikke mellom dem ennå.
 - **Medlemsstatus for importerte profiler:** `active` (standard) eller `venter`, se sikkerhetsavveiingen over.
 - **Hva medlemmer ser om hverandre:** Alle profilfelt er synlige for aktive medlemmer. E-post og telefon fra kullisten vises også som standard, og hver person kan skjule dem (bestemt oktober 2026, se «Kontaktinfo»).
-- **Innlogging:** Invitasjoner fra styret, passord og passkeys, og tofaktor. Registrering med e-postbekreftelse slås på med en e-postleverandør. Magisk lenke eller Google-innlogging kan legges til når e-post er på plass.
+- **Innlogging:** Invitasjoner fra styret, registrering med e-postbekreftelse og godkjenning, passord og passkeys, og tofaktor. Magisk lenke eller Google-innlogging er ikke lagt til.
 
 ## Versjoner og begrensninger
 
